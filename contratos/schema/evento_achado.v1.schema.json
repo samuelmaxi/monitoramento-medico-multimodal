@@ -1,0 +1,656 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tech-challenge-fase-4/contratos/evento_achado.v1.schema.json",
+  "title": "EventoAchado",
+  "description": "Contrato único de achado/evento do Tech Challenge Fase 4 (v1.0.0). Gerado de contratos/evento.py — não edite à mão.",
+  "$defs": {
+    "Artefato": {
+      "additionalProperties": false,
+      "description": "Referência a uma evidência armazenada fora do evento.\n\n``uri`` é um caminho relativo à raiz do repositório (ex. ``saida/video/frame.jpg``)\nou uma URI ``s3://``/``https://``. Caminhos absolutos são recusados porque só\nfuncionam na máquina de quem gerou o evento.",
+      "properties": {
+        "kind": {
+          "enum": [
+            "frame",
+            "clip",
+            "audio_segment",
+            "transcricao",
+            "relatorio",
+            "serie_temporal",
+            "prescricao",
+            "outro"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "uri": {
+          "description": "Caminho relativo à raiz do repositório, ou URI s3:// / https://",
+          "pattern": "^((s3|file|https)://\\S+|[A-Za-z0-9_-][A-Za-z0-9_./-]*)$",
+          "title": "Uri",
+          "type": "string"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "examples": [
+            "image/jpeg",
+            "audio/wav"
+          ],
+          "title": "Media Type"
+        },
+        "start_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Início relativo à mídia (ms)",
+          "title": "Start Ms"
+        },
+        "end_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Fim relativo à mídia (ms)",
+          "title": "End Ms"
+        }
+      },
+      "required": [
+        "kind",
+        "uri"
+      ],
+      "title": "Artefato",
+      "type": "object"
+    },
+    "Contexto": {
+      "additionalProperties": false,
+      "description": "Metadados não identificáveis usados pelo motor de alertas (US19).",
+      "properties": {
+        "encounter_id": {
+          "anyOf": [
+            {
+              "pattern": "^enc_[0-9a-f]{24}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Encounter Id"
+        },
+        "bed_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bed Id"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ID da mídia/câmera/sensor de origem, sem dado pessoal",
+          "title": "Source Id"
+        },
+        "procedure_type": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "examples": [
+            "fisioterapia"
+          ],
+          "title": "Procedure Type"
+        }
+      },
+      "title": "Contexto",
+      "type": "object"
+    },
+    "Evidencia": {
+      "additionalProperties": false,
+      "description": "Por que o achado foi gerado. Serve à explicabilidade exigida em US14, US16, US18 e US19.",
+      "properties": {
+        "summary": {
+          "description": "Frase legível em pt-BR para a equipe médica",
+          "maxLength": 500,
+          "minLength": 3,
+          "title": "Summary",
+          "type": "string"
+        },
+        "features": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Valores observados que levaram à decisão (ex.: spo2, news2_total, jitter_local_pct)",
+          "maxProperties": 50,
+          "title": "Features",
+          "type": "object"
+        },
+        "thresholds": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "maxLength": 200,
+                "type": "string"
+              }
+            ]
+          },
+          "description": "Limiares aplicados (ex.: news2_emergencia: 7)",
+          "maxProperties": 50,
+          "title": "Thresholds",
+          "type": "object"
+        },
+        "models": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Modelos/serviços de base e versões (ex.: yolov8n: 8.3.40, amazon-transcribe: pt-BR)",
+          "maxProperties": 20,
+          "title": "Models",
+          "type": "object"
+        },
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/Artefato"
+          },
+          "maxItems": 20,
+          "title": "Artifacts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "summary"
+      ],
+      "title": "Evidencia",
+      "type": "object"
+    },
+    "Janela": {
+      "additionalProperties": false,
+      "description": "Intervalo de tempo real (UTC) coberto pelo achado.",
+      "properties": {
+        "start": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+          "title": "End",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Janela",
+      "type": "object"
+    },
+    "Modalidade": {
+      "description": "Origem do achado. Cada módulo do repositório emite em uma modalidade.",
+      "enum": [
+        "video",
+        "audio",
+        "texto",
+        "sinais_vitais",
+        "prescricoes",
+        "movimentacao",
+        "fusao"
+      ],
+      "title": "Modalidade",
+      "type": "string"
+    },
+    "Severidade": {
+      "description": "Prioridade do achado, alinhada à IEC 60601-1-8.\n\nA norma define três prioridades de alarme (alta, média, baixa) e o sinal\nde informação, que aqui é ``info`` e nunca vira alerta.",
+      "enum": [
+        "info",
+        "baixa",
+        "media",
+        "alta"
+      ],
+      "title": "Severidade",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "event_id": {
+      "description": "UUID v4 único do evento (chave de idempotência)",
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "patient_id": {
+      "description": "Pseudônimo HMAC-SHA256: pt_<24 hex>",
+      "pattern": "^pt_[0-9a-f]{24}$",
+      "title": "Patient Id",
+      "type": "string"
+    },
+    "modality": {
+      "$ref": "#/$defs/Modalidade"
+    },
+    "event_type": {
+      "description": "Tipo de achado; precisa pertencer ao catálogo da modalidade",
+      "title": "Event Type",
+      "type": "string",
+      "enum": [
+        "agitacao_subita",
+        "assimetria_movimento",
+        "desvio_baseline",
+        "desvio_baseline_vocal",
+        "dificuldade_respiratoria",
+        "duplicidade_terapeutica",
+        "entrada_area_critica",
+        "evento_respiratorio",
+        "fadiga_vocal",
+        "imobilidade_prolongada",
+        "medicamento_alta_vigilancia",
+        "mudanca_abrupta_dose",
+        "mudanca_brusca_ou_queda",
+        "news2_emergencia",
+        "news2_resposta_urgente",
+        "possivel_disartria",
+        "postura_fora_da_faixa",
+        "presenca_indevida_area_critica",
+        "queda",
+        "reducao_mobilidade",
+        "risco_multimodal",
+        "saida_area_critica",
+        "saida_do_leito",
+        "sem_achados",
+        "sentimento_negativo",
+        "suspensao_abrupta",
+        "tendencia_deterioracao",
+        "termo_critico"
+      ]
+    },
+    "timestamp": {
+      "description": "Quando o fenômeno ocorreu (tempo do evento, UTC)",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "detected_at": {
+      "description": "Quando o módulo emitiu o achado (UTC)",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+      "title": "Detected At",
+      "type": "string"
+    },
+    "ingested_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?(Z|\\+00:00)$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Quando o dado bruto entrou no sistema; base da latência medida na US19",
+      "title": "Ingested At"
+    },
+    "window": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Janela"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "score": {
+      "description": "Intensidade/confiança normalizada da anomalia",
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Score",
+      "type": "number"
+    },
+    "severity": {
+      "$ref": "#/$defs/Severidade"
+    },
+    "evidence": {
+      "$ref": "#/$defs/Evidencia"
+    },
+    "model_version": {
+      "description": "<componente>@<versão> do módulo emissor, ex. anomalias-sinais@0.2.0",
+      "pattern": "^[a-z0-9][a-z0-9._-]*@[0-9A-Za-z][0-9A-Za-z._+-]*$",
+      "title": "Model Version",
+      "type": "string"
+    },
+    "context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Contexto"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "related_event_ids": {
+      "description": "Eventos que originaram este (obrigatório para fusão)",
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 200,
+      "title": "Related Event Ids",
+      "type": "array"
+    },
+    "is_synthetic": {
+      "default": false,
+      "description": "True para anomalias injetadas em teste (US03)",
+      "title": "Is Synthetic",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "patient_id",
+    "modality",
+    "event_type",
+    "timestamp",
+    "detected_at",
+    "score",
+    "severity",
+    "evidence",
+    "model_version"
+  ],
+  "type": "object",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "video"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "assimetria_movimento",
+              "entrada_area_critica",
+              "mudanca_brusca_ou_queda",
+              "postura_fora_da_faixa",
+              "presenca_indevida_area_critica",
+              "saida_area_critica",
+              "sem_achados"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "audio"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "desvio_baseline_vocal",
+              "dificuldade_respiratoria",
+              "evento_respiratorio",
+              "fadiga_vocal",
+              "possivel_disartria",
+              "sem_achados"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "texto"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "sem_achados",
+              "sentimento_negativo",
+              "termo_critico"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "sinais_vitais"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "desvio_baseline",
+              "news2_emergencia",
+              "news2_resposta_urgente",
+              "sem_achados",
+              "tendencia_deterioracao"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "prescricoes"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "duplicidade_terapeutica",
+              "medicamento_alta_vigilancia",
+              "mudanca_abrupta_dose",
+              "sem_achados",
+              "suspensao_abrupta"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "movimentacao"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "agitacao_subita",
+              "imobilidade_prolongada",
+              "queda",
+              "reducao_mobilidade",
+              "saida_do_leito",
+              "sem_achados"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "fusao"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "event_type": {
+            "enum": [
+              "risco_multimodal"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "modality": {
+            "const": "fusao"
+          }
+        },
+        "required": [
+          "modality"
+        ]
+      },
+      "then": {
+        "required": [
+          "related_event_ids"
+        ],
+        "properties": {
+          "related_event_ids": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "const": "sem_achados"
+          }
+        },
+        "required": [
+          "event_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "severity": {
+            "const": "info"
+          }
+        }
+      }
+    }
+  ]
+}

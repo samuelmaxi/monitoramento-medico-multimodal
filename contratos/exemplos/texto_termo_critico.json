@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "00000000-0000-4000-8000-000000000003",
+  "patient_id": "pt_adc8a04498d64597b7bc858f",
+  "modality": "texto",
+  "event_type": "termo_critico",
+  "timestamp": "2026-09-26T17:05:20.000Z",
+  "detected_at": "2026-09-26T17:06:52.870Z",
+  "ingested_at": "2026-09-26T17:05:30.000Z",
+  "score": 0.95,
+  "severity": "alta",
+  "evidence": {
+    "summary": "Paciente relata falta de ar ao falar (afirmado, sem negação)",
+    "features": {
+      "termo": "falta de ar",
+      "entidade_en": "shortness of breath",
+      "categoria": "MEDICAL_CONDITION",
+      "negacao": false,
+      "falante": "paciente",
+      "confianca": 0.95
+    },
+    "thresholds": {},
+    "models": {
+      "amazon-transcribe": "pt-BR",
+      "amazon-translate": "pt-en",
+      "comprehend-medical": "DetectEntitiesV2"
+    },
+    "artifacts": [
+      {
+        "kind": "transcricao",
+        "uri": "saida/audio/consulta-0042/transcricao.json",
+        "media_type": "application/json",
+        "start_ms": 200000,
+        "end_ms": 204500
+      }
+    ]
+  },
+  "model_version": "texto-nlp@0.1.0",
+  "context": {
+    "encounter_id": "enc_56cf0a4b5a51d6a7c4817557",
+    "bed_id": "UTI-07",
+    "source_id": "consulta-0042"
+  },
+  "related_event_ids": [],
+  "is_synthetic": false
+}

@@ -1,0 +1,44 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AudioParaTranscribe",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::tc4-audio-SUFIXO-DO-GRUPO/*"
+    },
+    {
+      "Sid": "ListarBucketDeAudio",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::tc4-audio-SUFIXO-DO-GRUPO"
+    },
+    {
+      "Sid": "Transcricao",
+      "Effect": "Allow",
+      "Action": [
+        "transcribe:StartTranscriptionJob",
+        "transcribe:GetTranscriptionJob",
+        "transcribe:DeleteTranscriptionJob"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NlpClinicoESentimento",
+      "Effect": "Allow",
+      "Action": [
+        "translate:TranslateText",
+        "comprehend:DetectSentiment",
+        "comprehend:BatchDetectSentiment",
+        "comprehendmedical:DetectEntitiesV2"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EnviarAlerta",
+      "Effect": "Allow",
+      "Action": "sns:Publish",
+      "Resource": "arn:aws:sns:us-east-1:ID-DA-CONTA:alertas-equipe"
+    }
+  ]
+}

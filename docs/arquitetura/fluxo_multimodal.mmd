@@ -1,0 +1,102 @@
+%% Fluxo multimodal — Tech Challenge Fase 4 (US04), versão enxuta
+%% Pipeline em Python na máquina do grupo; AWS só para os serviços de IA gerenciados e o envio do alerta.
+%% Fonte do diagrama. Regenerar imagens: bash scripts/renderizar_diagrama.sh
+flowchart LR
+    subgraph F["Fontes (US03)"]
+        direction TB
+        FV["Vídeos clínicos<br/>fisioterapia · cirurgia"]
+        FA["Áudios de consulta<br/>AudioSet · gravações simuladas"]
+        FS["Sinais vitais<br/>MIMIC-IV Demo"]
+        FP["Prescrições<br/>MIMIC-IV Demo"]
+    end
+
+    subgraph I["1 · Ingestão — local"]
+        direction TB
+        DIR[("Pasta dados/<br/>fora do Git")]
+        REP["Replay dos sinais vitais<br/>simula o stream em tempo real"]
+    end
+
+    subgraph P["2 · Processamento — AWS: S3 · Transcribe · Translate · Comprehend · Comprehend Medical"]
+        direction TB
+        S3A[("Amazon S3 · tc4-audio<br/>entrada do Transcribe<br/>apaga sozinho em 7 dias")]
+        PV["Vídeo · Google Colab GPU<br/>OpenCV · OpenPose · YOLOv8"]
+        PA["Áudio · local<br/>ffmpeg 16 kHz · openSMILE · YAMNet"]
+        TRN["Amazon Transcribe<br/>pt-BR · diarização"]
+        TRL["Amazon Translate<br/>pt → en"]
+        CMD["Amazon Comprehend Medical<br/>entidades + negação"]
+        CMP["Amazon Comprehend<br/>sentimento em pt"]
+        PS["Sinais vitais · local<br/>limpeza + janela deslizante"]
+        PP["Prescrições · local<br/>normalização de unidades"]
+    end
+
+    subgraph D["3 · Detecção de anomalias — local, Python"]
+        direction TB
+        DV["video/<br/>postura · assimetria · área crítica"]
+        DA["audio/<br/>fadiga · respiração · disartria"]
+        DT["audio/ (texto)<br/>termos críticos · sentimento"]
+        DS["anomalias/sinais<br/>NEWS2 + Isolation Forest"]
+        DP["anomalias/prescricoes<br/>dose · duplicidade · ISMP"]
+        DM["anomalias/movimentacao<br/>imobilidade · saída do leito"]
+    end
+
+    BUS{{"Barramento local<br/>EventoAchado v1<br/>→ saida/eventos.jsonl"}}
+
+    subgraph U["4 · Fusão — local"]
+        LFU["fusao_alertas/fusao<br/>assina: modality ≠ fusao<br/>late fusion ponderada por paciente"]
+    end
+
+    subgraph A["5 · Alerta à equipe médica — AWS: Amazon SNS"]
+        direction TB
+        MAL["fusao_alertas/alertas<br/>assina: severity ≥ media<br/>prioridade · dedup · escalonamento"]
+        SNS["Amazon SNS<br/>e-mail da equipe"]
+        LOG[("saida/alertas.jsonl<br/>log auditável")]
+    end
+
+    FV --> DIR
+    FA --> DIR
+    FS --> DIR
+    FP --> DIR
+
+    DIR --> PV
+    DIR --> PA
+    DIR --> REP --> PS
+    DIR --> PP
+    PA -->|"WAV 16 kHz"| S3A --> TRN
+    TRN --> TRL --> CMD
+    TRN --> CMP
+
+    PV -->|"keypoints + detecções"| DV
+    PV --> DM
+    PA -->|"biomarcadores"| DA
+    CMD --> DT
+    CMP --> DT
+    PS --> DS
+    PP --> DP
+
+    DV --> BUS
+    DA --> BUS
+    DT --> BUS
+    DS --> BUS
+    DP --> BUS
+    DM --> BUS
+
+    BUS --> LFU
+    LFU -->|"risco_multimodal"| BUS
+    BUS --> MAL
+    MAL --> SNS
+    MAL --> LOG
+
+    classDef fonte fill:#f4f4f5,stroke:#71717a,color:#18181b
+    classDef local fill:#ffffff,stroke:#52525b,color:#18181b
+    classDef aws fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-width:2px
+    classDef bus fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px
+    class FV,FA,FS,FP fonte
+    class DIR,REP,PV,PA,PS,PP,DV,DA,DT,DS,DP,DM,LFU,MAL,LOG local
+    class S3A,TRN,TRL,CMD,CMP,SNS aws
+    class BUS bus
+    style F fill:#fafafa,stroke:#d4d4d8
+    style I fill:#f8fafc,stroke:#cbd5e1
+    style P fill:#f8fafc,stroke:#cbd5e1
+    style D fill:#f8fafc,stroke:#cbd5e1
+    style U fill:#f8fafc,stroke:#cbd5e1
+    style A fill:#f8fafc,stroke:#cbd5e1

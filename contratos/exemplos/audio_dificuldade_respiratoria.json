@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "00000000-0000-4000-8000-000000000002",
+  "patient_id": "pt_adc8a04498d64597b7bc858f",
+  "modality": "audio",
+  "event_type": "dificuldade_respiratoria",
+  "timestamp": "2026-09-26T17:05:12.000Z",
+  "detected_at": "2026-09-26T17:06:40.120Z",
+  "ingested_at": "2026-09-26T17:05:30.000Z",
+  "window": {
+    "start": "2026-09-26T17:05:12.000Z",
+    "end": "2026-09-26T17:05:41.000Z"
+  },
+  "score": 0.78,
+  "severity": "alta",
+  "evidence": {
+    "summary": "Pausas respiratórias frequentes e HNR baixo na fala do paciente; indicativo para avaliação clínica",
+    "features": {
+      "hnr_db": 14.2,
+      "jitter_local_pct": 1.31,
+      "shimmer_local_pct": 4.6,
+      "proporcao_pausas": 0.41,
+      "yamnet_breathing": 0.83
+    },
+    "thresholds": {
+      "hnr_db_min": 20,
+      "jitter_local_pct_max": 1.04,
+      "shimmer_local_pct_max": 3.81
+    },
+    "models": {
+      "opensmile": "eGeMAPSv02",
+      "yamnet": "tfhub-1"
+    },
+    "artifacts": [
+      {
+        "kind": "audio_segment",
+        "uri": "saida/audio/consulta-0042/seg-0192000.wav",
+        "media_type": "audio/wav",
+        "start_ms": 192000,
+        "end_ms": 221000
+      }
+    ]
+  },
+  "model_version": "audio-achados@0.1.0",
+  "context": {
+    "encounter_id": "enc_56cf0a4b5a51d6a7c4817557",
+    "bed_id": "UTI-07",
+    "source_id": "consulta-0042"
+  },
+  "related_event_ids": [],
+  "is_synthetic": false
+}
