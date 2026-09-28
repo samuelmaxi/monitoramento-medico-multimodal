@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "00000000-0000-4000-8000-000000000006",
+  "patient_id": "pt_adc8a04498d64597b7bc858f",
+  "modality": "prescricoes",
+  "event_type": "medicamento_alta_vigilancia",
+  "timestamp": "2026-09-26T16:40:00.000Z",
+  "detected_at": "2026-09-26T16:40:02.310Z",
+  "ingested_at": "2026-09-26T16:40:01.000Z",
+  "score": 0.6,
+  "severity": "media",
+  "evidence": {
+    "summary": "Introdução de morfina IV (opioide, lista ISMP de alta vigilância)",
+    "features": {
+      "medicamento": "Morphine Sulfate",
+      "classe_ismp": "opioide",
+      "dose": 2.0,
+      "unidade": "mg",
+      "via": "IV",
+      "frequencia": "q4h"
+    },
+    "thresholds": {
+      "lista": "ISMP-Brasil"
+    },
+    "models": {},
+    "artifacts": []
+  },
+  "model_version": "anomalias-prescricoes@0.1.0",
+  "context": {
+    "encounter_id": "enc_56cf0a4b5a51d6a7c4817557",
+    "bed_id": "UTI-07"
+  },
+  "related_event_ids": [],
+  "is_synthetic": false
+}
