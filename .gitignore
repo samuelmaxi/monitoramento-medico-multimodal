@@ -222,6 +222,10 @@ __marimo__/
 # Pasta de conteudos
 /conteudos/
 
+# Fixtures de áudio de teste (binários, não commitados)
+tests/fixtures/*
+!tests/fixtures/README.md
+
 # Terraform
 terraform/.terraform/
 terraform/*.tfstate

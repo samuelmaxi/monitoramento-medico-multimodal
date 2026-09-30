@@ -9,6 +9,19 @@ sistema.
 
 ```
 .
+├── app/                        # API FastAPI que chama Amazon Transcribe/Comprehend
+│   ├── main.py                 # Cria o app, carrega .env, inclui routers, GET /health
+│   ├── config.py                # Leitura de AWS_REGION / AWS_S3_BUCKET_NAME
+│   ├── aws_clients.py            # Clientes boto3 com retry adaptativo (429)
+│   ├── errors.py                 # Tradução de erros AWS em HTTPException (401/403/429)
+│   ├── schemas.py                 # Modelos Pydantic de request/response
+│   └── routers/
+│       ├── transcription.py       # POST /transcription, GET /transcription/{job_name}
+│       └── sentiment.py            # POST /sentiment
+├── tests/
+│   ├── conftest.py               # Fixtures pytest (TestClient, skip sem AWS configurada)
+│   ├── test_smoke.py              # Smoke tests reais contra AWS (transcrição + sentiment)
+│   └── fixtures/                  # Áudio de exemplo para os testes (gitignored)
 ├── conteudos/                 # Conteúdos baixados do Google Drive (gitignored)
 ├── scripts/
 │   └── get_content_script.py  # Download dos conteúdos do Google Drive
@@ -179,6 +192,67 @@ Ficam para uma fase de código posterior, fora do escopo do Terraform:
 - Detecção de anomalias — decisão tomada independente de cloud: será implementada como
   código próprio do projeto, não como um serviço gerenciado (a Azure aposentou o AI
   Anomaly Detector em 01/10/2026, então o projeto nunca dependeu dele).
+
+## API (FastAPI)
+
+API local (sem deploy na AWS por ora) que expõe os fluxos de Amazon Transcribe e
+Amazon Comprehend para teste manual e automatizado, apontando para os recursos AWS
+reais provisionados em [`terraform/`](terraform/).
+
+### Rodando a API
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
+`http://127.0.0.1:8000/docs`.
+
+### Endpoints
+
+| Método | Rota | Descrição |
+| --- | --- | --- |
+| `GET` | `/health` | Verifica se o servidor está no ar (não chama AWS). |
+| `POST` | `/transcription` | Recebe um áudio (`multipart/form-data`, campo `audio_file`), sobe para o S3 e inicia um job assíncrono no Amazon Transcribe (`pt-BR`). |
+| `GET` | `/transcription/{job_name}` | Consulta o status/resultado de um job de transcrição. |
+| `POST` | `/sentiment` | Recebe `{"text": "...", "language_code": "pt"}` e retorna o sentimento via Amazon Comprehend. |
+
+Exemplos com `curl`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/sentiment \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Estou muito satisfeito com o atendimento recebido.", "language_code": "pt"}'
+
+curl -X POST http://127.0.0.1:8000/transcription \
+  -F "audio_file=@caminho/para/audio_curto.wav"
+
+curl http://127.0.0.1:8000/transcription/<job_name>
+```
+
+### Tratamento de erros (429 / 401 / 403)
+
+Os clientes boto3 usam retry adaptativo nativo do `botocore`
+(`Config(retries={"max_attempts": 5, "mode": "adaptive"})`), que já faz backoff
+exponencial com jitter para throttling (`ThrottlingException`/429) antes de qualquer
+erro chegar na API. Erros que sobram são traduzidos em respostas claras
+(`app/errors.py`): **429** (throttling persistente), **401** (credenciais AWS
+inválidas — revise `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` no `.env`) e **403**
+(sem permissão — revise a policy em `terraform/iam.tf`).
+
+### Smoke tests automatizados
+
+```bash
+uv run pytest tests/test_smoke.py -v
+```
+
+Os testes chamam a API de verdade contra a AWS real (sem mocks), usando as
+credenciais do `.env`. Para o teste de transcrição, coloque um áudio curto pt-BR em
+`tests/fixtures/sample_pt_br.wav` (veja
+[`tests/fixtures/README.md`](tests/fixtures/README.md)) — se ausente, esse teste é
+pulado automaticamente. Se as variáveis `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`AWS_REGION` ou `AWS_S3_BUCKET_NAME` não estiverem configuradas, todos os testes são
+pulados com uma mensagem explicando o motivo.
 
 ## Demo ponta a ponta
 
