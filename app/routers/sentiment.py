@@ -12,18 +12,15 @@ router = APIRouter()
 def detect_sentiment(payload: SentimentRequest) -> SentimentResponse:
     try:
         client = get_language_client()
+        language_code = _map_language_code(payload.language_code)
+
         result = client.analyze_sentiment(
-            documents=[
-                {
-                    "id": "1",
-                    "language": _map_language_code(payload.language_code),
-                    "text": payload.text,
-                }
-            ]
+            documents=[payload.text],
+            language=language_code
         )
 
-        sentiment_result = result.documents[0].sentiment
-        sentiment_scores = result.documents[0].confidence_scores
+        sentiment_result = result[0].sentiment
+        sentiment_scores = result[0].confidence_scores
 
         return SentimentResponse(
             sentiment=sentiment_result.upper(),

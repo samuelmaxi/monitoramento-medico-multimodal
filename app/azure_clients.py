@@ -1,7 +1,6 @@
-from azure.cognitiveservices.speech import SpeechConfig, SpeechRecognizer
-from azure.cognitiveservices.speech.audio import AudioConfig
+from azure.cognitiveservices.speech import SpeechConfig
 from azure.storage.blob import BlobServiceClient
-from azure.ai.language.conversations import ConversationAnalysisClient
+from azure.ai.textanalytics import TextAnalyticsClient
 from azure.core.credentials import AzureKeyCredential
 
 from app.config import (
@@ -30,8 +29,8 @@ def get_blob_service_client() -> BlobServiceClient:
     )
 
 
-def get_language_client():
+def get_language_client() -> TextAnalyticsClient:
     """Get Azure AI Language client for sentiment analysis"""
     endpoint = require_azure_language_endpoint()
     key = require_azure_language_key()
-    return ConversationAnalysisClient(endpoint=endpoint, credential=AzureKeyCredential(key))
+    return TextAnalyticsClient(endpoint=endpoint, credential=AzureKeyCredential(key))
