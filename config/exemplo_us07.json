@@ -1,0 +1,51 @@
+{
+  "fonte": {
+    "id": "fisio-003",
+    "video": "../conteudos/videos/Samurai_Desembanha_Espada_Rapidamente.mp4",
+    "patient_id": "pt_8e5b4d1cfc60a16434dc03f0",
+    "bed_id": "UTI-07",
+    "procedure_type": "fisioterapia",
+    "inicio_utc": "2026-10-05T19:00:00Z",
+    "max_quadros": 192
+  },
+  "detector": {
+    "pesos": "yolov8n.pt",
+    "confianca": 0.25,
+    "iou": 0.5,
+    "imgsz": 640,
+    "classes": ["person", "bed", "chair", "couch", "bottle"],
+    "dispositivo": null,
+    "meio": true,
+    "rastrear": true,
+    "tracker": "bytetrack.yaml"
+  },
+  "monitor": {
+    "criterio": "fracao",
+    "persistencia_quadros": 2,
+    "primeira_observacao_entra": false
+  },
+  "eventos": {
+    "severidade": "baixa",
+    "emitir_jsonl": true,
+    "caminho_jsonl": "../saida/video/eventos_us07.jsonl"
+  },
+  "visualizacao": {
+    "ativa": false,
+    "caminho_video": "../saida/video/video_anotado.mp4",
+    "caminho_imagem": "../saida/video/quadro_anotado.jpg",
+    "mostrar_rois": true,
+    "mostrar_labels": true
+  },
+  "areas": [
+    {
+      "id": "borda_leito",
+      "nome": "Borda do leito",
+      "descricao": "Faixa ao lado do leito por onde o paciente sai deambulando",
+      "points": [[0, 180], [520, 180], [520, 720], [0, 720]],
+      "area_minima": 0.5,
+      "largura_ref": 1280,
+      "altura_ref": 720,
+      "classe_filtro": "person"
+    }
+  ]
+}

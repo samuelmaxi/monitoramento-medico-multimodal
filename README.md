@@ -24,7 +24,9 @@ sistema.
 │   └── fixtures/                  # Áudio de exemplo para os testes (gitignored)
 ├── conteudos/                 # Conteúdos baixados do Google Drive (gitignored)
 ├── scripts/
-│   └── get_content_script.py  # Download dos conteúdos do Google Drive
+│   ├── get_content_script.py  # Download dos conteúdos do Google Drive
+│   ├── rodar_us07_video.py   # Executa pipeline de detecção de vídeo
+│   └── avaliar_us07.py       # Avalia YOLO em dataset anotado
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura AWS (Transcribe, Comprehend, S3, Budget)
@@ -119,6 +121,36 @@ python scripts/get_content_script.py
 - Baixa o conteúdo da pasta do Google Drive para `conteudos/` usando `gdown --folder`.
 - O `gdown` cria uma subpasta com o nome da pasta remota, por exemplo
   `conteudos/conteudos/videos/`.
+
+### US07 — detecção de objetos e áreas críticas em vídeo
+
+Execute a configuração de exemplo, com limite opcional de quadros para smoke test:
+
+```bash
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json --max-frames 30
+```
+
+A configuração define o vídeo, pesos YOLO, classes de interesse, polígono(s) ROI,
+critérios de entrada/saída e destino JSONL compatível com o contrato US04. Para
+processar o vídeo configurado por inteiro, omita `--max-frames`. Os pesos locais
+são obtidos pelo Ultralytics e podem ser substituídos por um checkpoint próprio.
+
+A execução registrada com `yolov8n.pt` usa pesos COCO: identifica `person`, mas
+não conhece rótulos clínicos como instrumento cirúrgico. Esses rótulos exigem
+um dataset especializado, anotado no formato YOLO. Para métricas quantitativas
+reprodutíveis (mAP@0.5, mAP@0.5:0.95, precisão e recall), forneça o `data.yaml`
+e o split anotado:
+
+```bash
+uv run python scripts/avaliar_us07.py caminho/para/data.yaml \\
+  --weights yolov8n.pt --split val --output saida/video/metricas.json
+```
+
+Um vídeo de demonstração sem ground truth pode validar o fluxo e ser inspecionado
+qualitativamente, mas não produz mAP, precisão ou recall válidos.
+
+A especificação do fluxo, das ROIs e da avaliação da US07 está em
+[`docs/arquitetura/us07_deteccao_areas_criticas.md`](docs/arquitetura/us07_deteccao_areas_criticas.md).
 
 ## Infraestrutura (Terraform)
 

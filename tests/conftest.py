@@ -13,14 +13,15 @@ _REQUIRED_ENV_VARS = [
 ]
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _require_aws_env():
+@pytest.fixture(scope="session")
+def require_aws_env():
     missing = [var for var in _REQUIRED_ENV_VARS if not os.getenv(var)]
     if missing:
         pytest.skip(
             "Variáveis de ambiente AWS ausentes para o smoke test: "
             f"{missing}. Configure o .env antes de rodar estes testes."
         )
+    return None
 
 
 @pytest.fixture
