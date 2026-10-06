@@ -134,45 +134,69 @@ análise de sentimento, aproveitando a tier gratuita (F0) disponível no Azure:
 A infraestrutura é provisionada via Terraform, na região **`eastus`** (região com melhor
 suporte a tier gratuita), e fica em [`terraform/`](terraform/).
 
+### Estrutura de Arquivos Terraform
+
+- `providers.tf` — Configuração do provider Azure
+- `variables.tf` — Variáveis do projeto (região, nome, ambiente, etc)
+- `resources.tf` — Criação de grupos de recursos, Storage Account e Cognitive Services
+- `rbac.tf` — **Atribuições de roles RBAC** (permissões para acessar recursos)
+- `outputs.tf` — Saídas (credenciais, endpoints)
+
 ### Pré-requisitos adicionais
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) `>= 1.9`
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) configurado
 - Uma conta Azure **ativa** com acesso para criar grupos de recursos, contas de storage
   e serviços cognitivos
-- Permissão para criar recursos na subscription
+- Permissão de **Owner** ou **Contributor** na subscription (necessário para criar role assignments)
+
+### Autenticação no Azure
+
+A autenticação é feita via `az login` (seu usuário/conta):
+
+```bash
+az login
+# Abre navegador para autenticação. Após login, retorna com sucesso
+```
+
+O Terraform usa automaticamente as credenciais do `az login` para provisionar recursos.
 
 ### Provisionando a infraestrutura
 
 ```bash
-# Faça login no Azure
-az login
-
 cd terraform
 terraform init
 cp terraform.tfvars.example terraform.tfvars
-# edite terraform.tfvars e ajuste os valores conforme necessário
+# edite terraform.tfvars conforme necessário
 terraform plan -out=tfplan
 terraform apply tfplan
 terraform output
 ```
 
-O `apply` cria: um grupo de recursos Azure, uma conta de Storage (com container para 
-áudio), um serviço Speech (Cognitive Services) com tier F0 (gratuita) e um serviço 
-Language (Cognitive Services) com tier F0.
+O `apply` cria:
+- **Grupo de Recursos** — contêiner para organizar todos os recursos
+- **Storage Account** — conta de armazenamento com container privado para áudio
+- **Speech Service** (F0) — serviço de transcrição de áudio
+- **Language Service** (F0) — serviço de análise de sentimento
+- **RBAC Role Assignments** — permissões para o usuário atual acessar os recursos
 
-Após o apply, execute para obter as credenciais:
+### Obtendo as credenciais
 
-```bash
-terraform output -json > azure_credentials.json
-```
-
-Copie os valores sensíveis para o seu `.env`:
+Após `terraform apply`, extraia as credenciais:
 
 ```bash
 AZURE_SPEECH_KEY=$(terraform output -raw speech_key)
 AZURE_LANGUAGE_KEY=$(terraform output -raw language_key)
 AZURE_STORAGE_CONNECTION_STRING=$(terraform output -raw storage_connection_string)
+```
+
+Cole no seu `.env`:
+
+```
+AZURE_SPEECH_KEY=<value>
+AZURE_LANGUAGE_KEY=<value>
+AZURE_STORAGE_CONNECTION_STRING=<value>
+AZURE_LANGUAGE_ENDPOINT=$(terraform output -raw language_endpoint)
 ```
 
 ### Destruindo a infraestrutura
@@ -185,11 +209,17 @@ cd terraform
 terraform destroy
 ```
 
+### Para CI/CD (Integração Contínua)
+
+Se quiser usar um **Service Principal** em pipelines CI/CD (GitHub Actions, Azure DevOps),
+descomente a seção em `terraform/rbac.tf` e adicione as variáveis correspondentes.
+
 ### Benefícios da migração para Azure
 
 - **Tier gratuita**: Azure Speech e Language têm quotas mensais gratuitas (F0) sem custo
-- **Simplifado**: Não requer configuração manual de access keys (ao contrário de AWS)
-- **Integração**: Credenciais obtidas diretamente via `terraform output`
+- **RBAC integrado**: Permissões gerenciadas automaticamente via Terraform
+- **Sem credenciais manuais**: Usa autenticação nativa do `az login`
+- **Infraestrutura segura**: Storage account privado, HTTPS obrigatório
 - **Rede**: Melhor latência em regiões específicas (eastus)
 
 ## API (FastAPI)
