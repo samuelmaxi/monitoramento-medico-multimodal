@@ -1,13 +1,14 @@
-provider "aws" {
-  region = var.aws_region
-
-  default_tags {
-    tags = {
-      Project   = var.project_name
-      Ambiente  = var.environment
-      ManagedBy = "terraform"
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
     }
   }
 }
 
-data "aws_caller_identity" "current" {}
+provider "azurerm" {
+  features {}
+}
+
+data "azurerm_client_config" "current" {}

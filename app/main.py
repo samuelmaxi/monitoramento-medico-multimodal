@@ -7,7 +7,7 @@ from app.routers import sentiment, transcription  # noqa: E402
 
 app = FastAPI(
     title="Monitoramento Médico Multimodal - API",
-    description="Endpoints locais para testar os fluxos AWS Transcribe e Comprehend.",
+    description="Endpoints locais para testar os fluxos Azure Speech e Language.",
 )
 
 app.include_router(transcription.router)

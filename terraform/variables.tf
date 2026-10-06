@@ -1,46 +1,40 @@
-variable "aws_region" {
-  description = "Região AWS onde os serviços de Transcribe, Comprehend e S3 serão utilizados. Fixada em us-east-1 pela maior cobertura de features e menor custo."
+variable "azure_region" {
+  description = "Região Azure onde os serviços de Speech, Language e Storage serão criados. Usar regiões com tier gratuita (ex.: eastus)."
   type        = string
-  default     = "us-east-1"
+  default     = "eastus"
 }
 
 variable "project_name" {
-  description = "Nome do projeto, usado como prefixo para nomear os recursos AWS."
+  description = "Nome do projeto, usado como prefixo para nomear os recursos Azure."
   type        = string
   default     = "monitoramento-medico-multimodal"
 }
 
 variable "environment" {
-  description = "Ambiente da infraestrutura (ex.: dev, staging, prod). Usado apenas para tagging."
+  description = "Ambiente da infraestrutura (ex.: dev, staging, prod). Usado para tagging e naming."
   type        = string
   default     = "dev"
 }
 
-variable "iam_user_name" {
-  description = "Nome do IAM user dedicado que os scripts Python usarão para chamar Transcribe/Comprehend/S3."
+variable "storage_account_name" {
+  description = "Nome único da conta de storage Azure (máximo 24 caracteres, apenas letras e números)."
   type        = string
-  default     = "monitoramento-medico-app"
+  default     = "medicalmonitoring"
 }
 
-variable "enable_bucket_versioning" {
-  description = "Habilita versionamento no bucket S3 de mídia/transcrições. Desabilitado por padrão para evitar acúmulo de custo com versões antigas."
-  type        = bool
-  default     = false
+variable "container_name" {
+  description = "Nome do container Blob Storage para arquivos de áudio."
+  type        = string
+  default     = "audio-transcripts"
 }
 
-variable "object_expiration_days" {
-  description = "Número de dias até os objetos do bucket S3 expirarem automaticamente (controle de custo de storage)."
+variable "blob_retention_days" {
+  description = "Número de dias para retenção de blobs no storage (controle de custo)."
   type        = number
   default     = 30
 }
 
-variable "budget_limit_usd" {
-  description = "Teto mensal de gasto (em USD) para o AWS Budget de alerta de custo."
-  type        = number
-  default     = 5
-}
-
-variable "budget_alert_email" {
-  description = "E-mail que receberá os alertas do AWS Budget quando o gasto real ou previsto ultrapassar os limites configurados."
+variable "alert_email" {
+  description = "E-mail para receber alertas de consumo de serviços Azure."
   type        = string
 }

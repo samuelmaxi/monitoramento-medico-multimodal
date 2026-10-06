@@ -8,7 +8,9 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "boto3>=1.43.103",
+    "azure-cognitiveservices-speech>=1.38.0",
+    "azure-ai-language-conversations>=1.1.0",
+    "azure-storage-blob>=12.25.0",
     "fastapi>=0.141.1",
     "gdown>=6.4.0",
     "python-dotenv>=1.2.3",

@@ -1,24 +1,47 @@
-output "s3_bucket_name" {
-  description = "Nome do bucket S3 usado para áudio de entrada e transcripts do Amazon Transcribe."
-  value       = aws_s3_bucket.media.bucket
+output "storage_account_name" {
+  description = "Nome da conta de storage Azure para armazenar áudio e transcripts."
+  value       = azurerm_storage_account.media.name
 }
 
-output "s3_bucket_arn" {
-  description = "ARN do bucket S3 usado para áudio de entrada e transcripts do Amazon Transcribe."
-  value       = aws_s3_bucket.media.arn
+output "storage_account_id" {
+  description = "ID da conta de storage Azure."
+  value       = azurerm_storage_account.media.id
 }
 
-output "iam_user_name" {
-  description = "Nome do IAM user dedicado para os scripts Python. Use este nome para gerar a access key manualmente."
-  value       = aws_iam_user.app.name
+output "storage_connection_string" {
+  description = "Connection string da conta de storage (usar em AZURE_STORAGE_CONNECTION_STRING no .env)."
+  value       = azurerm_storage_account.media.primary_blob_connection_string
+  sensitive   = true
 }
 
-output "iam_user_arn" {
-  description = "ARN do IAM user dedicado para os scripts Python."
-  value       = aws_iam_user.app.arn
+output "speech_key" {
+  description = "API key do serviço Speech (usar em AZURE_SPEECH_KEY no .env)."
+  value       = azurerm_cognitive_account.speech.primary_access_key
+  sensitive   = true
 }
 
-output "iam_policy_arn" {
-  description = "ARN da IAM policy com as permissões mínimas de Transcribe/Comprehend/S3."
-  value       = aws_iam_policy.app_permissions.arn
+output "speech_endpoint" {
+  description = "Endpoint do serviço Speech."
+  value       = azurerm_cognitive_account.speech.endpoint
+}
+
+output "language_key" {
+  description = "API key do serviço Language (usar em AZURE_LANGUAGE_KEY no .env)."
+  value       = azurerm_cognitive_account.language.primary_access_key
+  sensitive   = true
+}
+
+output "language_endpoint" {
+  description = "Endpoint do serviço Language (usar em AZURE_LANGUAGE_ENDPOINT no .env)."
+  value       = azurerm_cognitive_account.language.endpoint
+}
+
+output "resource_group_name" {
+  description = "Nome do grupo de recursos Azure."
+  value       = azurerm_resource_group.main.name
+}
+
+output "container_name" {
+  description = "Nome do container Blob Storage para arquivos de áudio."
+  value       = azurerm_storage_container.audio.name
 }

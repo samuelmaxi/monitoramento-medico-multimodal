@@ -1,70 +1,65 @@
-# IAM user dedicado que os scripts Python usarão para chamar Transcribe/Comprehend/S3.
-# A access key NÃO é criada aqui de propósito: gerar a key via Terraform gravaria a
-# secret no state. A key deve ser criada manualmente após o apply:
-#   aws iam create-access-key --user-name <iam_user_name>
-resource "aws_iam_user" "app" {
-  name = var.iam_user_name
-}
+# Grupo de recursos Azure que agrupa todos os recursos do projeto
+resource "azurerm_resource_group" "main" {
+  name       = "${var.project_name}-${var.environment}-rg"
+  location   = var.azure_region
 
-data "aws_iam_policy_document" "app_permissions" {
-  # Amazon Transcribe não suporta permissões em nível de recurso para transcription
-  # jobs — a API exige Resource = "*". O least privilege real vem da lista fechada
-  # de actions (nunca "transcribe:*") e da condição de região abaixo.
-  statement {
-    sid = "TranscribeJobs"
-    actions = [
-      "transcribe:StartTranscriptionJob",
-      "transcribe:GetTranscriptionJob",
-      "transcribe:ListTranscriptionJobs",
-      "transcribe:DeleteTranscriptionJob",
-    ]
-    resources = ["*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "aws:RequestedRegion"
-      values   = [var.aws_region]
-    }
-  }
-
-  # Amazon Comprehend DetectSentiment/BatchDetectSentiment também não suportam
-  # permissões em nível de recurso — mesma limitação de API do Transcribe.
-  statement {
-    sid = "ComprehendSentiment"
-    actions = [
-      "comprehend:DetectSentiment",
-      "comprehend:BatchDetectSentiment",
-    ]
-    resources = ["*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "aws:RequestedRegion"
-      values   = [var.aws_region]
-    }
-  }
-
-  statement {
-    sid = "AudioTranscriptsBucketAccess"
-    actions = [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:DeleteObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      aws_s3_bucket.media.arn,
-      "${aws_s3_bucket.media.arn}/*",
-    ]
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
   }
 }
 
-resource "aws_iam_policy" "app_permissions" {
-  name   = "${var.project_name}-app-permissions"
-  policy = data.aws_iam_policy_document.app_permissions.json
+# Storage Account para armazenar arquivos de áudio
+resource "azurerm_storage_account" "media" {
+  name                     = var.storage_account_name
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"  # Local redundancy para reduzir custo
+  https_traffic_only_enabled = true
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
 }
 
-resource "aws_iam_user_policy_attachment" "app" {
-  user       = aws_iam_user.app.name
-  policy_arn = aws_iam_policy.app_permissions.arn
+# Container Blob para arquivos de áudio
+resource "azurerm_storage_container" "audio" {
+  name                  = var.container_name
+  storage_account_name  = azurerm_storage_account.media.name
+  container_access_type = "private"
+}
+
+
+# Cognitive Services account para Speech-to-Text
+resource "azurerm_cognitive_account" "speech" {
+  name                = "${var.project_name}-speech-${var.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  kind                = "SpeechServices"
+  sku_name            = "F0"  # Free tier
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    Service     = "Speech"
+  }
+}
+
+# Cognitive Services account para Language Analysis
+resource "azurerm_cognitive_account" "language" {
+  name                = "${var.project_name}-language-${var.environment}"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  kind                = "TextAnalytics"
+  sku_name            = "F0"  # Free tier
+
+  tags = {
+    Project     = var.project_name
+    Environment = var.environment
+    Service     = "Language"
+  }
 }
