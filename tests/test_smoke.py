@@ -9,7 +9,7 @@ SMOKE_TEST_AUDIO_PATH = Path(
 )
 
 
-def test_sentiment_analysis_pt_returns_200(client):
+def test_sentiment_analysis_pt_returns_200(client, require_aws_env):
     response = client.post(
         "/sentiment",
         json={
@@ -23,7 +23,7 @@ def test_sentiment_analysis_pt_returns_200(client):
     assert body["sentiment"] in {"POSITIVE", "NEGATIVE", "NEUTRAL", "MIXED"}
 
 
-def test_transcription_pt_br_returns_200(client):
+def test_transcription_pt_br_returns_200(client, require_aws_env):
     if not SMOKE_TEST_AUDIO_PATH.is_file():
         pytest.skip(
             f"Áudio de teste não encontrado em '{SMOKE_TEST_AUDIO_PATH}'. "

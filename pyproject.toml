@@ -11,14 +11,34 @@ dependencies = [
     "boto3>=1.43.103",
     "fastapi>=0.141.1",
     "gdown>=6.4.0",
+    "numpy>=2.0",
+    "opencv-python>=4.10.0",
     "python-dotenv>=1.2.3",
     "python-multipart>=0.0.32",
+    "ultralytics>=8.4.173",
     "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "jsonschema>=4.23.0",
     "pytest>=9.1.1",
+    "ruff>=0.14.10",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501"]
 
