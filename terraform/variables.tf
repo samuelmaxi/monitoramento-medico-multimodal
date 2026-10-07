@@ -38,3 +38,9 @@ variable "alert_email" {
   description = "E-mail para receber alertas de consumo de serviços Azure."
   type        = string
 }
+
+variable "subscription_id" {
+  description = "ID da assinatura Azure onde os recursos serão provisionados."
+  type        = string
+  default     = "14f9a7ae-f7b8-4f3c-8cb9-6ddc80cc1f22"
+}

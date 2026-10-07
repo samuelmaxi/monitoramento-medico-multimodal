@@ -1,11 +1,15 @@
+import io
 import json
+import os
+import tempfile
 import time
 from uuid import uuid4
 
+from azure.cognitiveservices.speech import AudioConfig, SpeechRecognizer
 from azure.core.exceptions import AzureError, ResourceNotFoundError
 from fastapi import APIRouter, HTTPException, UploadFile
 
-from app.azure_clients import get_blob_service_client
+from app.azure_clients import get_blob_service_client, get_speech_config
 from app.config import require_blob_container_name
 from app.errors import translate_client_error
 from app.schemas import TranscriptionResultResponse, TranscriptionStartResponse
@@ -35,18 +39,25 @@ def start_transcription(audio_file: UploadFile) -> TranscriptionStartResponse:
     container_name = require_blob_container_name()
 
     try:
+        # Upload para Blob Storage
         blob_client = get_blob_service_client().get_blob_client(
             container=container_name, blob=blob_name
         )
-        blob_client.upload_blob(audio_file.file, overwrite=True)
+        audio_data = audio_file.file.read()
+        blob_client.upload_blob(audio_data, overwrite=True)
 
+        # Armazenar em memória para processamento posterior
         _JOBS_METADATA[job_name] = {
             "blob_name": blob_name,
-            "status": "IN_PROGRESS",
+            "status": "PROCESSING",
+            "audio_data": audio_data,
             "created_at": time.time(),
         }
+
     except AzureError as exc:
         raise translate_client_error(exc) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erro ao processar áudio: {str(exc)}") from exc
 
     return TranscriptionStartResponse(job_name=job_name, status="IN_PROGRESS")
 
@@ -59,30 +70,54 @@ def get_transcription_result(job_name: str) -> TranscriptionResultResponse:
         )
 
     job_metadata = _JOBS_METADATA[job_name]
-    container_name = require_blob_container_name()
-    output_blob_name = f"{_OUTPUT_PREFIX}/{job_name}.json"
 
-    try:
-        blob_service_client = get_blob_service_client()
-        blob_client = blob_service_client.get_blob_client(
-            container=container_name, blob=output_blob_name
+    if job_metadata.get("status") == "COMPLETED":
+        return TranscriptionResultResponse(
+            status="COMPLETED",
+            transcript=job_metadata.get("transcript", "")
         )
 
+    try:
+        audio_data = job_metadata.get("audio_data")
+        if not audio_data:
+            return TranscriptionResultResponse(status="IN_PROGRESS")
+
+        # Salvar em caminho fixo para evitar problemas com encoding
+        tmp_dir = tempfile.gettempdir()
+        tmp_path = os.path.join(tmp_dir, f"azure_speech_{job_name}.wav")
+
+        # Escrever arquivo
+        with open(tmp_path, "wb") as f:
+            f.write(audio_data)
+
+        print(f"[DEBUG] Arquivo: {tmp_path} ({len(audio_data)} bytes)")
+
         try:
-            transcript_data = blob_client.download_blob().readall()
-            transcript_json = json.loads(transcript_data)
+            speech_config = get_speech_config()
+            audio_config = AudioConfig(filename=tmp_path)
+            recognizer = SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
 
-            job_metadata["status"] = "COMPLETED"
-            _JOBS_METADATA[job_name] = job_metadata
+            result = recognizer.recognize_once()
 
-            transcript = transcript_json.get("results", [{}])[0].get(
-                "transcripts", [{}]
-            )[0].get("transcript", "")
+            if result.text:
+                job_metadata["status"] = "COMPLETED"
+                job_metadata["transcript"] = result.text
+                _JOBS_METADATA[job_name] = job_metadata
+                return TranscriptionResultResponse(status="COMPLETED", transcript=result.text)
+            else:
+                print(f"[DEBUG] Resultado vazio ou sem reconhecimento: {result}")
+                return TranscriptionResultResponse(status="IN_PROGRESS")
 
-            return TranscriptionResultResponse(status="COMPLETED", transcript=transcript)
-        except ResourceNotFoundError:
-            return TranscriptionResultResponse(status="IN_PROGRESS")
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+
     except AzureError as exc:
-        if "NotFound" in str(exc):
-            return TranscriptionResultResponse(status="IN_PROGRESS")
         raise translate_client_error(exc) from exc
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro na transcrição: {str(exc)}") from exc
