@@ -9,31 +9,29 @@ sistema.
 
 ```
 .
-├── app/                        # API FastAPI que chama Amazon Transcribe/Comprehend
+├── app/                        # API FastAPI que chama Azure Speech/Language
 │   ├── main.py                 # Cria o app, carrega .env, inclui routers, GET /health
-│   ├── config.py                # Leitura de AWS_REGION / AWS_S3_BUCKET_NAME
-│   ├── aws_clients.py            # Clientes boto3 com retry adaptativo (429)
-│   ├── errors.py                 # Tradução de erros AWS em HTTPException (401/403/429)
+│   ├── config.py                # Leitura de variáveis Azure (Speech, Language, Storage)
+│   ├── azure_clients.py          # Clientes Azure SDK (Speech, Language, Blob Storage)
+│   ├── errors.py                 # Tradução de erros Azure em HTTPException (401/403/429)
 │   ├── schemas.py                 # Modelos Pydantic de request/response
 │   └── routers/
 │       ├── transcription.py       # POST /transcription, GET /transcription/{job_name}
 │       └── sentiment.py            # POST /sentiment
 ├── tests/
-│   ├── conftest.py               # Fixtures pytest (TestClient, skip sem AWS configurada)
-│   ├── test_smoke.py              # Smoke tests reais contra AWS (transcrição + sentiment)
+│   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
+│   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
 │   └── fixtures/                  # Áudio de exemplo para os testes (gitignored)
 ├── conteudos/                 # Conteúdos baixados do Google Drive (gitignored)
 ├── scripts/
 │   └── get_content_script.py  # Download dos conteúdos do Google Drive
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
-├── terraform/                 # Infraestrutura AWS (Transcribe, Comprehend, S3, Budget)
+├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
 │   ├── versions.tf
 │   ├── providers.tf
 │   ├── variables.tf
-│   ├── s3.tf
-│   ├── iam.tf
-│   ├── budget.tf
+│   ├── iam.tf                 # Recurso de grupo, storage account, cognitive services
 │   ├── outputs.tf
 │   └── terraform.tfvars.example
 ├── main.py                    # Ponto de entrada básico (verificação)
@@ -81,20 +79,24 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | Variável | Obrigatória | Descrição | Exemplo |
 | --- | --- | --- | --- |
 | `GOOGLE_DRIVE_FOLDER_URL` | Sim | URL da pasta do Google Drive cujo conteúdo será baixado para `conteudos/`. O script aborta com erro se não estiver definida. | `https://drive.google.com/drive/folders/1sJN538ANpeud1JzqPMjoNXK_CDXDTo3M?usp=sharing` |
-| `AWS_ACCESS_KEY_ID` | Sim (para os módulos de IA) | Access key do IAM user dedicado, criado pelo Terraform e gerado manualmente (veja [Infraestrutura (Terraform)](#infraestrutura-terraform)). | `AKIA...` |
-| `AWS_SECRET_ACCESS_KEY` | Sim (para os módulos de IA) | Secret key correspondente ao `AWS_ACCESS_KEY_ID`. Nunca deve ser commitada. | `wJalrXUtnFEMI/...` |
-| `AWS_REGION` | Sim (para os módulos de IA) | Região AWS usada por Transcribe/Comprehend/S3. Fixada em `us-east-1`. | `us-east-1` |
-| `AWS_S3_BUCKET_NAME` | Sim (para os módulos de IA) | Nome do bucket S3 criado pelo Terraform, usado para áudio de entrada e transcripts. Valor obtido via `terraform output s3_bucket_name`. | `monitoramento-medico-multimodal-media-123456789012` |
+| `AZURE_SPEECH_KEY` | Sim (para transcrição) | Chave da API do serviço Azure Speech. Obtida via `terraform output speech_key`. | `a1b2c3d4e5f6...` |
+| `AZURE_SPEECH_REGION` | Sim (para transcrição) | Região do serviço Azure Speech. Fixada em `eastus` para usar tier gratuita. | `eastus` |
+| `AZURE_LANGUAGE_ENDPOINT` | Sim (para análise de sentimento) | Endpoint do serviço Azure AI Language. Obtido via `terraform output language_endpoint`. | `https://monitoramento-language-dev.cognitiveservices.azure.com/` |
+| `AZURE_LANGUAGE_KEY` | Sim (para análise de sentimento) | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`. | `a1b2c3d4e5f6...` |
+| `AZURE_STORAGE_CONNECTION_STRING` | Sim (para transcrição) | Connection string do Azure Blob Storage. Obtida via `terraform output storage_connection_string`. | `DefaultEndpointsProtocol=https;AccountName=...` |
+| `AZURE_BLOB_CONTAINER_NAME` | Não | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`. | `audio-transcripts` |
 
 O template pronto pode ser copiado de `.env.sample`:
 
 ```
 GOOGLE_DRIVE_FOLDER_URL=https://drive.google.com/drive/folders/SEU_ID_AQUI?usp=sharing
 
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=us-east-1
-AWS_S3_BUCKET_NAME=
+AZURE_SPEECH_KEY=
+AZURE_SPEECH_REGION=eastus
+AZURE_LANGUAGE_ENDPOINT=
+AZURE_LANGUAGE_KEY=
+AZURE_STORAGE_CONNECTION_STRING=
+AZURE_BLOB_CONTAINER_NAME=audio-transcripts
 ```
 
 ## Como executar cada módulo
@@ -122,26 +124,42 @@ python scripts/get_content_script.py
 
 ## Infraestrutura (Terraform)
 
-O projeto usa serviços de IA da **AWS** (não Azure) para os módulos de transcrição de
-fala e análise de sentimento:
+O projeto usa serviços de IA do **Azure** para os módulos de transcrição de fala e 
+análise de sentimento, aproveitando a tier gratuita (F0) disponível no Azure:
 
-- **Amazon Transcribe** — transcrição de áudio em pt-BR.
-- **Amazon Comprehend** — análise de sentimento de texto em `pt`.
+- **Azure Speech Service** — transcrição de áudio em pt-BR (Speech-to-Text).
+- **Azure AI Language** — análise de sentimento de texto em `pt`.
+- **Azure Blob Storage** — armazenamento de arquivos de áudio.
 
-Diferente de serviços cognitivos da Azure, Transcribe e Comprehend não são "recursos"
-com endpoint próprio: são chamados via SDK (`boto3`) autenticado por credenciais IAM. A
-única peça de infraestrutura de dados necessária é um bucket S3, exigido pelo Transcribe
-no modo de transcrição em lote (áudio de entrada e transcript de saída).
+A infraestrutura é provisionada via Terraform, na região **`eastus`** (região com melhor
+suporte a tier gratuita), e fica em [`terraform/`](terraform/).
 
-Toda a infraestrutura é provisionada via Terraform, na região **`us-east-1`**, e fica em
-[`terraform/`](terraform/).
+### Estrutura de Arquivos Terraform
+
+- `providers.tf` — Configuração do provider Azure
+- `variables.tf` — Variáveis do projeto (região, nome, ambiente, etc)
+- `resources.tf` — Criação de grupos de recursos, Storage Account e Cognitive Services
+- `rbac.tf` — **Atribuições de roles RBAC** (permissões para acessar recursos)
+- `outputs.tf` — Saídas (credenciais, endpoints)
 
 ### Pré-requisitos adicionais
 
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) `>= 1.9`
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) configurado
-- Uma credencial AWS **própria** (do operador, diferente da que vai para o `.env`) com
-  permissão para criar recursos IAM, S3, Budgets e consultar `sts:GetCallerIdentity`
+- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) configurado
+- Uma conta Azure **ativa** com acesso para criar grupos de recursos, contas de storage
+  e serviços cognitivos
+- Permissão de **Owner** ou **Contributor** na subscription (necessário para criar role assignments)
+
+### Autenticação no Azure
+
+A autenticação é feita via `az login` (seu usuário/conta):
+
+```bash
+az login
+# Abre navegador para autenticação. Após login, retorna com sucesso
+```
+
+O Terraform usa automaticamente as credenciais do `az login` para provisionar recursos.
 
 ### Provisionando a infraestrutura
 
@@ -149,54 +167,65 @@ Toda a infraestrutura é provisionada via Terraform, na região **`us-east-1`**,
 cd terraform
 terraform init
 cp terraform.tfvars.example terraform.tfvars
-# edite terraform.tfvars e defina budget_alert_email (e demais valores, se quiser mudar os defaults)
+# edite terraform.tfvars conforme necessário
 terraform plan -out=tfplan
 terraform apply tfplan
 terraform output
 ```
 
-O `apply` cria: um bucket S3 (privado, criptografado, com expiração automática de
-objetos), um IAM user dedicado (`monitoramento-medico-app` por padrão) com uma policy de
-permissões mínimas (apenas as ações necessárias de Transcribe, Comprehend e do bucket
-S3) e um AWS Budget mensal com alertas por e-mail em 80% do gasto real e 100% do gasto
-previsto.
+O `apply` cria:
+- **Grupo de Recursos** — contêiner para organizar todos os recursos
+- **Storage Account** — conta de armazenamento com container privado para áudio
+- **Speech Service** (F0) — serviço de transcrição de áudio
+- **Language Service** (F0) — serviço de análise de sentimento
+- **RBAC Role Assignments** — permissões para o usuário atual acessar os recursos
 
-O Terraform **não** cria a access key do IAM user — isso evitaria expor a secret no
-state. Gere a key manualmente após o apply:
+### Obtendo as credenciais
+
+Após `terraform apply`, extraia as credenciais:
 
 ```bash
-aws iam create-access-key --user-name monitoramento-medico-app
+AZURE_SPEECH_KEY=$(terraform output -raw speech_key)
+AZURE_LANGUAGE_KEY=$(terraform output -raw language_key)
+AZURE_STORAGE_CONNECTION_STRING=$(terraform output -raw storage_connection_string)
 ```
 
-Guarde o `AccessKeyId` e o `SecretAccessKey` retornados (não são recuperáveis depois; se
-perder, é necessário rotacionar a key) e cole-os no `.env` do projeto junto com
-`AWS_REGION=us-east-1` e o `s3_bucket_name` obtido em `terraform output`.
+Cole no seu `.env`:
+
+```
+AZURE_SPEECH_KEY=<value>
+AZURE_LANGUAGE_KEY=<value>
+AZURE_STORAGE_CONNECTION_STRING=<value>
+AZURE_LANGUAGE_ENDPOINT=$(terraform output -raw language_endpoint)
+```
 
 ### Destruindo a infraestrutura
 
-Como o projeto está em fase de estudo/PoC, destrua os recursos quando não estiverem em
-uso para evitar custos:
+Como o projeto está em fase de estudo/PoC e Azure oferece tier gratuita F0 sem custos,
+você pode manter os recursos provisionados. Para destruir quando necessário:
 
 ```bash
 cd terraform
 terraform destroy
 ```
 
-### O que esta infraestrutura NÃO cobre
+### Para CI/CD (Integração Contínua)
 
-Ficam para uma fase de código posterior, fora do escopo do Terraform:
+Se quiser usar um **Service Principal** em pipelines CI/CD (GitHub Actions, Azure DevOps),
+descomente a seção em `terraform/rbac.tf` e adicione as variáveis correspondentes.
 
-- Scripts Python de smoke test (transcrição de áudio curto pt-BR e análise de
-  sentimento de frase em `pt`, ambos esperando HTTP 200).
-- Retry exponencial para HTTP 429 (throttling) e mensagens claras para 401/403.
-- Detecção de anomalias — decisão tomada independente de cloud: será implementada como
-  código próprio do projeto, não como um serviço gerenciado (a Azure aposentou o AI
-  Anomaly Detector em 01/10/2026, então o projeto nunca dependeu dele).
+### Benefícios da migração para Azure
+
+- **Tier gratuita**: Azure Speech e Language têm quotas mensais gratuitas (F0) sem custo
+- **RBAC integrado**: Permissões gerenciadas automaticamente via Terraform
+- **Sem credenciais manuais**: Usa autenticação nativa do `az login`
+- **Infraestrutura segura**: Storage account privado, HTTPS obrigatório
+- **Rede**: Melhor latência em regiões específicas (eastus)
 
 ## API (FastAPI)
 
-API local (sem deploy na AWS por ora) que expõe os fluxos de Amazon Transcribe e
-Amazon Comprehend para teste manual e automatizado, apontando para os recursos AWS
+API local (sem deploy em Azure por ora) que expõe os fluxos de Azure Speech e
+Azure Language para teste manual e automatizado, apontando para os recursos Azure
 reais provisionados em [`terraform/`](terraform/).
 
 ### Rodando a API
@@ -212,10 +241,10 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| `GET` | `/health` | Verifica se o servidor está no ar (não chama AWS). |
-| `POST` | `/transcription` | Recebe um áudio (`multipart/form-data`, campo `audio_file`), sobe para o S3 e inicia um job assíncrono no Amazon Transcribe (`pt-BR`). |
+| `GET` | `/health` | Verifica se o servidor está no ar (não chama Azure). |
+| `POST` | `/transcription` | Recebe um áudio (`multipart/form-data`, campo `audio_file`), sobe para Azure Blob Storage e inicia um job assíncrono para transcrição (`pt-BR`). |
 | `GET` | `/transcription/{job_name}` | Consulta o status/resultado de um job de transcrição. |
-| `POST` | `/sentiment` | Recebe `{"text": "...", "language_code": "pt"}` e retorna o sentimento via Amazon Comprehend. |
+| `POST` | `/sentiment` | Recebe `{"text": "...", "language_code": "pt"}` e retorna o sentimento via Azure Language Service. |
 
 Exemplos com `curl`:
 
@@ -232,13 +261,12 @@ curl http://127.0.0.1:8000/transcription/<job_name>
 
 ### Tratamento de erros (429 / 401 / 403)
 
-Os clientes boto3 usam retry adaptativo nativo do `botocore`
-(`Config(retries={"max_attempts": 5, "mode": "adaptive"})`), que já faz backoff
-exponencial com jitter para throttling (`ThrottlingException`/429) antes de qualquer
-erro chegar na API. Erros que sobram são traduzidos em respostas claras
-(`app/errors.py`): **429** (throttling persistente), **401** (credenciais AWS
-inválidas — revise `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` no `.env`) e **403**
-(sem permissão — revise a policy em `terraform/iam.tf`).
+Os clientes Azure SDK incluem mecanismos de retry nativos que lidam com throttling 
+(429) automaticamente. Erros que sobram são traduzidos em respostas claras
+(`app/errors.py`): **429** (throttling persistente), **401** (credenciais Azure
+inválidas — revise `AZURE_SPEECH_KEY`, `AZURE_LANGUAGE_KEY`, 
+`AZURE_STORAGE_CONNECTION_STRING` no `.env`) e **403** (sem permissão — verifique
+as permissões RBAC no Azure IAM).
 
 ### Smoke tests automatizados
 
@@ -246,13 +274,12 @@ inválidas — revise `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` no `.env`) e *
 uv run pytest tests/test_smoke.py -v
 ```
 
-Os testes chamam a API de verdade contra a AWS real (sem mocks), usando as
+Os testes chamam a API de verdade contra o Azure real (sem mocks), usando as
 credenciais do `.env`. Para o teste de transcrição, coloque um áudio curto pt-BR em
 `tests/fixtures/sample_pt_br.wav` (veja
 [`tests/fixtures/README.md`](tests/fixtures/README.md)) — se ausente, esse teste é
-pulado automaticamente. Se as variáveis `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-`AWS_REGION` ou `AWS_S3_BUCKET_NAME` não estiverem configuradas, todos os testes são
-pulados com uma mensagem explicando o motivo.
+pulado automaticamente. Se as variáveis Azure não estiverem configuradas, todos os 
+testes são pulados com uma mensagem explicando o motivo.
 
 ## Demo ponta a ponta
 

@@ -239,3 +239,6 @@ terraform/*_override.tf
 terraform/*_override.tf.json
 .terraformrc
 terraform.rc
+uv.lock
+terraform/.terraform.lock.hcl
+uv.lock

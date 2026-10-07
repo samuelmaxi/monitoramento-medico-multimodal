@@ -1,8 +1,7 @@
-aws_region               = "us-east-1"
-project_name              = "monitoramento-medico-multimodal"
-environment               = "dev"
-iam_user_name             = "monitoramento-medico-app"
-enable_bucket_versioning  = false
-object_expiration_days    = 30
-budget_limit_usd          = 5
-budget_alert_email        = "seu-email@exemplo.com"
+azure_region           = "eastus"
+project_name           = "monitoramento-medico-multimodal"
+environment            = "dev"
+storage_account_name   = "medicalmonitoringdev"
+container_name         = "audio-transcripts"
+blob_retention_days    = 30
+alert_email            = "seu-email@exemplo.com"

@@ -1,38 +1,37 @@
-from botocore.exceptions import ClientError
+from azure.core.exceptions import AzureError, ClientAuthenticationError
 from fastapi import HTTPException
 
-_THROTTLING_CODES = {"ThrottlingException", "TooManyRequestsException"}
-_UNAUTHORIZED_CODES = {"UnrecognizedClientException", "InvalidSignatureException"}
-_FORBIDDEN_CODES = {"AccessDeniedException"}
 
+def translate_client_error(exc: AzureError) -> HTTPException:
+    """Translate Azure service errors to HTTP exceptions"""
+    error_code = getattr(exc, "error_code", None) or "UnknownError"
+    message = str(exc)
 
-def translate_client_error(exc: ClientError) -> HTTPException:
-    error = exc.response.get("Error", {})
-    code = error.get("Code", "UnknownError")
-    message = error.get("Message", str(exc))
-
-    if code in _THROTTLING_CODES:
-        return HTTPException(
-            status_code=429,
-            detail=(
-                "AWS está limitando as requisições (throttling); "
-                "tente novamente em alguns instantes."
-            ),
-        )
-    if code in _UNAUTHORIZED_CODES:
+    if isinstance(exc, ClientAuthenticationError):
         return HTTPException(
             status_code=401,
             detail=(
-                "Credenciais AWS inválidas ou expiradas. Verifique "
-                "AWS_ACCESS_KEY_ID e AWS_SECRET_ACCESS_KEY no .env."
+                "Credenciais Azure inválidas ou expiradas. Verifique "
+                "AZURE_SPEECH_KEY, AZURE_LANGUAGE_KEY e AZURE_STORAGE_CONNECTION_STRING no .env."
             ),
         )
-    if code in _FORBIDDEN_CODES:
+
+    if "ThrottlingException" in error_code or "429" in message or "rate" in message.lower():
+        return HTTPException(
+            status_code=429,
+            detail=(
+                "Azure está limitando as requisições (throttling); "
+                "tente novamente em alguns instantes."
+            ),
+        )
+
+    if "Forbidden" in error_code or "403" in message:
         return HTTPException(
             status_code=403,
             detail=(
-                "Credenciais AWS válidas, mas sem permissão para esta ação. "
-                "Verifique a IAM policy anexada em terraform/iam.tf."
+                "Credenciais Azure válidas, mas sem permissão para esta ação. "
+                "Verifique as permissões no Azure IAM/RBAC."
             ),
         )
-    return HTTPException(status_code=502, detail=f"Erro da AWS ({code}): {message}")
+
+    return HTTPException(status_code=502, detail=f"Erro do Azure ({error_code}): {message}")
