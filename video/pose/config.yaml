@@ -1,0 +1,75 @@
+# Configuração da extração de pose (US06). Caminhos relativos são resolvidos a
+# partir do diretório onde o comando é executado (a raiz do repositório).
+
+model:
+  # BODY_25 ou COCO. Os arquivos vêm de scripts/download_openpose_models.sh.
+  name: BODY_25
+  prototxt: models/openpose/body_25/pose_deploy.prototxt
+  weights: models/openpose/body_25/pose_iter_584000.caffemodel
+  # Para COCO:
+  # name: COCO
+  # prototxt: models/openpose/coco/pose_deploy_linevec.prototxt
+  # weights: models/openpose/coco/pose_iter_440000.caffemodel
+
+  # Altura de entrada da rede, em pixels (múltiplo de 16). A largura acompanha
+  # a proporção do vídeo. 368 é o padrão do OpenPose; valores menores aceleram.
+  input_height: 368
+  # auto: CUDA se o OpenCV tiver suporte e houver GPU, senão CPU. Ou: cuda, cpu.
+  backend: auto
+  # Na GPU, usar FP16 (mais rápido, precisão um pouco menor).
+  cuda_fp16: false
+
+sampling:
+  # Quadros por segundo processados. Se for maior que o fps do vídeo, todos os
+  # quadros são usados.
+  target_fps: 10
+  # Limite de quadros processados por vídeo (null = sem limite). Útil em testes.
+  max_frames: null
+
+keypoints:
+  # Keypoint com confiança abaixo deste valor vira null no JSON.
+  conf_threshold: 0.3
+  # Um quadro tem "esqueleto detectado" com pelo menos este número de keypoints válidos.
+  min_valid_keypoints: 8
+
+# Parâmetros do pós-processamento do OpenPose (picos dos mapas de calor e
+# agrupamento por Part Affinity Fields). Os valores seguem o OpenPose original.
+postprocess:
+  # Valor mínimo no mapa de calor para considerar um pico candidato.
+  peak_threshold: 0.05
+  # Pontos amostrados ao longo de cada segmento candidato no PAF.
+  paf_samples: 10
+  # Alinhamento mínimo com o PAF em cada ponto amostrado.
+  paf_score_threshold: 0.05
+  # Fração mínima dos pontos amostrados que precisam passar no limiar acima.
+  paf_min_inlier_ratio: 0.8
+
+input:
+  extensions: [.mp4, .avi, .mov, .mkv]
+  # Arquivos cujo caminho contém algum destes trechos (sem diferenciar
+  # maiúsculas) são ignorados. "mask" exclui os vídeos mascarados do FallVision.
+  exclude_substrings: [mask]
+
+output:
+  dir: outputs/pose
+  summary_file: outputs/pose/summary.csv
+  figures_dir: outputs/pose/figures
+
+datasets:
+  rehab24:
+    videos_dir: data/rehab24/videos
+    segmentation_csv: data/rehab24/Segmentation.csv
+    joints_names: data/rehab24/joints_names.txt
+    # Separador do Segmentation.csv.
+    csv_separator: ";"
+  fallvision:
+    root: data/fallvision
+
+visualization:
+  # Quadros desenhados por exemplo (distribuídos do início ao fim do trecho).
+  frames_per_example: 4
+  # Largura de cada quadro no mosaico salvo, em pixels.
+  tile_width: 480
+  # Raio dos keypoints e espessura dos segmentos, relativos à altura do quadro.
+  point_radius_ratio: 0.008
+  line_thickness_ratio: 0.005

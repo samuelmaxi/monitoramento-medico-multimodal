@@ -239,3 +239,8 @@ terraform/*_override.tf
 terraform/*_override.tf.json
 .terraformrc
 terraform.rc
+# Análise postural (US06): datasets, pesos do OpenPose e saídas geradas
+/data/
+/models/
+/outputs/
+*.caffemodel
