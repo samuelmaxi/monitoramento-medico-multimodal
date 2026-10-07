@@ -1,0 +1,23 @@
+{
+  "Name": "TC4 Pipeline Multimodal (mínimo)",
+  "IsCustom": true,
+  "Description": "Só o necessário para o pipeline: transcrição no Azure AI Speech, Text Analytics for health e sentimento no Azure AI Language, e envio de e-mail pelo Azure Communication Services. Atribuir no escopo do grupo de recursos rg-tc4-multimodal.",
+  "Actions": [
+    "Microsoft.CognitiveServices/accounts/read",
+    "Microsoft.Communication/CommunicationServices/Read",
+    "Microsoft.Communication/CommunicationServices/Write",
+    "Microsoft.Communication/EmailServices/write"
+  ],
+  "NotActions": [],
+  "DataActions": [
+    "Microsoft.CognitiveServices/accounts/SpeechServices/*",
+    "Microsoft.CognitiveServices/accounts/Language/analyze-text/action",
+    "Microsoft.CognitiveServices/accounts/Language/analyze-text/jobs/action",
+    "Microsoft.CognitiveServices/accounts/Language/*/read",
+    "Microsoft.CognitiveServices/accounts/TextAnalytics/*"
+  ],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/ID-DA-ASSINATURA/resourceGroups/rg-tc4-multimodal"
+  ]
+}

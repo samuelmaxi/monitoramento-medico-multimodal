@@ -15,7 +15,7 @@ Formato único de todo achado emitido pelos módulos de vídeo, áudio, texto, s
 | Campo               | Tipo               | Obrigatório                      | Regra                                                                                                                          |
 | ------------------- | ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `schema_version`    | `"1.0.0"`          | sim (preenchido automaticamente) | Versão do contrato                                                                                                             |
-| `event_id`          | UUID               | sim (`criar()` gera)             | Chave de idempotência (deduplicação no SQS e nos alertas)                                                                      |
+| `event_id`          | UUID               | sim (`criar()` gera)             | Chave de idempotência (deduplicação nos alertas e, em produção, `MessageId` no Service Bus)                                     |
 | `patient_id`        | string             | sim                              | Pseudônimo `pt_<24 hex>` gerado por `pseudonimizar_paciente()`. IDs crus são recusados                                         |
 | `modality`          | enum               | sim                              | `video`, `audio`, `texto`, `sinais_vitais`, `prescricoes`, `movimentacao`, `fusao`                                             |
 | `event_type`        | string             | sim                              | Precisa estar no catálogo **da modalidade** (tabela abaixo)                                                                    |
@@ -40,8 +40,8 @@ Campos fora dessa lista são recusados (`extra = forbid`). O objetivo é que nen
 | `summary`    | Obrigatório. Frase legível em pt-BR (3 a 500 caracteres). É o texto que chega à equipe médica                                                                                                                                                                                                     |
 | `features`   | Valores observados que levaram à decisão, ex. `{"spo2_pct": 92, "news2_total": 6}`. Aceita número, texto (até 200 caracteres), booleano ou nulo                                                                                                                                                   |
 | `thresholds` | Limiares aplicados, ex. `{"news2_emergencia_total": 7}`                                                                                                                                                                                                                                           |
-| `models`     | Modelos e serviços de base, ex. `{"openpose": "BODY_25", "amazon-transcribe": "pt-BR"}`                                                                                                                                                                                                           |
-| `artifacts`  | Até 20 referências com `kind`, `media_type` e `start_ms`/`end_ms` relativos à mídia. `uri` é um caminho relativo à raiz do repositório (`saida/video/fisio-003/frame.jpg`) ou uma URI `s3://`/`https://`. Caminhos absolutos são recusados, porque só funcionam na máquina de quem gerou o evento |
+| `models`     | Modelos e serviços de base, ex. `{"openpose": "BODY_25", "azure-speech": "pt-BR"}`                                                                                                                                                                                                                   |
+| `artifacts`  | Até 20 referências com `kind`, `media_type` e `start_ms`/`end_ms` relativos à mídia. `uri` é um caminho relativo à raiz do repositório (`saida/video/fisio-003/frame.jpg`) ou uma URI `https://` (ex. Azure Blob Storage; `s3://` ainda é aceito por compatibilidade). Caminhos absolutos são recusados, porque só funcionam na máquina de quem gerou o evento |
 
 O contrato bloqueia padrões de **CPF e e-mail** em `summary` e nas `features` de texto. É um guarda-corpo, não substitui revisão.
 
@@ -51,7 +51,7 @@ O contrato bloqueia padrões de **CPF e e-mail** em `summary` e nas `features` d
 - `sem_achados` exige `severity = info`.
 - `modality = fusao` exige ao menos um `related_event_ids`.
 - `timestamp` precisa estar dentro de `window`, quando houver janela.
-- O evento serializado tem no máximo **256 KB**. Evidências maiores ficam em arquivo e entram como caminho. O mesmo limite vale para filas e barramentos gerenciados, então o contrato não muda se o projeto migrar para a nuvem. O JSON Schema não consegue expressar essa regra; só o pydantic a verifica.
+- O evento serializado tem no máximo **256 KB**. Evidências maiores ficam em arquivo e entram como caminho. É o mesmo limite de mensagem do Azure Service Bus Standard, então o contrato não muda se o barramento for para a nuvem. O JSON Schema não consegue expressar essa regra; só o pydantic a verifica.
 
 ## Catálogo de `event_type`
 
