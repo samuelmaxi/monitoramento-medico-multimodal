@@ -1,0 +1,18 @@
+{
+  "video": "config/../conteudos/videos/B_D_0016.mp4",
+  "quadros_lidos": 360,
+  "deteccoes_total": 922,
+  "transicoes": 6,
+  "eventos": 6,
+  "entradas": 1,
+  "saidas": 5,
+  "fps": 120.0,
+  "resolucao": "1920x1080",
+  "classes_detectadas": {
+    "bed": 326,
+    "chair": 357,
+    "person": 239
+  },
+  "duracao_s": 17.818,
+  "video_anotado": null
+}

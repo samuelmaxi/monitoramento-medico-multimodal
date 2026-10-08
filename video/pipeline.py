@@ -251,6 +251,13 @@ class PipelineAreaCritica:
             resumo.eventos,
             resumo.duracao_s,
         )
+        if not eventos:
+            self.tradutor.emitir_sem_achados(
+                self.emissor,
+                resumo=resumo,
+                contexto=contexto_base,
+                detectado_em=inicio,
+            )
         return ResultadoPipeline(
             eventos=eventos,
             transicoes=transicoes,

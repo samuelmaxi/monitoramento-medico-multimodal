@@ -135,7 +135,15 @@ critérios de entrada/saída e destino JSONL compatível com o contrato US04. O 
 usa `B_D_0016.mp4`: uma pessoa cruza a área crítica `lateral_leito` (faixa à esquerda
 do leito), gerando `entrada_area_critica` e `saida_area_critica`. Para processar o
 vídeo configurado por inteiro, omita `--max-frames`. Os pesos locais são obtidos
-pelo Ultralytics e podem ser substituídos por um checkpoint próprio.
+pelo Ultralytics e podem ser substituídos por um checkpoint próprio. Cada item do
+*Definition of Done* da US07 é rastreado a código/config/status em
+[`docs/relatorio_us07_dod.md`](docs/relatorio_us07_dod.md).
+
+As áreas críticas (ROIs) são configuráveis **por vídeo/câmera**: cada câmera tem o
+seu arquivo de configuração com `fonte.id` próprio e polígonos calibrados para o
+seu enquadramento. `config/leito_uti_07.json` serve de modelo para uma segunda
+câmera (mesmo formato do exemplo, `source_id = camera_uti_07`). Para processar com
+outra câmera, passe o caminho do arquivo no lugar do exemplo.
 
 Também é possível processar um vídeo específico ou todos os vídeos de uma pasta:
 
@@ -151,10 +159,15 @@ uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
 
 Nesses dois modos os eventos vão para `eventos_<nome_do_video>.jsonl` no diretório
 de saída da configuração (`saida/video/`), recriado a cada execução (execução
-reproduzível) e só quando o vídeo gera eventos. Em lote o YOLO é carregado uma
+reproduzível). Todo vídeo processado gera seu JSONL — quando não há evento de
+entrada/saída, um registro `sem_achados` (severidade `info`) documenta o processo
+(quadros lidos, detecções, duração) e que não houve queda ou saída — para que a
+ausência de detecções também fique registrada. Um vídeo com
+falha não gera JSONL e é registrado no relatório. Em lote o YOLO é carregado uma
 única vez, o tracker é reiniciado entre vídeos e um vídeo com erro é pulado (exit
-code `1` ao final); o relatório consolidado é impresso no console. Para uma fumaça
-rápida da pasta, use `--max-frames`.
+code `1` ao final); o relatório consolidado é impresso no console e gravado em
+`saida/video/relatorio_us07.json` (troque com `--saida-relatorio caminho.json`).
+Para uma fumaça rápida da pasta, use `--max-frames`.
 
 A execução registrada com `yolov8n.pt` usa pesos COCO: identifica `person`, mas
 não conhece rótulos clínicos como instrumento cirúrgico. Esses rótulos exigem

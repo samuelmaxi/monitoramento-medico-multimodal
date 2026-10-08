@@ -16,6 +16,13 @@ arquivo (stem) e os eventos vão para ``eventos_<stem>.jsonl`` no diretório de
 saída da configuração. No modo lote o detector YOLO é carregado uma única vez
 e o tracker é reiniciado entre vídeos; vídeos com falha são pulados e o exit
 code fica 1 ao final.
+
+Todo vídeo processado gera seu JSONL — quando não há evento de entrada/saída,
+o pipeline grava um registro ``sem_achados`` (severidade ``info``) com o resumo
+do processo (quadros lidos, detecções, duração) — e o relatório consolidado é
+gravado em ``saida/video/relatorio_us07.json`` (troque com ``--saida-relatorio``).
+No modo config única o JSONL configurado é recriado a cada execução (execuções
+reproduzíveis).
 """
 
 from __future__ import annotations
@@ -62,6 +69,14 @@ def main(argv: list[str] | None = None) -> int:
         help="limite opcional por vídeo (fumaça/validação)",
     )
     parser.add_argument(
+        "--saida-relatorio",
+        type=Path,
+        help=(
+            "onde gravar o relatório consolidado (default: "
+            "saida/video/relatorio_us07.json)"
+        ),
+    )
+    parser.add_argument(
         "--log-level", default="INFO", choices=("DEBUG", "INFO", "WARNING", "ERROR")
     )
     args = parser.parse_args(argv)
@@ -79,6 +94,17 @@ def main(argv: list[str] | None = None) -> int:
 
     por_video = sobrescreve_fonte
     dir_saida = _dir_saida(config)
+    relatorio = (
+        Path(args.saida_relatorio).resolve()
+        if args.saida_relatorio is not None
+        else dir_saida / "relatorio_us07.json"
+    )
+    jsonl_config = None
+    if not por_video:
+        jsonl_config = _caminho_jsonl_config(config)
+        if jsonl_config is not None:
+            jsonl_config.parent.mkdir(parents=True, exist_ok=True)
+            jsonl_config.unlink(missing_ok=True)
     detector = DetectorYolo(config.detector)
     resumos: list[dict[str, object]] = []
     falhas: list[dict[str, str]] = []
@@ -114,6 +140,9 @@ def main(argv: list[str] | None = None) -> int:
             if gravador is not None:
                 gravador.fechar()
 
+        if por_video:
+            jsonl.touch(exist_ok=True)
+
         resumo = resultado.resumo.para_dict()
         log.info(
             "%s: %d quadros, %d eventos (%d entrada/saída)",
@@ -126,18 +155,23 @@ def main(argv: list[str] | None = None) -> int:
 
     if not por_video:
         if not resumos:
+            _gravar_relatorio(relatorio, {"mensagem": "nenhum vídeo processado"})
             return 1
+        if jsonl_config is not None:
+            jsonl_config.touch(exist_ok=True)
+        _gravar_relatorio(relatorio, resumos[0])
         print(json.dumps(resumos[0], ensure_ascii=False, indent=2))
         return 0
 
-    relatorio = {
+    relatorio_dados: dict[str, object] = {
         "videos_processados": len(resumos),
         "videos_com_falha": len(falhas),
         "eventos_totais": sum(int(r["eventos"]) for r in resumos),
         "resumos": resumos,
         "falhas": falhas,
     }
-    print(json.dumps(relatorio, ensure_ascii=False, indent=2))
+    _gravar_relatorio(relatorio, relatorio_dados)
+    print(json.dumps(relatorio_dados, ensure_ascii=False, indent=2))
     return 1 if falhas else 0
 
 
@@ -177,6 +211,19 @@ def _dir_saida(config: Configuracao) -> Path:
     if jsonl is None:
         return Path("saida/video").resolve()
     return jsonl.parent.resolve()
+
+
+def _caminho_jsonl_config(config: Configuracao) -> Path | None:
+    """JSONL da configuração no modo 'vídeo da config', se a emissão estiver ligada."""
+    return config.caminho_resolvido(config.evento.caminho_jsonl)
+
+
+def _gravar_relatorio(caminho: Path, dados: dict[str, object]) -> None:
+    """Persiste o relatório final em arquivo (sempre gerado, mesmo sem eventos)."""
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    caminho.write_text(
+        json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def _caminho_video_anotado(

@@ -31,18 +31,23 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from contratos import (
+    SEM_ACHADOS,
     Artefato,
     Contexto,
     Emissor,
     EventoAchado,
     Evidencia,
+    Janela,
     Modalidade,
     Severidade,
     agora_utc,
 )
+
+if TYPE_CHECKING:
+    from .pipeline import ResumoExecucao
 
 from .config import VERSAO_MODULO, Configuracao
 from .modelos import MetadadosVideo
@@ -231,6 +236,79 @@ class TradutorEventos:
             transicao_area.id_area,
             transicao_area.deteccao.class_name,
             transicao_area.deteccao.tempo_s,
+        )
+        return evento
+
+    def montar_sem_achados(
+        self,
+        *,
+        resumo: ResumoExecucao,
+        contexto: ContextoTraducao,
+        detectado_em: datetime | None = None,
+    ) -> EventoAchado:
+        """Monta o achado ``sem_achados`` (info) que documenta o processo."""
+        instante = self.instante_do_quadro(0.0, detectado_em=detectado_em)
+        largura, altura = resumo.resolucao
+        duracao_media_s = max(resumo.quadros_lidos - 1, 0) / max(resumo.fps, 1e-9)
+        classes = ", ".join(
+            f"{classe}: {quantidade}"
+            for classe, quantidade in sorted(resumo.classes_detectadas.items())
+        )
+        features: dict[str, Any] = {
+            "quadros_lidos": resumo.quadros_lidos,
+            "deteccoes_total": resumo.deteccoes_total,
+            "transicoes": resumo.transicoes,
+            "entradas": resumo.entradas,
+            "saidas": resumo.saidas,
+            "fps": round(resumo.fps, 2),
+            "resolucao": f"{largura}x{altura}",
+            "duracao_analise_s": round(resumo.duracao_s, 3),
+            "classes_detectadas": classes,
+        }
+        evidencia = Evidencia(
+            summary=(
+                f"Vídeo {self.config.fonte.id} analisado sem quedas ou saídas: "
+                f"{resumo.quadros_lidos} quadros e {resumo.deteccoes_total} "
+                "detecções, nenhuma transição de área crítica"
+            ),
+            features=features,
+            thresholds=contexto.thresholds or {},
+            models={"yolov8": contexto.descricao_modelo},
+            artifacts=[contexto.artefato] if contexto.artefato else [],
+        )
+        return EventoAchado.criar(
+            patient_id=self.config.fonte.patient_id,
+            modality=Modalidade.VIDEO,
+            event_type=SEM_ACHADOS,
+            timestamp=instante,
+            score=0.0,
+            severity=Severidade.INFO,
+            evidence=evidencia,
+            window=Janela(
+                start=instante,
+                end=instante + timedelta(seconds=duracao_media_s),
+            ),
+            model_version=contexto.model_version,
+            context=contexto.contexto,
+        )
+
+    def emitir_sem_achados(
+        self,
+        emissor: Emissor,
+        *,
+        resumo: ResumoExecucao,
+        contexto: ContextoTraducao,
+        detectado_em: datetime | None = None,
+    ) -> EventoAchado:
+        """Publica o ``sem_achados`` quando o vídeo não teve transições."""
+        evento = self.montar_sem_achados(
+            resumo=resumo, contexto=contexto, detectado_em=detectado_em
+        )
+        emissor.emitir(evento)
+        log.info(
+            "US07 sem_achados: %d quadros, %d detecções, sem transições",
+            resumo.quadros_lidos,
+            resumo.deteccoes_total,
         )
         return evento
 
