@@ -250,6 +250,17 @@ class DetectorYolo:
         nome = self.config.pesos.removesuffix(".pt")
         return f"{nome}@{self.versao}"
 
+    def reiniciar_rastreamento(self) -> None:
+        """Descarta o estado do tracker entre vídeos.
+
+        O ``track(..., persist=True)`` mantém os tracks internamente no
+        predictor da Ultralytics; sem esse reset, o último estado de um vídeo
+        contaminaria o primeiro quadro do próximo num lote.
+        """
+        predictor = getattr(self._modelo, "predictor", None)
+        if predictor is not None and hasattr(predictor, "trackers"):
+            del predictor.trackers
+
     def detectar(
         self, imagem: Any, *, indice_quadro: int, tempo_s: float
     ) -> list[Deteccao]:
@@ -280,8 +291,8 @@ class DetectorYolo:
             argumentos["device"] = self.config.dispositivo
         if self.config.max_detecoes:
             argumentos["max_det"] = self.config.max_detecoes
-        if self.config.meio and self.config.dispositivo not in {"cpu", "mps"}:
-            argumentos["half"] = True
+        if self.config.meio and _e_cuda(self.config.dispositivo):
+            argumentos["quantize"] = 16
 
         if self.rastreiar:
             return self._modelo.track(
@@ -366,6 +377,19 @@ def _para_lista(valor: Any) -> list[Any] | None:
     if callable(tolist):
         return tolist()
     return list(valor)
+
+
+def _e_cuda(dispositivo: str | None) -> bool:
+    """True quando o dispositivo é explicitamente uma CUDA (GPU).
+
+    ``None`` (auto da Ultralytics) e ``cpu``/``mps`` não são CUDA; ``cuda``,
+    ``cuda:0`` e índices numéricos como ``"0"`` são. Serve para só pedir FP16
+    quando faz sentido, sem ativar o caminho deprecado da Ultralytics.
+    """
+    if not dispositivo:
+        return False
+    valor = str(dispositivo).strip().lower().split(":", 1)[0]
+    return valor == "cuda" or valor.isdigit()
 
 
 class DetectorFalso:

@@ -72,6 +72,21 @@ def test_classe_desconhecida_para_o_peso_e_recusada():
         )
 
 
+def test_reiniciar_rastreamento_descarta_trackers_do_predictor():
+    predictor = SimpleNamespace(trackers=[object()])
+    modelo = ModeloFalso(resultado())
+    modelo.predictor = predictor
+    detector = DetectorYolo(ConfiguracaoDetector(classes=("person",)), modelo=modelo)
+    detector.reiniciar_rastreamento()
+    assert not hasattr(predictor, "trackers")
+
+
+def test_reiniciar_rastreamento_e_seguro_sem_predictor():
+    modelo = ModeloFalso(resultado())
+    detector = DetectorYolo(ConfiguracaoDetector(classes=("person",)), modelo=modelo)
+    detector.reiniciar_rastreamento()  # não deve levantar
+
+
 def test_detectar_usa_limites_configurados_e_tracking_persistente():
     saida = resultado(caixas([[1, 2, 30, 40]], [0.8], [0], [2]))
     modelo = ModeloFalso(saida)
@@ -86,3 +101,24 @@ def test_detectar_usa_limites_configurados_e_tracking_persistente():
     assert modelo.argumentos["classes"] == [0]
     assert modelo.argumentos["persist"] is True
     assert "half" not in modelo.argumentos
+    assert "quantize" not in modelo.argumentos
+
+
+def test_detectar_usa_quantize_16_somente_em_gpu():
+    for dispositivo in ("cuda", "cuda:0", "0", "CUDA:1"):
+        config = ConfiguracaoDetector(classes=("person",), dispositivo=dispositivo)
+        modelo = ModeloFalso(resultado())
+        detector = DetectorYolo(config, modelo=modelo)
+        detector.detectar(object(), indice_quadro=0, tempo_s=0.0)
+        assert modelo.argumentos["quantize"] == 16
+        assert "half" not in modelo.argumentos
+
+
+def test_detectar_nao_usa_fp16_sem_gpu():
+    for dispositivo in (None, "cpu", "mps"):
+        config = ConfiguracaoDetector(classes=("person",), dispositivo=dispositivo)
+        modelo = ModeloFalso(resultado())
+        detector = DetectorYolo(config, modelo=modelo)
+        detector.detectar(object(), indice_quadro=0, tempo_s=0.0)
+        assert "quantize" not in modelo.argumentos
+        assert "half" not in modelo.argumentos

@@ -127,13 +127,34 @@ python scripts/get_content_script.py
 Execute a configuração de exemplo, com limite opcional de quadros para smoke test:
 
 ```bash
-uv run python scripts/rodar_us07_video.py config/exemplo_us07.json --max-frames 30
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json --max-frames 100
 ```
 
 A configuração define o vídeo, pesos YOLO, classes de interesse, polígono(s) ROI,
-critérios de entrada/saída e destino JSONL compatível com o contrato US04. Para
-processar o vídeo configurado por inteiro, omita `--max-frames`. Os pesos locais
-são obtidos pelo Ultralytics e podem ser substituídos por um checkpoint próprio.
+critérios de entrada/saída e destino JSONL compatível com o contrato US04. O exemplo
+usa `B_D_0016.mp4`: uma pessoa cruza a área crítica `lateral_leito` (faixa à esquerda
+do leito), gerando `entrada_area_critica` e `saida_area_critica`. Para processar o
+vídeo configurado por inteiro, omita `--max-frames`. Os pesos locais são obtidos
+pelo Ultralytics e podem ser substituídos por um checkpoint próprio.
+
+Também é possível processar um vídeo específico ou todos os vídeos de uma pasta:
+
+```bash
+# um vídeo específico (sobrescreve fonte.video; source_id = nome do arquivo)
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
+  --video conteudos/videos/B_D_0001.mp4
+
+# todos os vídeos (mp4/avi/mov/mkv) de uma pasta, um JSONL por vídeo
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
+  --videos-dir conteudos/videos
+```
+
+Nesses dois modos os eventos vão para `eventos_<nome_do_video>.jsonl` no diretório
+de saída da configuração (`saida/video/`), recriado a cada execução (execução
+reproduzível) e só quando o vídeo gera eventos. Em lote o YOLO é carregado uma
+única vez, o tracker é reiniciado entre vídeos e um vídeo com erro é pulado (exit
+code `1` ao final); o relatório consolidado é impresso no console. Para uma fumaça
+rápida da pasta, use `--max-frames`.
 
 A execução registrada com `yolov8n.pt` usa pesos COCO: identifica `person`, mas
 não conhece rótulos clínicos como instrumento cirúrgico. Esses rótulos exigem
