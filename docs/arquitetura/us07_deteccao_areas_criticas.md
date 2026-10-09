@@ -78,6 +78,25 @@ uv run python scripts/avaliar_us07.py datasets/areas/data.yaml \
 
 O script usa o validator Ultralytics e reporta `mAP@0.5`, `mAP@0.5:0.95`, precision e recall, junto dos pesos, versão do Ultralytics e caminho do conjunto. Não sintetiza métricas quando o dataset está ausente.
 
+### Braço sem fine-tuning: baseline COCO + validação qualitativa
+
+Até existir dataset anotado, o relatório registra como evidência o **baseline
+COCO** e a **validação qualitativa**, sem inventar métricas próprias:
+
+```bash
+uv run python scripts/avaliar_us07.py --baseline --output saida/video/metricas_baseline.json
+```
+
+- `metricas_coco_baseline()` (`video/metricas.py`) devolve os números **oficiais
+  do model card** do `yolov8n.pt` no COCO val2017. A página oficial publica apenas
+  `mAP@0.5:0.95 = 37,3`; `mAP@0.5`/Precision/Recall não são publicados e ficam
+  `null` com a referência do model card — **já que a fonte oficial não os lista,
+  o projeto não os estima** (medição exige ground truth, item 5 do DoD).
+- A seção `avaliacao` do `relatorio_us07.json` contém esse baseline, os vídeos
+  anotados da validação qualitativa (`GravadorVideo`, quando
+  `visualizacao.ativa`) e `quantitativa_em_ground_truth = null` até existir
+  avaliação real.
+
 ## Testes e limitações
 
 Os testes em `tests/video/` cobrem geometria, ROIs, estados, parsing do detector, leitor OpenCV, contrato, integração ponta a ponta com vídeo sintético, métricas (validator simulado) e CLI. Rode `uv run pytest tests/video -q` e `uv run ruff check video tests/video scripts/rodar_us07_video.py scripts/avaliar_us07.py`.

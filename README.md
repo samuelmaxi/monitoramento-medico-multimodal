@@ -124,66 +124,148 @@ python scripts/get_content_script.py
 
 ### US07 — detecção de objetos e áreas críticas em vídeo
 
-Execute a configuração de exemplo, com limite opcional de quadros para smoke test:
+O pipeline aplica `YOLOv8` (Ultralytics) a vídeos, avalia áreas críticas (ROIs) em
+formato de polígonos configuráveis por câmera e emite eventos `entrada_area_critica`
+e `saida_area_critica` no schema da US04. Os dados de saída são JSONL e relatórios
+compatíveis com a validação do projeto.
+
+#### 1. Preparação rápida
+
+```bash
+uv sync
+```
+
+Crie/edite o arquivo `.env` se for baixar vídeos via `scripts/get_content_script.py`.
+
+#### 2. Processar vídeo da configuração (padrão)
+
+O arquivo `config/exemplo_us07.json` define: vídeo, pesos `yolov8n.pt`, classes
+`["person","bed","chair","couch","bottle"]`, ROI `lateral_leito` (polígono),
+`conf=0.25`, `iou=0.5`, rastreamento `ByteTrack` e caminho para `eventos_us07.jsonl`.
+
+Para fazer um teste rápido:
 
 ```bash
 uv run python scripts/rodar_us07_video.py config/exemplo_us07.json --max-frames 100
 ```
 
-A configuração define o vídeo, pesos YOLO, classes de interesse, polígono(s) ROI,
-critérios de entrada/saída e destino JSONL compatível com o contrato US04. O exemplo
-usa `B_D_0016.mp4`: uma pessoa cruza a área crítica `lateral_leito` (faixa à esquerda
-do leito), gerando `entrada_area_critica` e `saida_area_critica`. Para processar o
-vídeo configurado por inteiro, omita `--max-frames`. Os pesos locais são obtidos
-pelo Ultralytics e podem ser substituídos por um checkpoint próprio. Cada item do
-*Definition of Done* da US07 é rastreado a código/config/status em
-[`docs/relatorio_us07_dod.md`](docs/relatorio_us07_dod.md).
-
-As áreas críticas (ROIs) são configuráveis **por vídeo/câmera**: cada câmera tem o
-seu arquivo de configuração com `fonte.id` próprio e polígonos calibrados para o
-seu enquadramento. `config/leito_uti_07.json` serve de modelo para uma segunda
-câmera (mesmo formato do exemplo, `source_id = camera_uti_07`). Para processar com
-outra câmera, passe o caminho do arquivo no lugar do exemplo.
-
-Também é possível processar um vídeo específico ou todos os vídeos de uma pasta:
+Para processar o vídeo por inteiro:
 
 ```bash
-# um vídeo específico (sobrescreve fonte.video; source_id = nome do arquivo)
-uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
-  --video conteudos/videos/B_D_0001.mp4
-
-# todos os vídeos (mp4/avi/mov/mkv) de uma pasta, um JSONL por vídeo
-uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
-  --videos-dir conteudos/videos
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json
 ```
 
-Nesses dois modos os eventos vão para `eventos_<nome_do_video>.jsonl` no diretório
-de saída da configuração (`saida/video/`), recriado a cada execução (execução
-reproduzível). Todo vídeo processado gera seu JSONL — quando não há evento de
-entrada/saída, um registro `sem_achados` (severidade `info`) documenta o processo
-(quadros lidos, detecções, duração) e que não houve queda ou saída — para que a
-ausência de detecções também fique registrada. Um vídeo com
-falha não gera JSONL e é registrado no relatório. Em lote o YOLO é carregado uma
-única vez, o tracker é reiniciado entre vídeos e um vídeo com erro é pulado (exit
-code `1` ao final); o relatório consolidado é impresso no console e gravado em
-`saida/video/relatorio_us07.json` (troque com `--saida-relatorio caminho.json`).
-Para uma fumaça rápida da pasta, use `--max-frames`.
+Esse modo gera:
 
-A execução registrada com `yolov8n.pt` usa pesos COCO: identifica `person`, mas
-não conhece rótulos clínicos como instrumento cirúrgico. Esses rótulos exigem
-um dataset especializado, anotado no formato YOLO. Para métricas quantitativas
-reprodutíveis (mAP@0.5, mAP@0.5:0.95, precisão e recall), forneça o `data.yaml`
-e o split anotado:
+- `saida/video/eventos_<stem>.jsonl` — eventos US04 do vídeo (recriado a cada execução).
+- `saida/video/relatorio_<stem>.json` — resumo único: quadros, detecções, classes, eventos e seção `avaliacao` (baseline COCO `mAP@0.5:0.95 = 0.373`, demais métricas `null` quando não publicadas).
+
+Exemplo de validação:
 
 ```bash
-uv run python scripts/avaliar_us07.py caminho/para/data.yaml \\
+python - <<'PY'
+import json
+
+r = json.load(open("saida/video/relatorio_B_D_0016.json"))
+print("vídeo:", r["video"])
+print("quadros:", r["quadros_lidos"], "| detecções:", r["deteccoes_total"])
+print("eventos:", r["eventos"], "(entrada/saída:", r["entradas"], "/", r["saidas"], ")")
+print("classes:", r["classes_detectadas"])
+print("avaliacao:", r["avaliacao"]["metodo"], "| mAP@0.5:0.95:", r["avaliacao"]["metricas"]["mAP@0.5:0.95"])
+PY
+```
+
+Caso não haja transições, o JSONL registra um único `sem_achados` (severidade `info`).
+
+#### 3. Processar um vídeo específico (dinâmico)
+
+Sobrescreve `fonte.video` e usa o nome do arquivo como `source_id`:
+
+```bash
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
+  --video conteudos/videos/B_D_0002.mp4
+```
+
+Cria:
+
+```text
+saida/video/eventos_B_D_0002.jsonl
+saida/video/relatorio_B_D_0002.json
+```
+
+#### 4. Processar todos os vídeos de uma pasta (lote)
+
+```bash
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
+  --videos-dir conteudos/videos \
+  --saida-relatorio saida/video/relatorio_todos.json
+```
+
+Cria:
+
+- `saida/video/eventos_<stem>.jsonl` para cada vídeo processado com sucesso
+- `saida/video/relatorio_<stem>.json` para cada vídeo (para inspeção por arquivo)
+- `saida/video/relatorio_todos.json` — relatório consolidado (`videos_processados`, `videos_com_falha`, `eventos_totais`, `resumos`, `falhas`, `avaliacao`)
+
+Ao usar `--max-frames` é ideal para validação rápida. Vídeos com falha não geram
+seu JSONL e ficam registrados em `falhas` (exit code `1`). O detector YOLO é
+carregado uma única vez e o `tracker` é reiniciado entre vídeos.
+
+#### 5. Parâmetros e configuração por câmera
+
+- **Classes:** `detector.classes` — justifica-se cobrir `person`, `bed`, `chair`, `couch`, `bottle`. Classes clínicas (instrumentos cirúrgicos, etc.) exigem dataset próprio + fine-tuning.
+- **Limiar:** `detector.confianca = 0.25` (padrão Ultralytics), `detector.iou = 0.5` (NMS, coerente com `mAP@0.5`).
+- **ROIs:** definidas em `areas[]` com `points` (polígono), `largura_ref`/`altura_ref` (resolução de referência), `area_minima`, `classe_filtro`. São **configuráveis por vídeo/câmera**: use `config/leito_uti_07.json` como modelo para outra câmera (muda `fonte.id`, `fonte.video`, `eventos.caminho_jsonl` e calibração dos pontos).
+- **Rastreamento:** `detector.rastrear = true`, `tracker = bytetrack.yaml` (ByteTrack) com `monitor.persistencia_quadros = 8`.
+
+#### 6. Baseline e métricas
+
+Sem dataset anotado, o relatório registra o **baseline COCO** oficial do `yolov8n.pt`:
+`mAP@0.5:0.95 = 0.373`; `mAP@0.5`, `precision` e `recall` ficam `null` porque não
+são publicados no model card (princípio: nunca fabricar métricas). Ao existir um
+dataset YOLO com `data.yaml`, use:
+
+```bash
+uv run python scripts/avaliar_us07.py caminho/para/data.yaml \
   --weights yolov8n.pt --split val --output saida/video/metricas.json
 ```
 
-Um vídeo de demonstração sem ground truth pode validar o fluxo e ser inspecionado
-qualitativamente, mas não produz mAP, precisão ou recall válidos.
+O comando `--baseline` também pode ser usado para obter o mesmo JSON:
 
-A especificação do fluxo, das ROIs e da avaliação da US07 está em
+```bash
+uv run python scripts/avaliar_us07.py --baseline --output saida/video/metricas_baseline.json
+```
+
+#### 7. Validação rápida dos artefatos
+
+Verificar eventos contra o schema US04:
+
+```bash
+uv run python - <<'PY'
+from contratos.validar import validar_arquivo
+
+validos, erros = validar_arquivo("saida/video/eventos_B_D_0002.jsonl")
+print("válidos:", len(validos), "| erros:", erros)
+PY
+```
+
+Conferir relatório por vídeo:
+
+```bash
+python - <<'PY'
+import json
+
+r = json.load(open("saida/video/relatorio_B_D_0002.json"))
+print(r.keys())
+print("mAP@0.5:0.95:", r["avaliacao"]["metricas"]["mAP@0.5:0.95"])
+PY
+```
+
+#### 8. Evidências e conformidade
+
+A rastreabilidade completa (itens 1–7 do DoD) está em
+[`docs/relatorio_us07_dod.md`](docs/relatorio_us07_dod.md). A arquitetura, ROIs,
+decisões e parâmetros estão em
 [`docs/arquitetura/us07_deteccao_areas_criticas.md`](docs/arquitetura/us07_deteccao_areas_criticas.md).
 
 ## Infraestrutura (Terraform)

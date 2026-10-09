@@ -235,6 +235,10 @@ def test_cli_grava_relatorio_em_arquivo(monkeypatch, tmp_path):
     assert dados["videos_processados"] == 1
     assert dados["videos_com_falha"] == 0
     assert "resumos" in dados
+    avaliacao = dados["avaliacao"]
+    assert avaliacao["metodo"] == "baseline_coco"
+    assert avaliacao["metricas"]["mAP@0.5:0.95"] == 0.373
+    assert avaliacao["quantitativa_em_ground_truth"] is None
 
 
 def test_cli_config_sem_eventos_grava_registro_sem_achados(monkeypatch, tmp_path, capsys):

@@ -222,6 +222,11 @@ __marimo__/
 # Pasta de conteudos
 /conteudos/
 
+# Dataset construído pela US07 (frames, labels e treinos gerados localmente)
+/dataset_us07/
+/anotavel/
+runs/
+
 # Fixtures de áudio de teste (binários, não commitados)
 tests/fixtures/*
 !tests/fixtures/README.md
@@ -241,3 +246,4 @@ terraform/*_override.tf.json
 terraform.rc
 .agents
 .opencode
+saida/video/*

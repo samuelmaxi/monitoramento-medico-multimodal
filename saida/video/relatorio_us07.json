@@ -1,18 +1,54 @@
 {
-  "video": "config/../conteudos/videos/B_D_0016.mp4",
-  "quadros_lidos": 360,
-  "deteccoes_total": 922,
-  "transicoes": 6,
-  "eventos": 6,
-  "entradas": 1,
-  "saidas": 5,
-  "fps": 120.0,
-  "resolucao": "1920x1080",
-  "classes_detectadas": {
-    "bed": 326,
-    "chair": 357,
-    "person": 239
-  },
-  "duracao_s": 17.818,
-  "video_anotado": null
+  "videos_processados": 2,
+  "videos_com_falha": 0,
+  "eventos_totais": 0,
+  "resumos": [
+    {
+      "video": "/tmp/mini_test/B_D_0001.mp4",
+      "quadros_lidos": 10,
+      "deteccoes_total": 7,
+      "transicoes": 0,
+      "eventos": 0,
+      "entradas": 0,
+      "saidas": 0,
+      "fps": 30.0,
+      "resolucao": "1920x1080",
+      "classes_detectadas": {
+        "bed": 7
+      },
+      "duracao_s": 1.708,
+      "video_anotado": null
+    },
+    {
+      "video": "/tmp/mini_test/B_D_0002.mp4",
+      "quadros_lidos": 10,
+      "deteccoes_total": 6,
+      "transicoes": 0,
+      "eventos": 0,
+      "entradas": 0,
+      "saidas": 0,
+      "fps": 30.0,
+      "resolucao": "1920x1080",
+      "classes_detectadas": {
+        "bed": 6
+      },
+      "duracao_s": 0.603,
+      "video_anotado": null
+    }
+  ],
+  "falhas": [],
+  "avaliacao": {
+    "metodo": "baseline_coco",
+    "metricas": {
+      "mAP@0.5": null,
+      "mAP@0.5:0.95": 0.373,
+      "precision": null,
+      "recall": null,
+      "pesos": "yolov8n.pt",
+      "origem": "coco",
+      "referencia": "https://docs.ultralytics.com/models/yolov8/"
+    },
+    "quantitativa_em_ground_truth": null,
+    "qualitativa": null
+  }
 }

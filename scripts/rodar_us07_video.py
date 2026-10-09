@@ -23,6 +23,12 @@ do processo (quadros lidos, detecções, duração) — e o relatório consolida
 gravado em ``saida/video/relatorio_us07.json`` (troque com ``--saida-relatorio``).
 No modo config única o JSONL configurado é recriado a cada execução (execuções
 reproduzíveis).
+
+O relatório também registra a evidência de avaliação em ``avaliacao``: o
+baseline COCO do model card do ``yolov8n.pt`` e, quando a visualização está
+ativa, os vídeos anotados (validação qualitativa). A medição quantitativa
+própria (``quantitativa_em_ground_truth``) fica ``null`` até existir dataset
+anotado — métrica real só via ``scripts/avaliar_us07.py``.
 """
 
 from __future__ import annotations
@@ -153,23 +159,50 @@ def main(argv: list[str] | None = None) -> int:
         )
         resumos.append({"video": str(caminho), **resumo})
 
+        if por_video and len(videos) == 1:
+            relatorio_v = dict(resumos[0])
+            relatorio_v["avaliacao"] = _secao_avaliacao(config, por_video, resumos)
+            caminho_rel = dir_saida / f"relatorio_{stem}.json"
+            _gravar_relatorio(caminho_rel, relatorio_v)
+            if args.saida_relatorio is None:
+                print(json.dumps(relatorio_v, ensure_ascii=False, indent=2))
+                return 0
+
     if not por_video:
         if not resumos:
             _gravar_relatorio(relatorio, {"mensagem": "nenhum vídeo processado"})
             return 1
         if jsonl_config is not None:
             jsonl_config.touch(exist_ok=True)
-        _gravar_relatorio(relatorio, resumos[0])
-        print(json.dumps(resumos[0], ensure_ascii=False, indent=2))
+        relatorio_unico = dict(resumos[0])
+        relatorio_unico["avaliacao"] = _secao_avaliacao(config, por_video, resumos)
+        # Gera relatório com nome do vídeo, respeitando --saida-relatorio opcional
+        if args.saida_relatorio is not None:
+            _gravar_relatorio(Path(args.saida_relatorio), relatorio_unico)
+        else:
+            stem_u = Path(str(relatorio_unico["video"])).stem
+            _gravar_relatorio(dir_saida / f"relatorio_{stem_u}.json", relatorio_unico)
+        print(json.dumps(relatorio_unico, ensure_ascii=False, indent=2))
         return 0
 
+    # Modo lote (--videos-dir): gera relatório por vídeo e consolidado
     relatorio_dados: dict[str, object] = {
         "videos_processados": len(resumos),
         "videos_com_falha": len(falhas),
         "eventos_totais": sum(int(r["eventos"]) for r in resumos),
         "resumos": resumos,
         "falhas": falhas,
+        "avaliacao": _secao_avaliacao(config, por_video, resumos),
     }
+    for r in resumos:
+        stem = Path(str(r["video"])).stem
+        rel_r = dict(r)
+        rel_r["avaliacao"] = _secao_avaliacao(config, por_video, resumos)
+        _gravar_relatorio(dir_saida / f"relatorio_{stem}.json", rel_r)
+    if args.saida_relatorio is not None:
+        relatorio = Path(args.saida_relatorio).resolve()
+    else:
+        relatorio = dir_saida / "relatorio_us07.json"
     _gravar_relatorio(relatorio, relatorio_dados)
     print(json.dumps(relatorio_dados, ensure_ascii=False, indent=2))
     return 1 if falhas else 0
@@ -224,6 +257,39 @@ def _gravar_relatorio(caminho: Path, dados: dict[str, object]) -> None:
     caminho.write_text(
         json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+
+
+def _secao_avaliacao(
+    config: Configuracao, por_video: bool, resumos: list[dict[str, object]]
+) -> dict[str, object]:
+    """Evidência de avaliação incluída no relatório do pipeline.
+
+    Braço adotado *sem* fine-tuning: baseline COCO (número oficial do model card
+    do ``yolov8n.pt``) + validação qualitativa (vídeos anotados). A medição
+    quantitativa própria fica ``null`` até existir dataset anotado
+    (``scripts/avaliar_us07.py``) — o pipeline nunca fabrica mAP/Precision/Recall.
+    """
+    from video.metricas import metricas_coco_baseline
+
+    qualitativa: dict[str, object] | None = None
+    if config.visualizacao.ativa:
+        caminhos = [
+            caminho
+            for resumo in resumos
+            if (
+                caminho := _caminho_video_anotado(
+                    config, por_video, Path(str(resumo["video"])).stem
+                )
+            )
+            is not None
+        ]
+        qualitativa = {"videos_anotados": [str(c) for c in caminhos]}
+    return {
+        "metodo": "baseline_coco",
+        "metricas": metricas_coco_baseline().para_dict(),
+        "quantitativa_em_ground_truth": None,
+        "qualitativa": qualitativa,
+    }
 
 
 def _caminho_video_anotado(

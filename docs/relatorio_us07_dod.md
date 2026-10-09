@@ -26,7 +26,10 @@ do repositório.
   saída (`video/eventos.py::montar_sem_achados`).
 - **Métricas quantitativas não são fabricadas**: sem dataset anotado não há
   cálculo de mAP; o script `avaliar_us07.py` produz as métricas quando recebe um
-  `data.yaml` YOLO.
+  `data.yaml` YOLO. Sem fine-tuning, o relatório registra apenas o **baseline
+  COCO** do model card oficial (`mAP@0.5:0.95 = 0,373` para `yolov8n.pt`, com URL
+  de referência) e a validação qualitativa; `mAP@0.5`/Precision/Recall ficam
+  `null` porque a fonte oficial não os publica — **não são estimados**.
 
 ## Quadro DoD → código
 
@@ -87,24 +90,31 @@ do repositório.
 
 ### 5. Fine-tuning em classes médicas com mAP@0.5 ≥ 0,50 no val
 
-**Status:** ➖ pendente (não há fine-tuning nem dataset médico anotado).
+**Status:** ➖ pendente — gate bloqueado até haver anotações; braço baseline adotado.
 
-- **Código/rota:** quando existir dataset YOLO com `data.yaml` e split
-  val/teste, `scripts/avaliar_us07.py` valida e reporta as métricas. Não são
-  fabricadas métricas sem dataset.
-- **Comportamento atual:** usa o checkpoint pré-treinado COCO (`yolov8n.pt`) com
-  validação qualitativa (menu do DoD permite a alternativa sem fine-tuning).
+- **Rota (pronta):** `scripts/dataset_us07.py` (`montar` → `validar` →
+  `verificar-apto` → `treinar` → `avaliar`) constrói o dataset sem vazamento,
+  exige aptidão e aplica o gate `mAP@0.5 ≥ 0,50` (`video/dataset.py::avaliar_gate`).
+  Com 0 labels anotadas o gate fica **bloqueado** (`medido=false`) — nunca
+  aprovado por omissão (`docs/arquitetura/us07_dataset.md`, 2026-10-08).
+- **Comportamento atual:** checkpoint pré-treinado COCO (`yolov8n.pt`) + baseline
+  e validação qualitativa registrados no relatório (alternativa prevista no DoD).
 
 ### 6. Métricas mAP@0.5, mAP@0.5:0.95, Precision e Recall registradas no relatório
 
-**Status:** ✔ implementado (tooling) — execução depende de dataset.
+**Status:** ✔ registradas no relatório — braço baseline COCO (quantitativa própria depende do dataset).
 
-- **Código:** `scripts/avaliar_us07.py` roda o validator Ultralytics e grava
-  `saida/video/metricas.json` com `mAP@0.5`, `mAP@0.5:0.95`, precision, recall e
-  metadados (pesos, versão do Ultralytics, caminho do dataset).
-- **Sem dataset:** sem surgirem "métricas" sintéticas; o relatório documenta a
-  alternativa qualitativa (DoD permite).
-- **Teste:** `tests/video/test_metricas.py` (validator simulado).
+- **Quantitativa real (dataset anotado):** `scripts/avaliar_us07.py` roda o
+  validator Ultralytics e grava `mAP@0.5`, `mAP@0.5:0.95`, precision, recall e
+  metadados; o gate salva `dataset_us07/reports/avaliacao_<split>.json`.
+- **Braço sem fine-tuning (vigente):** a seção `avaliacao` do
+  `relatorio_us07.json` registra `metricas_coco_baseline()` (`video/metricas.py`):
+  `mAP@0.5:0.95 = 0.373` (valor **oficial do model card**, com URL de referência);
+  `mAP@0.5`/Precision/Recall ficam `null` porque **a página oficial não os
+  publica** — não são estimados para não fabricar métrica. `quantitativa_em_ground_truth`
+  fica `null` e `qualitativa.videos_anotados` lista os vídeos da validação
+  qualitativa (`GravadorVideo`, quando `visualizacao.ativa`).
+- **Teste:** `tests/video/test_metricas.py` e `tests/video/test_cli_avaliar.py`.
 
 ### 7. Evento emitido (schema US04) quando pessoa/objeto entra ou sai de área crítica, com timestamp
 
@@ -129,5 +139,10 @@ do repositório.
 |---|---|---|---|---|---|
 | `B_D_0016.mp4` (config exemplo) | 360 | 922 | 6 | 1 entrada + 5 saídas | 6 válidos / 0 erros |
 | `B_N_87_resized.mp4` (`--video`) | 120 | 216 | 0 | — | 1 registro `sem_achados` (info) válido / 0 erros |
+
+| Evidência de avaliação | Valor registrado |
+|---|---|
+| Baseline COCO `yolov8n.pt` (model card) | `mAP@0.5:0.95 = 0.373`; `mAP@0.5`/**P**/**R** = `null` (não publicados; não estimados) |
+| Quantitativa própria (ground truth) | `null` — aguarda anotações (item 5); gate `avaliar_us07.py` pronto |
 
 Execução dos comandos em `README.md` e `docs/arquitetura/us07_deteccao_areas_criticas.md`.
