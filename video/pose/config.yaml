@@ -73,3 +73,25 @@ visualization:
   # Raio dos keypoints e espessura dos segmentos, relativos à altura do quadro.
   point_radius_ratio: 0.008
   line_thickness_ratio: 0.005
+
+# Limiares do feedback em linguagem natural (video/pose/feedback.py). São
+# critérios gerais, iguais para qualquer exercício e ainda sem validação
+# clínica: ajuste conforme o procedimento acompanhado.
+feedback:
+  # Um desvio só é relatado se durar pelo menos este tempo sem interrupção.
+  min_duration_s: 1.0
+  # Inclinação do tronco (0 = em pé): acima de "warn" é ponto negativo, acima
+  # de "alert" é ponto de alerta.
+  trunk_warn_deg: 30
+  trunk_alert_deg: 60
+  # Diferença esquerdo x direito acima deste valor é ponto negativo.
+  asymmetry_warn_deg: 20
+  # Flexão máxima do joelho (flexão = 180 - ângulo interno).
+  knee_max_flexion_deg: 135
+  # % de quadros com esqueleto: abaixo de "min" o resultado é pouco confiável
+  # (alerta); a partir de "good" conta como ponto positivo.
+  min_detection_pct: 50
+  good_detection_pct: 80
+  # Articulação com ângulo calculável em menos que esta % dos quadros com
+  # esqueleto é sinalizada como pouco visível.
+  min_joint_visibility_pct: 50

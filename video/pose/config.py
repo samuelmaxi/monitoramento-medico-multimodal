@@ -83,6 +83,18 @@ class VisualizationConfig:
 
 
 @dataclass(frozen=True)
+class FeedbackConfig:
+    min_duration_s: float
+    trunk_warn_deg: float
+    trunk_alert_deg: float
+    asymmetry_warn_deg: float
+    knee_max_flexion_deg: float
+    min_detection_pct: float
+    good_detection_pct: float
+    min_joint_visibility_pct: float
+
+
+@dataclass(frozen=True)
 class PoseConfig:
     model: ModelConfig
     sampling: SamplingConfig
@@ -93,6 +105,7 @@ class PoseConfig:
     rehab24: Rehab24Config
     fallvision: FallVisionConfig
     visualization: VisualizationConfig
+    feedback: FeedbackConfig
     source: Optional[Path] = None
 
 
@@ -169,6 +182,16 @@ def config_from_dict(data: Mapping[str, Any], source: Optional[Path] = None) -> 
             tile_width=int(_positivo(g("visualization.tile_width"), "visualization.tile_width")),
             point_radius_ratio=float(g("visualization.point_radius_ratio")),
             line_thickness_ratio=float(g("visualization.line_thickness_ratio")),
+        ),
+        feedback=FeedbackConfig(
+            min_duration_s=float(_positivo(g("feedback.min_duration_s"), "feedback.min_duration_s")),
+            trunk_warn_deg=float(g("feedback.trunk_warn_deg")),
+            trunk_alert_deg=float(g("feedback.trunk_alert_deg")),
+            asymmetry_warn_deg=float(g("feedback.asymmetry_warn_deg")),
+            knee_max_flexion_deg=float(g("feedback.knee_max_flexion_deg")),
+            min_detection_pct=float(g("feedback.min_detection_pct")),
+            good_detection_pct=float(g("feedback.good_detection_pct")),
+            min_joint_visibility_pct=float(g("feedback.min_joint_visibility_pct")),
         ),
         source=source,
     )
