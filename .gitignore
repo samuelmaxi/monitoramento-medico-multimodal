@@ -244,3 +244,7 @@ terraform.rc
 /models/
 /outputs/
 *.caffemodel
+
+uv.lock
+terraform/.terraform.lock.hcl
+uv.lock
