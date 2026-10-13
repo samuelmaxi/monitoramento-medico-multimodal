@@ -247,3 +247,5 @@ terraform.rc
 .agents
 .opencode
 saida/video/*
+uv.lock
+terraform/.terraform.lock.hcl
