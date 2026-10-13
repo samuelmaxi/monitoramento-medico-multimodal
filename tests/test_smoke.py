@@ -4,6 +4,9 @@ from pathlib import Path
 
 import pytest
 
+# Smoke tests dependem de Azure real: pulam se as variáveis não estiverem configuradas.
+pytestmark = pytest.mark.usefixtures("_require_azure_env")
+
 SMOKE_TEST_AUDIO_PATH = Path(
     os.getenv("SMOKE_TEST_AUDIO_PATH", "tests/fixtures/sample_pt_br.wav")
 )

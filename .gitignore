@@ -242,3 +242,6 @@ terraform.rc
 uv.lock
 terraform/.terraform.lock.hcl
 uv.lock
+
+# Saídas do pipeline de vídeo
+/saida/
