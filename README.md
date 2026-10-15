@@ -15,9 +15,11 @@ sistema.
 │   ├── azure_clients.py          # Clientes Azure SDK (Speech, Language, Blob Storage)
 │   ├── errors.py                 # Tradução de erros Azure em HTTPException (401/403/429)
 │   ├── schemas.py                 # Modelos Pydantic de request/response
+│   ├── pose_jobs.py               # Fila em processo dos jobs de pose (US06)
 │   └── routers/
 │       ├── transcription.py       # POST /transcription, GET /transcription/{job_name}
-│       └── sentiment.py            # POST /sentiment
+│       ├── sentiment.py            # POST /sentiment
+│       └── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
 │   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
@@ -78,15 +80,18 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 
 ## Variáveis de ambiente
 
-| Variável | Obrigatória | Descrição | Exemplo |
-| --- | --- | --- | --- |
-| `GOOGLE_DRIVE_FOLDER_URL` | Sim | URL da pasta do Google Drive cujo conteúdo será baixado para `conteudos/`. O script aborta com erro se não estiver definida. | `https://drive.google.com/drive/folders/1sJN538ANpeud1JzqPMjoNXK_CDXDTo3M?usp=sharing` |
-| `AZURE_SPEECH_KEY` | Sim (para transcrição) | Chave da API do serviço Azure Speech. Obtida via `terraform output speech_key`. | `a1b2c3d4e5f6...` |
-| `AZURE_SPEECH_REGION` | Sim (para transcrição) | Região do serviço Azure Speech. Fixada em `eastus` para usar tier gratuita. | `eastus` |
-| `AZURE_LANGUAGE_ENDPOINT` | Sim (para análise de sentimento) | Endpoint do serviço Azure AI Language. Obtido via `terraform output language_endpoint`. | `https://monitoramento-language-dev.cognitiveservices.azure.com/` |
-| `AZURE_LANGUAGE_KEY` | Sim (para análise de sentimento) | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`. | `a1b2c3d4e5f6...` |
-| `AZURE_STORAGE_CONNECTION_STRING` | Sim (para transcrição) | Connection string do Azure Blob Storage. Obtida via `terraform output storage_connection_string`. | `DefaultEndpointsProtocol=https;AccountName=...` |
-| `AZURE_BLOB_CONTAINER_NAME` | Não | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`. | `audio-transcripts` |
+| Variável                          | Obrigatória                      | Descrição                                                                                                                    | Exemplo                                                                                |
+| --------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `GOOGLE_DRIVE_FOLDER_URL`         | Sim                              | URL da pasta do Google Drive cujo conteúdo será baixado para `conteudos/`. O script aborta com erro se não estiver definida. | `https://drive.google.com/drive/folders/1sJN538ANpeud1JzqPMjoNXK_CDXDTo3M?usp=sharing` |
+| `AZURE_SPEECH_KEY`                | Sim (para transcrição)           | Chave da API do serviço Azure Speech. Obtida via `terraform output speech_key`.                                              | `a1b2c3d4e5f6...`                                                                      |
+| `AZURE_SPEECH_REGION`             | Sim (para transcrição)           | Região do serviço Azure Speech. Fixada em `eastus` para usar tier gratuita.                                                  | `eastus`                                                                               |
+| `AZURE_LANGUAGE_ENDPOINT`         | Sim (para análise de sentimento) | Endpoint do serviço Azure AI Language. Obtido via `terraform output language_endpoint`.                                      | `https://monitoramento-language-dev.cognitiveservices.azure.com/`                      |
+| `AZURE_LANGUAGE_KEY`              | Sim (para análise de sentimento) | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`.                                          | `a1b2c3d4e5f6...`                                                                      |
+| `AZURE_STORAGE_CONNECTION_STRING` | Sim (para transcrição)           | Connection string do Azure Blob Storage. Obtida via `terraform output storage_connection_string`.                            | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
+| `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
+| `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose`. Padrão: `500`.                                                        | `500`                                                                                  |
 
 O template pronto pode ser copiado de `.env.sample`:
 
@@ -99,6 +104,10 @@ AZURE_LANGUAGE_ENDPOINT=
 AZURE_LANGUAGE_KEY=
 AZURE_STORAGE_CONNECTION_STRING=
 AZURE_BLOB_CONTAINER_NAME=audio-transcripts
+
+PSEUDONYM_KEY=
+POSE_CONFIG_PATH=video/pose/config.yaml
+VIDEO_MAX_UPLOAD_MB=500
 ```
 
 ## Como executar cada módulo
@@ -272,7 +281,7 @@ decisões e parâmetros estão em
 
 ## Infraestrutura (Terraform)
 
-O projeto usa serviços de IA do **Azure** para os módulos de transcrição de fala e 
+O projeto usa serviços de IA do **Azure** para os módulos de transcrição de fala e
 análise de sentimento, aproveitando a tier gratuita (F0) disponível no Azure:
 
 - **Azure Speech Service** — transcrição de áudio em pt-BR (Speech-to-Text).
@@ -322,6 +331,7 @@ terraform output
 ```
 
 O `apply` cria:
+
 - **Grupo de Recursos** — contêiner para organizar todos os recursos
 - **Storage Account** — conta de armazenamento com container privado para áudio
 - **Speech Service** (F0) — serviço de transcrição de áudio
@@ -387,12 +397,17 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 
 ### Endpoints
 
-| Método | Rota | Descrição |
-| --- | --- | --- |
-| `GET` | `/health` | Verifica se o servidor está no ar (não chama Azure). |
-| `POST` | `/transcription` | Recebe um áudio (`multipart/form-data`, campo `audio_file`), sobe para Azure Blob Storage e inicia um job assíncrono para transcrição (`pt-BR`). |
-| `GET` | `/transcription/{job_name}` | Consulta o status/resultado de um job de transcrição. |
-| `POST` | `/sentiment` | Recebe `{"text": "...", "language_code": "pt"}` e retorna o sentimento via Azure Language Service. |
+| Método | Rota                        | Descrição                                                                                                                                        |
+| ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/health`                   | Verifica se o servidor está no ar (não chama Azure).                                                                                             |
+| `POST` | `/transcription`            | Recebe um áudio (`multipart/form-data`, campo `audio_file`), sobe para Azure Blob Storage e inicia um job assíncrono para transcrição (`pt-BR`). |
+| `GET`  | `/transcription/{job_name}` | Consulta o status/resultado de um job de transcrição.                                                                                            |
+| `POST` | `/sentiment`                | Recebe `{"text": "...", "language_code": "pt"}` e retorna o sentimento via Azure Language Service.                                               |
+| `POST` | `/video/pose`               | Recebe um vídeo (`multipart/form-data`, campo `video_file`) e enfileira a análise de pose (US06). Responde `202` com o `job_id`.                 |
+| `GET`  | `/video/pose/{job_id}`      | Status (`QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`) e resultado: métricas de detecção, resumo dos ângulos e artefatos.                       |
+| `GET`  | `/video/pose/{job_id}/feedback`  | Resultado em linguagem natural: resumo, pontos positivos, negativos e de alerta.                                                            |
+| `GET`  | `/video/pose/{job_id}/keypoints` | Baixa o JSON de pose por quadro (mesmo formato de `outputs/pose/<video_id>.json`).                                                          |
+| `GET`  | `/video/pose/{job_id}/angles`    | Baixa o CSV de ângulos por quadro.                                                                                                          |
 
 Exemplos com `curl`:
 
@@ -405,14 +420,92 @@ curl -X POST http://127.0.0.1:8000/transcription \
   -F "audio_file=@caminho/para/audio_curto.wav"
 
 curl http://127.0.0.1:8000/transcription/<job_name>
+
+curl -X POST http://127.0.0.1:8000/video/pose \
+  -F "video_file=@caminho/para/agachamento.mp4" \
+  -F "patient_id=10000032" -F "source_id=fisio-003" \
+  -F "procedure_type=fisioterapia" -F "recorded_at=2026-09-26T15:20:00Z"
+
+curl http://127.0.0.1:8000/video/pose/<job_id>
+curl http://127.0.0.1:8000/video/pose/<job_id>/feedback
+curl -O http://127.0.0.1:8000/video/pose/<job_id>/angles
 ```
+
+### Análise de pose pela API (`/video/pose`)
+
+Mesmo fluxo de `python -m video.pose.run`, sem Azure: precisa só dos pesos do
+OpenPose (`scripts/download_openpose_models.sh`) e do `video/pose/config.yaml`.
+Sem os pesos, o `POST` responde **503**.
+
+- **Assíncrono.** Em CPU a extração leva minutos (cerca de 5× a duração do
+  vídeo com BODY_25 a 10 fps), então o `POST` só grava o upload e devolve o
+  `job_id`; consulte o `GET` até `COMPLETED` ou `FAILED`. Os jobs rodam um por
+  vez, na ordem de chegada.
+- **Campos opcionais do formulário**, validados pelas regras do contrato
+  ([`docs/arquitetura/contrato_eventos.md`](docs/arquitetura/contrato_eventos.md)):
+  `patient_id` e `encounter_id` (pseudônimo pronto ou ID de origem, que é
+  pseudonimizado com `PSEUDONYM_KEY` e nunca gravado), `bed_id`, `source_id`,
+  `procedure_type` e `recorded_at` (início da gravação, ISO-8601 em UTC). Valor
+  fora do contrato responde **422**.
+- **Resultado no formato do contrato.** `patient_id`, `context`, `ingested_at`,
+  `window`, `model_version` e `artifacts` saem com os mesmos nomes e tipos do
+  `EventoAchado`, prontos para o detector de desvios (US08) montar o evento. A
+  API **não emite evento**: a US06 só extrai pose e ângulos, e publicar
+  `sem_achados` sem ter rodado a detecção diria à fusão que o vídeo está normal.
+- **Arquivos.** Saídas em `outputs/pose/api/<job_id>/` (`<job_id>.json`,
+  `<job_id>_angles.csv` e `job.json` com o resultado, relido se a API
+  reiniciar). O vídeo enviado é apagado ao fim do job. Jobs em fila ou em
+  andamento se perdem se a API reiniciar.
+- **Erros.** **400** extensão não aceita (`input.extensions` do config) ou
+  arquivo vazio, **413** acima de `VIDEO_MAX_UPLOAD_MB`, **404** job
+  desconhecido, **409** download pedido antes de `COMPLETED`. Vídeo ilegível
+  vira job `FAILED` com `failure_reason`.
+
+#### Feedback em linguagem natural (`/video/pose/{job_id}/feedback`)
+
+Para quem só quer saber "como foi o vídeo", sem ler ângulos:
+
+```json
+{
+  "job_id": "pose-01232d72f14c",
+  "resumo": "Em 26 s de vídeo a análise encontrou 1 ponto negativo. O tronco ficou inclinado mais de 30° em relação à vertical por 5,0 s (pico de 68° aos 8 s do vídeo). Manter essa inclinação aumenta a carga na coluna lombar; peça para deixar o tronco mais ereto.",
+  "pontos_positivos": [
+    "A pessoa ficou visível em 88,5% dos quadros, uma boa base para a análise.",
+    "Movimento simétrico entre os lados esquerdo e direito em: joelhos, quadris, ombros, cotovelos.",
+    "Os joelhos ficaram dentro da faixa de flexão (máxima de 105°, limite de 135°)."
+  ],
+  "pontos_negativos": ["O tronco ficou inclinado mais de 30° ..."],
+  "pontos_de_alerta": [],
+  "aviso": "Análise automática a partir de vídeo 2D, ..."
+}
+```
+
+As frases saem de regras fixas em `video/pose/feedback.py` (sem LLM e sem
+serviço externo), então o mesmo vídeo dá sempre o mesmo texto e cada frase cita
+o valor medido, o limiar e a duração. O que é avaliado:
+
+| Critério | Negativo | Alerta |
+| --- | --- | --- |
+| Inclinação do tronco | acima de 30° por ≥ 1 s | acima de 60° por ≥ 1 s |
+| Assimetria esquerdo × direito (joelho, quadril, ombro, cotovelo) | acima de 20° por ≥ 1 s | — |
+| Flexão do joelho | acima de 135° por ≥ 1 s | — |
+| Quadros com a pessoa detectada | entre 50% e 80% | abaixo de 50% |
+| Articulação pouco visível | — | ângulo medido em menos de 50% dos quadros |
+
+Critério sem desvio vira ponto positivo. Os limiares ficam em `feedback` no
+`video/pose/config.yaml`; são gerais, iguais para qualquer exercício, e **não
+foram validados clinicamente**. Duas limitações: os ângulos são projeções 2D
+(dependem da posição da câmera) e a inclinação do tronco mede o quanto ele sai
+da vertical, não a curvatura da coluna.
+
+Testes (estimador falso, sem pesos nem Azure): `uv run pytest video/tests`.
 
 ### Tratamento de erros (429 / 401 / 403)
 
-Os clientes Azure SDK incluem mecanismos de retry nativos que lidam com throttling 
+Os clientes Azure SDK incluem mecanismos de retry nativos que lidam com throttling
 (429) automaticamente. Erros que sobram são traduzidos em respostas claras
 (`app/errors.py`): **429** (throttling persistente), **401** (credenciais Azure
-inválidas — revise `AZURE_SPEECH_KEY`, `AZURE_LANGUAGE_KEY`, 
+inválidas — revise `AZURE_SPEECH_KEY`, `AZURE_LANGUAGE_KEY`,
 `AZURE_STORAGE_CONNECTION_STRING` no `.env`) e **403** (sem permissão — verifique
 as permissões RBAC no Azure IAM).
 
@@ -426,7 +519,7 @@ Os testes chamam a API de verdade contra o Azure real (sem mocks), usando as
 credenciais do `.env`. Para o teste de transcrição, coloque um áudio curto pt-BR em
 `tests/fixtures/sample_pt_br.wav` (veja
 [`tests/fixtures/README.md`](tests/fixtures/README.md)) — se ausente, esse teste é
-pulado automaticamente. Se as variáveis Azure não estiverem configuradas, todos os 
+pulado automaticamente. Se as variáveis Azure não estiverem configuradas, todos os
 testes são pulados com uma mensagem explicando o motivo.
 
 ## Demo ponta a ponta

@@ -42,3 +42,6 @@ def require_azure_language_key() -> str:
 
 def require_blob_container_name() -> str:
     return AZURE_BLOB_CONTAINER_NAME
+
+POSE_CONFIG_PATH = os.getenv("POSE_CONFIG_PATH", "video/pose/config.yaml")
+VIDEO_MAX_UPLOAD_MB = int(os.getenv("VIDEO_MAX_UPLOAD_MB", "500"))
