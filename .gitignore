@@ -249,3 +249,4 @@ terraform.rc
 saida/video/*
 uv.lock
 terraform/.terraform.lock.hcl
+dataset_medico/

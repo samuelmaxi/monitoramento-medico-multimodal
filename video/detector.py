@@ -347,21 +347,47 @@ class DetectorYolo:
 
     def val_metricas(
         self, data_yaml: str, **argumentos: Any
-    ) -> Mapping[str, float]:
-        """Avalia o modelo em um dataset YOLO e devolve mAP50, mAP50-95, P e R.
+    ) -> Mapping[str, object]:
+        """Avalia dataset YOLO e devolve métricas globais e mAP@0.5 por classe.
 
-        Usado por ``scripts/avaliar_us07.py`` para medir com o validator
-        Ultralytics. Só é chamado com dataset real; os testes não dependem dele.
+        Usado pelo validator Ultralytics; ``resultado.box.maps`` contém AP50 por
+        índice de classe e ``resultado.box.ap_class_index`` indica a classe de
+        cada valor. Para classes sem objetos anotados o Ultralytics pode não
+        fornecer AP; elas não entram na média reportada pelo validator.
         """
         modelo = self._modelo
         opcoes = {"conf": 0.001, "iou": 0.5, **argumentos}
         resultado = modelo.val(data=data_yaml, verbose=False, **opcoes)
         box = resultado.box
+        nomes = getattr(resultado, "names", getattr(modelo, "names", {}))
+        ap_indices = _para_lista(getattr(box, "ap_class_index", [])) or []
+        ap_valores = _para_lista(getattr(box, "ap", [])) or []
+        por_classe: dict[str, float] = {}
+        for indice, ap_por_limiar in zip(ap_indices, ap_valores, strict=False):
+            if ap_por_limiar is None:
+                continue
+            nome = (
+                nomes.get(int(indice), str(indice))
+                if isinstance(nomes, Mapping)
+                else str(indice)
+            )
+            valor_ap = (
+                ap_por_limiar[0]
+                if isinstance(ap_por_limiar, Sequence)
+                else ap_por_limiar
+            )
+            por_classe[str(nome)] = float(valor_ap)
         return {
             "mAP@0.5": float(box.map50),
             "mAP@0.5:0.95": float(box.map),
             "precision": float(box.mp),
             "recall": float(box.mr),
+            "classes": (
+                tuple(str(nome) for nome in nomes.values())
+                if isinstance(nomes, Mapping)
+                else ()
+            ),
+            "mAP@0.5_por_classe": por_classe,
         }
 
 

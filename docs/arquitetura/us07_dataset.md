@@ -24,7 +24,7 @@ dataset_us07/data.yaml          (classes = ["person"])
 dataset_us07/metadata/divisao.json
 dataset_us07/metadata/frames_divisao.jsonl
         │
-        │  exportar-anotacao    → anotavel/ (CVAT/Ultralytics)
+        │  exportar-anotacao    → anotavel/ (Ultralytics)
         │  importar-anotacoes   ← labels revisados
         ▼
    validar  → dataset_us07/reports/validacao_dataset.json
@@ -101,7 +101,7 @@ uv run python scripts/dataset_us07.py extrair --intervalo 0.5 --max-frames 60 \
 uv run python scripts/dataset_us07.py montar --train 0.7 --val 0.2 --test 0.1
 uv run python scripts/dataset_us07.py validar
 uv run python scripts/dataset_us07.py exportar-anotacao  # padrão: <destino>/anotavel
-# ... anotar no CVAT/Ultralytics ...
+# ... anotar (Ultralytics) ...
 uv run python scripts/dataset_us07.py importar-anotacoes \
     --de anotavel/labels/train --para dataset_us07/labels/train
 uv run python scripts/dataset_us07.py verificar-apto
@@ -121,6 +121,138 @@ estruturais do validador também bloqueiam.
 `avaliar_gate` compara `mAP@0.5` com o mínimo (**0,50** por padrão). Com
 `mapa_50=None` o resultado é explicitamente **não medido** e **não aprovado** —
 não existe aprovação por omissão.
+
+## Gate de fine-tuning médico (US07 DoD item 5)
+
+Quando o dataset inclui uma classe de `CLASSES_EXIGEM_FINETUNING`, o treino é
+seguido automaticamente por avaliação no split `val`. O gate compara a **média
+AP@0.5 apenas das classes médicas** com `0,50`; métricas de classes COCO não
+podem esconder uma classe clínica abaixo do mínimo. O relatório registra também
+o mAP@0.5 global, AP por classe, checkpoint e decisão.
+
+```bash
+uv run python scripts/dataset_us07.py --destino dataset_us07 treinar \
+    --classes instrumento_cirurgico monitor_multiparametro
+
+uv run python scripts/dataset_us07.py --destino dataset_us07 validar-finetuning \
+    --pesos runs/detect/us07/weights/best.pt
+```
+
+O arquivo gerado é `dataset_us07/reports/fine_tuning_val.json`. Se uma classe
+médica não tiver AP reportada pelo validator, o resultado fica não medido e
+reprovado. A taxonomia usada vem de `data.yaml`; uma lista `--classes` divergente
+é rejeitada. A meta só pode ser atestada com labels reais no `val`; métricas de
+teste não substituem validação.
+
+### Passo a passo operacional: aquisição Roboflow, fusão e validação do gate
+
+Para tentar cumprir a meta do item 5 com os projetos Roboflow `bsbi/medical-equipment-detection` e `anndev/hospitalequipmentdetection`, execute o fluxo abaixo a partir da raiz do repositório. O acesso e a disponibilidade dessas versões dependem da conta Roboflow; não use uma chave publicada anteriormente, rotacione-a primeiro.
+
+1. **Configurar a chave Roboflow no `.env`**:
+   Preencha `ROBOFLOW_API_KEY` com sua chave nova/rotacionada. Não a compartilhe nem a versione; `.env` já é ignorado pelo Git.
+
+2. **Baixar os exports locais no formato YOLOv8 via Python**. `--with roboflow` instala o SDK somente para este comando; a chave é lida do `.env` e não é impressa:
+   ```bash
+   uv run --with roboflow python -c "
+   import os
+   from dotenv import load_dotenv
+   from roboflow import Roboflow
+
+   load_dotenv()
+   rf = Roboflow(api_key=os.environ['ROBOFLOW_API_KEY'])
+   rf.workspace('bsbi').project('medical-equipment-detection').version(2).download('yolov8', location='downloads/instrumentos')
+   rf.workspace('anndev').project('hospitalequipmentdetection').version(7).download('yolov8', location='downloads/monitores')
+   "
+   ```
+
+3. **Inspecionar as classes exportadas pelos datasets**:
+   ```bash
+   uv run python scripts/combinar_datasets_roboflow.py inspecionar \
+       --dataset inst=downloads/instrumentos \
+       --dataset mon=downloads/monitores
+   ```
+
+4. **Combinar os datasets remapeando para a taxonomia canônica da US07**:
+   Substitua `NOME_EXATO_INSTRUMENTO` e `NOME_EXATO_MONITOR` pelos nomes literais mostrados na inspeção. Confirme visualmente que cada classe corresponde ao objeto de destino; não mapeie classes semelhantes por suposição.
+   ```bash
+   uv run python scripts/combinar_datasets_roboflow.py combinar \
+       --dataset inst=downloads/instrumentos \
+       --dataset mon=downloads/monitores \
+       --map 'inst:NOME_EXATO_INSTRUMENTO=instrumento_cirurgico' \
+       --map 'mon:NOME_EXATO_MONITOR=monitor_multiparametro' \
+       --destino dataset_medico
+   ```
+
+5. **Validar estrutura e conferir aptidão do dataset gerado**:
+   ```bash
+   uv run python scripts/dataset_us07.py --destino dataset_medico validar \
+       --classes instrumento_cirurgico monitor_multiparametro
+
+   uv run python scripts/dataset_us07.py --destino dataset_medico verificar-apto \
+       --classes instrumento_cirurgico monitor_multiparametro \
+       --validacao dataset_medico/reports/validacao_dataset.json
+   ```
+
+6. **Executar o fine-tuning e avaliar automaticamente o gate (`mAP@0.5 >= 0.50` no `val`)**:
+   ```bash
+   uv run python scripts/dataset_us07.py --destino dataset_medico treinar \
+       --classes instrumento_cirurgico monitor_multiparametro \
+       --modelo yolov8n.pt \
+       --epochs 50 \
+       --project runs/detect \
+       --name us07_medico \
+       --minimo 0.50
+   ```
+   O comando treina e valida automaticamente o melhor checkpoint; anote o `save_dir` impresso na saída, pois o Ultralytics pode acrescentar sufixo se o nome já existir.
+
+7. **Conferir a aprovação no relatório oficial**:
+   ```bash
+   uv run python -m json.tool dataset_medico/reports/fine_tuning_val.json
+   ```
+   Só está aprovado quando `aprovado` e `gate.aprovado` forem `true`, o split for `val` e a medição existir para cada classe médica. Para reavaliar sem retreinar, use o caminho real de `best.pt` dentro do `save_dir` informado:
+   ```bash
+   uv run python scripts/dataset_us07.py --destino dataset_medico validar-finetuning \
+       --pesos runs/detect/us07_medico/weights/best.pt \
+       --classes instrumento_cirurgico monitor_multiparametro \
+       --minimo 0.50
+   ```
+
+## Critério de acerto IoU ≥ 0,50 (PASCAL VOC / mAP@0.5)
+
+`video/avaliacao_deteccao.py` implementa o critério **sem depender de framework**:
+uma detecção é verdadeiro positivo quando casa com uma verdade de terra da mesma
+classe e `IoU >= limiar` (padrão **0,50**). O casamento é *greedy* por confiança,
+um-para-um e por imagem (`casar_deteccoes`); verdades não casadas viram falsos
+negativos. Daí saem TP/FP/FN, precisão/revocação/F1 e a **AP@0.5** por classe
+(interpolação em todos os pontos, VOC2010+) e o **mAP@0.5** (`avaliar_deteccao`).
+Sem ground truth o `mAP@0.5` é `None` — não medido, nunca fabricado.
+
+```bash
+# predições já calculadas (JSONL):
+# {"imagem": "B_D_0001__frame_000001.jpg", "class_id": 0, "confianca": 0.9, \
+#  "caixa": [x1, y1, x2, y2]}
+uv run python scripts/avaliar_voc_us07.py \
+    --imagens dataset_us07/images/test --labels dataset_us07/labels/test \
+    --predicoes predicoes_test.jsonl \
+    --iou 0.5 --minimo 0.5 --output dataset_us07/reports/avaliacao_voc_test.json
+
+# ou gerando as predições direto dos pesos do modelo:
+uv run python scripts/avaliar_voc_us07.py \
+    --imagens dataset_us07/images/test --labels dataset_us07/labels/test \
+    --pesos yolov8n.pt --conf 0.25 --iou 0.5 --minimo 0.5
+```
+
+- `--predicoes` e `--pesos` são **mutuamente exclusivos** (uma das duas origens é
+  obrigatória); `predicoes_de_detector` roda qualquer detector no diretório.
+- `--classes` (ids) filtra a avaliação; por padrão usa a taxonomia do projeto
+  (`person` = 0), evitando falsos positivos de classes COCO que o dataset não
+  anota.
+- `carregar_verdades` lê o ground truth YOLO (`imagens/` + `labels/`).
+- `ler_predicoes_jsonl` aceita `caixa: [x1,y1,x2,y2]` ou `x1`/`y1`/`x2`/`y2`.
+- Saída: relatório com critério, contagens e `gate` (`avaliar_gate`); exit `0` se
+  aprovado, `1` se reprovado ou não medido.
+- Testes: `tests/video/test_avaliacao_deteccao.py` e
+  `tests/video/test_cli_avaliar_voc.py` (inclui o limite exato de IoU 0,50).
 
 ## Integração com a inferência (US07)
 
@@ -235,49 +367,43 @@ exportação — só impede separar quedas de não-quedas. A decisão precisa vi
 responsável pelos dados (ex.: confirmar se `D`=queda e `N`=sem queda, ou o
 contrário).
 
-## Guia: abrir no CVAT e importar as anotações
+## Guia: anotar e importar as anotações
 
 Anotação (o repositório **não** gera caixas):
 
-1. Em **CVAT**, crie uma tarefa e envie as imagens de `anotavel/images/train` (e
-   as demais em tarefas separadas por split), ou crie um projeto e faça upload
-   do conjunto.
+1. Abra as imagens de `anotavel/images/train` (e as demais por split) em sua
+   ferramenta de anotação preferida.
 2. Crie o label de objeto **`person`** (índice `0`, igual a `data.yaml`).
 3. Desenhe **uma caixa por pessoa** em cada frame. Se não houver pessoa, salve a
    **imagem vazia** (negativa válida). Não invente caixas e não derive a caixa do
    token `F`/`B`.
-4. Exporte em **formato YOLO (Ultralytics 1.1)** — caixas normalizadas
-   `class_id x_center y_center width height`.
-5. Importe para o projeto:
+4. Exporte os labels em **formato YOLO (Ultralytics 1.1)** — caixas normalizadas
+   `class_id x_center y_center width height` — e importe de volta:
 
    ```bash
-   # labels do split de treino exportados pelo CVAT
    uv run python scripts/dataset_us07.py --destino dataset_us07 importar-anotacoes \
-       --de /caminho/export_cvat/labels/train --para dataset_us07/labels/train
+       --de /caminho/export --para dataset_us07/labels/train
    ```
 
-   Repita para `val` e `test`. O importador só copia `.txt` estruturalmente e
-   ignora `data.txt`.
+   Repita por split. `importar-anotacoes` copia apenas os `.txt` de label válidos
+   e ignora `data.txt`.
 
-6. Valide e verifique aptidão:
+### Validar, treinar e avaliar
 
-   ```bash
-   uv run python scripts/dataset_us07.py --destino dataset_us07 validar
-   uv run python scripts/dataset_us07.py --destino dataset_us07 verificar-apto
-   ```
+Depois de anotar os três splits:
 
-7. Com os três splits anotados, treine e avalie:
-
-   ```bash
-   uv run python scripts/dataset_us07.py --destino dataset_us07 treinar \
-       --modelo yolov8n.pt --epochs 50
-   uv run python scripts/dataset_us07.py --destino dataset_us07 avaliar \
-       --pesos runs/detect/us07/weights/best.pt --split test
-   ```
+```bash
+uv run python scripts/dataset_us07.py --destino dataset_us07 validar
+uv run python scripts/dataset_us07.py --destino dataset_us07 verificar-apto
+uv run python scripts/dataset_us07.py --destino dataset_us07 treinar \
+    --modelo yolov8n.pt --epochs 50
+uv run python scripts/dataset_us07.py --destino dataset_us07 avaliar \
+    --pesos runs/detect/us07/weights/best.pt --split test
+```
 
 O gate `mAP@0.5 ≥ 0,50` fica **bloqueado** até existir avaliação real em ground
-truth. O erro mais comum no CVAT é exportar sem `person` no índice 0; nesse caso
-o `validar` acusa `class_id fora do intervalo`.
+truth. Exporte os labels em formato YOLO com `person` no índice `0`; caso
+contrário o `validar` acusa `class_id fora do intervalo`.
 
 ## Limitações conhecidas
 

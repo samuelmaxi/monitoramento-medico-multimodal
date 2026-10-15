@@ -70,12 +70,20 @@ do repositório.
 
 **Status:** ✔ implementado.
 
-- **Código:** `video/detector.py::_inferir` envia `iou` ao Ultralytics
+- **Código (NMS):** `video/detector.py::_inferir` envia `iou` ao Ultralytics
   (`argumentos["iou"]`); valor default em `video/detector.py` (`ConfiguracaoDetector`).
+- **Código (critério/métrica nativos):** `video/avaliacao_deteccao.py` casa
+  predições e verdades por `IoU >= 0,50` da mesma classe (`casar_deteccoes`) e
+  calcula TP/FP/FN, precisão/revocação/F1 e **AP@0.5 / mAP@0.5** por interpolação
+  em todos os pontos (VOC2010+). CLI: `scripts/avaliar_voc_us07.py`; o resultado
+  alimenta o gate (`avaliar_gate`) e fica não medido (`None`) sem ground truth.
 - **Config:** `config/exemplo_us07.json` → `detector.iou: 0.5`.
 - **Justificativa:** mesmo limiar de IoU da métrica `mAP@0.5` (PASCAL VOC)
-  garante coerência entre detecção e avaliação.
-- **Teste:** `tests/video/test_detector.py` (assert de `argumentos["iou"]`).
+  garante coerência entre detecção e avaliação; o avaliador nativo permite medir
+  o critério sem depender do validator da Ultralytics.
+- **Teste:** `tests/video/test_detector.py` (assert de `argumentos["iou"]`);
+  `tests/video/test_avaliacao_deteccao.py` e `tests/video/test_cli_avaliar_voc.py`
+  (limite exato de IoU 0,50, classe divergente, TP/FP/FN, AP, gate).
 
 ### 4. Limiar de confiança documentado (padrão Ultralytics conf = 0,25)
 
@@ -90,15 +98,19 @@ do repositório.
 
 ### 5. Fine-tuning em classes médicas com mAP@0.5 ≥ 0,50 no val
 
-**Status:** ➖ pendente — gate bloqueado até haver anotações; braço baseline adotado.
+**Status:** ✔ gate implementado; resultado real depende de dataset anotado.
 
-- **Rota (pronta):** `scripts/dataset_us07.py` (`montar` → `validar` →
-  `verificar-apto` → `treinar` → `avaliar`) constrói o dataset sem vazamento,
-  exige aptidão e aplica o gate `mAP@0.5 ≥ 0,50` (`video/dataset.py::avaliar_gate`).
-  Com 0 labels anotadas o gate fica **bloqueado** (`medido=false`) — nunca
-  aprovado por omissão (`docs/arquitetura/us07_dataset.md`, 2026-10-08).
-- **Comportamento atual:** checkpoint pré-treinado COCO (`yolov8n.pt`) + baseline
-  e validação qualitativa registrados no relatório (alternativa prevista no DoD).
+- **Rota:** `scripts/dataset_us07.py treinar` exige dataset apto; após o treino
+  avalia `best.pt` (ou `last.pt`) no split `val`, verifica o mAP@0.5 **de cada
+  classe médica** e aplica o gate ≥ 0,50. Uma média global alta não mascara uma
+  classe médica abaixo da meta. O subcomando `validar-finetuning --pesos ...`
+  permite reavaliar checkpoints já treinados.
+- **Relatório:** `dataset_us07/reports/fine_tuning_val.json`, com pesos, taxonomia,
+  métricas globais e AP50 por classe; exit code 0 aprovado, 1 reprovado/não medido.
+  Se o validator não fornecer AP para alguma classe médica, o critério fica
+  explicitamente não medido e não aprovado.
+- **Limitação de evidência:** o repositório não contém labels médicas reais; não
+  se declara atingida a meta até anotar os três splits e executar a validação.
 
 ### 6. Métricas mAP@0.5, mAP@0.5:0.95, Precision e Recall registradas no relatório
 

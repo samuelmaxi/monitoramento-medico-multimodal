@@ -2,7 +2,7 @@
 
 Define o formato YOLO de detecção (``class_id x_center y_center width height``,
 tudo normalizado em ``[0, 1]``), a leitura/escrita de ``.txt``, a validação
-estrutural de uma caixa e o preparo/importação de anotações para o CVAT.
+estrutural de uma caixa e o preparo/importação de anotações externas.
 
 Regra central: **nenhuma anotação é inventada**. Este módulo nunca deriva caixas
 do nome do vídeo nem marca todos os frames de um vídeo ``F`` como queda. Quando um
@@ -199,7 +199,7 @@ def exportar_para_anotacao(
     atribuicoes: Mapping[str, Sequence[str]],
     classes: Sequence[str],
 ) -> ResultadoExportacao:
-    """Prepara uma cópia anotável (CVAT/Ultralytics) a partir do dataset de trabalho.
+    """Prepara uma cópia anotável (Ultralytics) a partir do dataset de trabalho.
 
     Copia as imagens para ``destino/images/<split>/`` e cria ``labels/<split>/``
     vazio, pronto para o anotador preencher. Um ``pendentes_anotacao.csv`` lista
@@ -250,7 +250,7 @@ def exportar_para_anotacao(
 
 
 def importar_anotacoes(origem_labels: str | Path, destino_labels: str | Path) -> list[str]:
-    """Importa ``.txt`` de uma exportação (CVAT/Ultralytics) para o dataset de trabalho.
+    """Importa ``.txt`` de uma exportação (Ultralytics) para o dataset de trabalho.
 
     Aceita a árvore ``images/labels`` ou uma pasta plana de ``.txt``. Só copia
     arquivos válidos estruturalmente; devolve a lista de nomes importados.

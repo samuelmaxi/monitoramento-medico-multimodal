@@ -7,7 +7,7 @@ Fluxo típico (executar a partir da raiz do repositório)::
     uv run python scripts/dataset_us07.py montar
     uv run python scripts/dataset_us07.py validar
     uv run python scripts/dataset_us07.py exportar-anotacao
-    # anotar em CVAT/Ultralytics e então:
+    # anotar com a ferramenta de sua preferência (ex.: Ultralytics) e então:
     uv run python scripts/dataset_us07.py importar-anotacoes --de anotavel/labels/train
     uv run python scripts/dataset_us07.py verificar-apto
     uv run python scripts/dataset_us07.py treinar
@@ -15,6 +15,13 @@ Fluxo típico (executar a partir da raiz do repositório)::
 
 Nenhuma etapa inventa anotações: sem labels reais o dataset permanece inapto e o
 treino é recusado.
+
+Exercício de fine-tuning (item 5 do DoD): ao terminar o treino, o melhor
+checkpoint é medido no conjunto de **validação** e o gate ``mAP@0.5 >= 0,50`` é
+aplicado; o relatório fica em ``reports/fine_tuning_val.json``. Para reavaliar um
+checkpoint já treinado sem retreinar::
+
+    uv run python scripts/dataset_us07.py validar-finetuning --pesos best.pt
 """
 
 from __future__ import annotations
@@ -231,10 +238,16 @@ def cmd_verificar_apto(args: argparse.Namespace) -> int:
 
 def cmd_treinar(args: argparse.Namespace) -> int:
     from video.dataset import verificar_aptidao
+    from video.fine_tuning import (
+        NOME_RELATORIO_FINE_TUNING,
+        ler_configuracao_dataset,
+        validar_fine_tuning,
+    )
 
     destino = Path(args.destino)
     data_yaml = destino / "data.yaml"
-    avaliacao = verificar_aptidao(destino, classes=_classes(args.classes))
+    classes = args.classes or list(ler_configuracao_dataset(data_yaml).classes)
+    avaliacao = verificar_aptidao(destino, classes=classes)
     if not avaliacao.apto:
         print("dataset inapto para treino; anote os frames primeiro", file=sys.stderr)
         _imprimir(avaliacao.para_dict())
@@ -250,8 +263,51 @@ def cmd_treinar(args: argparse.Namespace) -> int:
         project=args.project,
         name=args.name,
     )
-    _imprimir({"save_dir": str(getattr(resultados, "save_dir", ""))})
-    return 0
+    save_dir = Path(str(getattr(resultados, "save_dir", "")))
+    resumo: dict[str, object] = {"save_dir": str(save_dir)}
+    if args.sem_validar:
+        _imprimir(resumo)
+        return 0
+
+    pesos = save_dir / "weights" / "best.pt"
+    if not pesos.is_file():
+        pesos = save_dir / "weights" / "last.pt"
+    resultado = validar_fine_tuning(
+        str(pesos),
+        data_yaml,
+        classes=classes,
+        minimo=args.minimo,
+        dispositivo=args.device,
+    )
+    saida = resultado.salvar_json(destino / "reports" / NOME_RELATORIO_FINE_TUNING)
+    resumo["validacao_val"] = resultado.para_dict()
+    resumo["relatorio"] = str(saida)
+    _imprimir(resumo)
+    return 0 if resultado.aprovado else 1
+
+
+def cmd_validar_fine_tuning(args: argparse.Namespace) -> int:
+    from video.fine_tuning import (
+        NOME_RELATORIO_FINE_TUNING,
+        ler_configuracao_dataset,
+        validar_fine_tuning,
+    )
+
+    destino = Path(args.destino)
+    classes = args.classes
+    if classes is None:
+        classes = list(ler_configuracao_dataset(destino / "data.yaml").classes)
+    resultado = validar_fine_tuning(
+        args.pesos,
+        destino / "data.yaml",
+        classes=classes,
+        minimo=args.minimo,
+        split=args.split,
+        dispositivo=args.device,
+    )
+    saida = resultado.salvar_json(destino / "reports" / NOME_RELATORIO_FINE_TUNING)
+    _imprimir({**resultado.para_dict(), "saida": str(saida)})
+    return 0 if resultado.aprovado else 1
 
 
 def cmd_avaliar(args: argparse.Namespace) -> int:
@@ -317,7 +373,7 @@ def construir_parser() -> argparse.ArgumentParser:
     p.add_argument("--classes", nargs="+", default=["person"])
     p.set_defaults(func=cmd_validar)
 
-    p = sub.add_parser("exportar-anotacao", help="gera uma cópia anotável (CVAT/Ultralytics)")
+    p = sub.add_parser("exportar-anotacao", help="gera uma cópia anotável (Ultralytics)")
     p.add_argument(
         "--saida", type=Path, default=None, help="pasta de saída (padrão: <destino>/anotavel)"
     )
@@ -344,13 +400,32 @@ def construir_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("treinar", help="treina YOLO no dataset (exige aptidão)")
     p.add_argument("--modelo", default="yolov8n.pt")
-    p.add_argument("--classes", nargs="+", default=["person"])
+    p.add_argument("--classes", nargs="+", default=None)
     p.add_argument("--epochs", type=int, default=50)
     p.add_argument("--imgsz", type=int, default=640)
     p.add_argument("--device", default=None)
     p.add_argument("--project", default="runs/detect")
     p.add_argument("--name", default="us07")
+    p.add_argument(
+        "--minimo", type=float, default=0.5, help="mAP@0.5 mínimo no val (gate DoD item 5)"
+    )
+    p.add_argument(
+        "--sem-validar",
+        action="store_true",
+        help="não mede o val nem aplica o gate ao fim do treino",
+    )
     p.set_defaults(func=cmd_treinar)
+
+    p = sub.add_parser(
+        "validar-finetuning",
+        help="mede os pesos no val e aplica o gate mAP@0.5 >= mínimo (DoD item 5)",
+    )
+    p.add_argument("--pesos", required=True, help="checkpoint do fine-tuning (ex.: best.pt)")
+    p.add_argument("--classes", nargs="+", default=None)
+    p.add_argument("--split", default="val", choices=("val", "test", "train"))
+    p.add_argument("--device", default=None)
+    p.add_argument("--minimo", type=float, default=0.5)
+    p.set_defaults(func=cmd_validar_fine_tuning)
 
     p = sub.add_parser("avaliar", help="avalia pesos e aplica o gate mAP@0.5")
     p.add_argument("--pesos", default="yolov8n.pt")
@@ -366,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
     _raiz_repo()
     parser = construir_parser()
     args = parser.parse_args(argv)
+
     try:
         return int(args.func(args))
     except FileNotFoundError as erro:
