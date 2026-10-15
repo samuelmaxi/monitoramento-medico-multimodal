@@ -16,7 +16,11 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "python-multipart>=0.0.32",
     "uvicorn[standard]>=0.54.0",
-    "opencv-python-headless>=4.12,<5",
+    "opencv-python-headless==4.14.0.94",
+    "numpy==2.4.4",
+    "pandas==2.3.3",
+    "pyyaml==6.0.3",
+    "pydantic>=2.9",
 ]
 
 [dependency-groups]

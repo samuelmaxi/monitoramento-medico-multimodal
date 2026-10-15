@@ -1,5 +1,5 @@
 %% Fluxo multimodal — Tech Challenge Fase 4 (US04), versão enxuta
-%% Pipeline em Python na máquina do grupo; AWS só para os serviços de IA gerenciados e o envio do alerta.
+%% Pipeline em Python na máquina do grupo; Azure (brazilsouth) só para os serviços de IA gerenciados e o envio do alerta.
 %% Fonte do diagrama. Regenerar imagens: bash scripts/renderizar_diagrama.sh
 flowchart LR
     subgraph F["Fontes (US03)"]
@@ -16,15 +16,13 @@ flowchart LR
         REP["Replay dos sinais vitais<br/>simula o stream em tempo real"]
     end
 
-    subgraph P["2 · Processamento — AWS: S3 · Transcribe · Translate · Comprehend · Comprehend Medical"]
+    subgraph P["2 · Processamento — Azure: AI Speech · AI Language"]
         direction TB
-        S3A[("Amazon S3 · tc4-audio<br/>entrada do Transcribe<br/>apaga sozinho em 7 dias")]
         PV["Vídeo · Google Colab GPU<br/>OpenCV · OpenPose · YOLOv8"]
         PA["Áudio · local<br/>ffmpeg 16 kHz · openSMILE · YAMNet"]
-        TRN["Amazon Transcribe<br/>pt-BR · diarização"]
-        TRL["Amazon Translate<br/>pt → en"]
-        CMD["Amazon Comprehend Medical<br/>entidades + negação"]
-        CMP["Amazon Comprehend<br/>sentimento em pt"]
+        TRN["Azure AI Speech<br/>transcrição rápida · pt-BR<br/>diarização · phrase list"]
+        CMD["Azure AI Language<br/>Text Analytics for health · pt<br/>entidades + negação"]
+        CMP["Azure AI Language<br/>sentimento em pt"]
         PS["Sinais vitais · local<br/>limpeza + janela deslizante"]
         PP["Prescrições · local<br/>normalização de unidades"]
     end
@@ -45,10 +43,10 @@ flowchart LR
         LFU["fusao_alertas/fusao<br/>assina: modality ≠ fusao<br/>late fusion ponderada por paciente"]
     end
 
-    subgraph A["5 · Alerta à equipe médica — AWS: Amazon SNS"]
+    subgraph A["5 · Alerta à equipe médica — Azure: Communication Services"]
         direction TB
         MAL["fusao_alertas/alertas<br/>assina: severity ≥ media<br/>prioridade · dedup · escalonamento"]
-        SNS["Amazon SNS<br/>e-mail da equipe"]
+        ACS["Azure Communication Services<br/>e-mail da equipe"]
         LOG[("saida/alertas.jsonl<br/>log auditável")]
     end
 
@@ -61,8 +59,8 @@ flowchart LR
     DIR --> PA
     DIR --> REP --> PS
     DIR --> PP
-    PA -->|"WAV 16 kHz"| S3A --> TRN
-    TRN --> TRL --> CMD
+    PA -->|"WAV 16 kHz mono"| TRN
+    TRN -->|"falas do paciente"| CMD
     TRN --> CMP
 
     PV -->|"keypoints + detecções"| DV
@@ -83,16 +81,16 @@ flowchart LR
     BUS --> LFU
     LFU -->|"risco_multimodal"| BUS
     BUS --> MAL
-    MAL --> SNS
+    MAL --> ACS
     MAL --> LOG
 
     classDef fonte fill:#f4f4f5,stroke:#71717a,color:#18181b
     classDef local fill:#ffffff,stroke:#52525b,color:#18181b
-    classDef aws fill:#fff7ed,stroke:#ea580c,color:#7c2d12,stroke-width:2px
+    classDef azure fill:#eff6ff,stroke:#0078d4,color:#0c2d57,stroke-width:2px
     classDef bus fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px
     class FV,FA,FS,FP fonte
     class DIR,REP,PV,PA,PS,PP,DV,DA,DT,DS,DP,DM,LFU,MAL,LOG local
-    class S3A,TRN,TRL,CMD,CMP,SNS aws
+    class TRN,CMD,CMP,ACS azure
     class BUS bus
     style F fill:#fafafa,stroke:#d4d4d8
     style I fill:#f8fafc,stroke:#cbd5e1
