@@ -603,6 +603,96 @@ credenciais do `.env`. Para o teste de transcrição, coloque um áudio curto pt
 pulado automaticamente. Se as variáveis Azure não estiverem configuradas, todos os
 testes são pulados com uma mensagem explicando o motivo.
 
+## Pipeline de vídeo (US05)
+
+Lê vídeos clínicos (MP4/H.264 e AVI) frame a frame, amostra a taxa configurada,
+carimba cada frame com timestamp em ms, anonimiza rostos e grava um JSON de
+detecções. Não depende de Azure.
+
+```python
+from app.video.config import VideoConfig
+from app.video.pipeline import process_video
+
+result = process_video("conteudos/videos/video.mp4", VideoConfig.from_env())
+print(result["status"], result["output_json"])
+```
+
+Ou pela linha de comando, que também aceita as opções abaixo:
+
+```bash
+uv run python -m app.video.pipeline conteudos/videos/video.mp4 --anonymized-video --annotated
+```
+
+- `--anonymized-video`: grava `<nome>_anonimizado.mp4`, o vídeo anonimizado **limpo** (sem caixas), usado como insumo de treino.
+- `--annotated`: grava `<nome>_anotado.mp4`, com as detecções desenhadas (para inspeção).
+- `--method fill|pixelate|mosaic|blur`: como ocultar os rostos (padrão `fill`).
+- `--no-anonymize`: desliga a anonimização. Não use com dados pessoais.
+
+**Configuração**
+
+| Variável | Padrão | Descrição |
+| --- | --- | --- |
+| `VIDEO_TARGET_FPS` | `5` | Fps processado. O passo é `round(fps_origem / target)`; o fps efetivo usado fica em `sampling.effective_fps` no JSON. |
+| `VIDEO_ANONYMIZE_METHOD` | `fill` | Como ocultar os rostos: `fill` (tarja preta), `pixelate`, `mosaic` (xadrez preto e branco) ou `blur`. |
+| `VIDEO_OUTPUT_DIR` | `saida/video` | Pasta do JSON e dos vídeos gerados (gitignored). |
+
+**Saída (JSON)**
+
+```json
+{
+  "video": "video.mp4",
+  "status": "ok",
+  "reason": null,
+  "sampling": {"source_fps": 30.0, "target_fps": 5.0, "effective_fps": 5.0, "step": 6},
+  "anonymized": true,
+  "frames": [
+    {"frame_index": 0, "timestamp_ms": 0, "detections": []},
+    {"frame_index": 6, "timestamp_ms": 200, "detections": [
+      {"label": "person", "confidence": 0.91, "bbox": [0, 0, 0, 0]}
+    ]}
+  ],
+  "output_json": "saida/video/video.json",
+  "output_video": null
+}
+```
+
+`status` pode ser `ok`, `partial` (vídeo parou de entregar frames antes do fim
+declarado; os frames lidos são mantidos) ou `failed` (formato inválido ou arquivo
+corrompido; o erro é logado e o pipeline não é interrompido).
+
+**Anonimização (LGPD)**: a ocultação dos rostos é aplicada antes da detecção e da
+gravação, então nenhum frame com rosto chega ao disco. O detector é o YuNet
+(OpenCV), com limiar baixo para priorizar recall; as caixas têm margem de 15% e
+uma memória de 3 frames amostrados para cobrir falhas intermitentes. O método
+padrão é o preenchimento sólido (`fill`), que não deixa informação visual da
+região. A pixelização, o mosaico preto e branco e o blur gaussiano ficam como opções. Rostos muito pequenos,
+muito inclinados ou cobertos (máscara, campo cirúrgico) ainda podem escapar; isso
+deve ser citado no relatório técnico.
+
+**Detecção**: `app/video/detector.py` define a interface `Detector`. Hoje o
+`NullDetector` não detecta nada; YOLOv8 e OpenPose entram plugados nessa interface.
+
+**Observação de dependência**: `opencv-python-headless` está fixado em `<5`, pois
+o OpenCV 5 removeu o `CascadeClassifier` e não traz os arquivos Haar.
+
+Testes unitários (sem rede, com vídeo sintético gerado em `tmp_path`):
+
+```bash
+uv run pytest tests/video -v
+```
+
+### Dataset de origem e licença
+
+Os vídeos clínicos de treino vêm do dataset **REHAB24-6** (fisioterapia), que não é armazenado neste repositório. Os derivados anonimizados gerados pelo pipeline estão sob os termos abaixo.
+
+**Citação obrigatória** (conforme o dataset):
+
+> Černek, A., Sedmidubsky, J., Budikova P.: REHAB24-6: Physical Therapy Dataset for Analyzing Pose Estimation Methods. 17th International Conference on Similarity Search and Applications (SISAP). Springer, 14 pages, 2024.
+
+**Licença**: [Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/). Uso apenas não comercial, com atribuição. Os vídeos derivados foram alterados (anonimização de rostos e amostragem de frames).
+
+Para uso comercial, entre em contato com a VisionCraft pelo e-mail info@visioncraft.ai.
+
 ## Demo ponta a ponta
 
 1. Configure as variáveis de ambiente:

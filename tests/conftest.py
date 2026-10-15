@@ -14,7 +14,7 @@ _REQUIRED_ENV_VARS = [
 ]
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def _require_azure_env():
     missing = [var for var in _REQUIRED_ENV_VARS if not os.getenv(var)]
     if missing:
