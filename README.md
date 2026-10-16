@@ -148,6 +148,19 @@ uv sync
 
 Crie/edite o arquivo `.env` se for baixar vídeos via `scripts/get_content_script.py`.
 
+#### 1b. Gerar config por vídeo (recomendado)
+
+O script `scripts/gerar_config_us07.py` copia um template e ajusta apenas o vídeo, o `fonte.id` e os caminhos de saída.
+
+```bash
+uv run python scripts/gerar_config_us07.py \
+  --video conteudos/videos/B_D_0003.mp4 \
+  --template config/exemplo_us07.json \
+  --saida config/B_D_0003.json
+```
+
+Isso gera `config/B_D_0003.json` com as mesmas classes/ROIs do template, o FPS do vídeo preenchido (via OpenCV) e o JSONL em `saida/video/eventos_B_D_0003.jsonl`. Use `--forcar` para sobrescrever, `--sem-metadados` para não abrir o vídeo e `--patient-id` para trocar o pseudônimo.
+
 #### 2. Processar vídeo da configuração (padrão)
 
 O arquivo `config/exemplo_us07.json` define: vídeo, pesos `yolov8n.pt`, classes

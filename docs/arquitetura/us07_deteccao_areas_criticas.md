@@ -28,6 +28,19 @@ persistência tolera oito quadros sem detecção. A primeira execução pode bai
 configuração. O JSON de resumo apresenta quadros, detecções, eventos, classes,
 resolução e duração. A visualização anotada é opcional.
 
+### Geração de config por vídeo
+
+Para criar um config dedicado por câmera/vídeo (reaproveitando ROI e parâmetros), use o gerador:
+
+```bash
+uv run python scripts/gerar_config_us07.py \
+  --video conteudos/videos/B_D_0003.mp4 \
+  --template config/exemplo_us07.json \
+  --saida config/B_D_0003.json
+```
+
+Ele copia o template, define `fonte.id` (stem do vídeo), rebaseia caminhos, preenche `fonte.fps` (OpenCV) e valida o resultado antes de gravar. Flags: `--forcar`, `--sem-metadados`, `--patient-id`, `--id`.
+
 ### Lote e vídeo único
 
 O mesmo script aceita `--video` (um arquivo) e `--videos-dir` (todos os vídeos
@@ -36,6 +49,8 @@ O mesmo script aceita `--video` (um arquivo) e `--videos-dir` (todos os vídeos
 ```bash
 uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
   --video conteudos/videos/B_D_0001.mp4
+uv run python scripts/rodar_us07_video.py config/B_D_0003.json \
+  --video conteudos/videos/B_D_0003.mp4  # ou direto pelo config gerado
 uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
   --videos-dir conteudos/videos
 ```
