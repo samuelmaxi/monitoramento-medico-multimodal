@@ -251,3 +251,6 @@ uv.lock
 
 # Saídas do pipeline de vídeo
 /saida/
+
+# Áudios de consulta e transcrições de referência (dados de saúde, não versionar)
+/dados/

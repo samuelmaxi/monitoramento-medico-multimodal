@@ -544,6 +544,7 @@ dependencies = [
     { name = "azure-storage-blob" },
     { name = "fastapi" },
     { name = "gdown" },
+    { name = "httpx" },
     { name = "numpy" },
     { name = "opencv-python-headless" },
     { name = "pandas" },
@@ -556,7 +557,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
 ]
 
@@ -567,6 +567,7 @@ requires-dist = [
     { name = "azure-storage-blob", specifier = ">=12.25.0" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "gdown", specifier = ">=6.4.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy", specifier = "==2.4.4" },
     { name = "opencv-python-headless", specifier = "==4.14.0.94" },
     { name = "pandas", specifier = "==2.3.3" },
@@ -578,10 +579,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "pytest", specifier = ">=9.1.1" },
-]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "numpy"

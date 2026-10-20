@@ -6,15 +6,35 @@ from contratos import Artefato, Contexto, Janela
 from contratos.evento import UtcDatetime
 
 
-class TranscriptionStartResponse(BaseModel):
-    job_name: str
-    status: str
+class PalavraTranscrita(BaseModel):
+    texto: str
+    offset_ms: int | None = None
+    duracao_ms: int | None = None
 
 
-class TranscriptionResultResponse(BaseModel):
-    status: str
-    transcript: str | None = None
-    failure_reason: str | None = None
+class FalaTranscrita(BaseModel):
+    texto: str
+    falante: int | None = None
+    papel: Literal["medico", "paciente"] | None = None
+    offset_ms: int | None = None
+    duracao_ms: int | None = None
+    confianca: float | None = None
+    palavras: list[PalavraTranscrita] = []
+
+
+class TranscricaoResponse(BaseModel):
+    """Mesmo documento gravado em ``saida/transcricao/<job>/audio.json``."""
+
+    schema_version: str
+    arquivo: dict[str, str | int]
+    idioma: str
+    duracao_ms: int | None = None
+    diarizacao: dict[str, bool | int]
+    frases_medicas: bool
+    medico_falante: int | None = None
+    criado_em: str
+    texto_completo: str
+    falas: list[FalaTranscrita]
 
 
 class SentimentRequest(BaseModel):
