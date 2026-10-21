@@ -1,0 +1,64 @@
+{
+  "audio_id": "consulta-02",
+  "patient_id": "sim-paciente-02",
+  "recorded_at": "2026-10-02T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "Boa tarde. Como a senhora está desde a última consulta?",
+      "offset_ms": 500,
+      "duration_ms": 3575,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Estou bem melhor. Só fiquei com uma tosse seca que incomoda à noite.",
+      "offset_ms": 4525,
+      "duration_ms": 4420,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "Alguma dor no peito ou falta de ar?",
+      "offset_ms": 9395,
+      "duration_ms": 2275,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "Não, não sinto dor no peito. Também nego falta de ar, consigo caminhar normalmente.",
+      "offset_ms": 12120,
+      "duration_ms": 5395,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "E febre?",
+      "offset_ms": 17965,
+      "duration_ms": 1200,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Não tive febre em nenhum momento.",
+      "offset_ms": 19615,
+      "duration_ms": 2145,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "medico",
+      "text": "Ótimo. Vou receitar um xarope para a tosse.",
+      "offset_ms": 22210,
+      "duration_ms": 2795,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "paciente",
+      "text": "Obrigada, doutora.",
+      "offset_ms": 25455,
+      "duration_ms": 1200,
+      "confidence": 0.91
+    }
+  ]
+}

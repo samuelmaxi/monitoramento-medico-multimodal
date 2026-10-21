@@ -45,3 +45,4 @@ def require_blob_container_name() -> str:
 
 POSE_CONFIG_PATH = os.getenv("POSE_CONFIG_PATH", "video/pose/config.yaml")
 VIDEO_MAX_UPLOAD_MB = int(os.getenv("VIDEO_MAX_UPLOAD_MB", "500"))
+TEXT_CONFIG_PATH = os.getenv("TEXT_CONFIG_PATH", "audio/text/config.yaml")

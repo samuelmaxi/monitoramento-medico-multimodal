@@ -27,9 +27,15 @@ sistema.
 ├── conteudos/                 # Conteúdos baixados do Google Drive (gitignored)
 ├── scripts/
 │   ├── get_content_script.py  # Download dos conteúdos do Google Drive
+│   ├── eval_us13.py           # Recall/precision dos termos críticos (US13)
 │   └── download_openpose_models.sh  # Pesos do OpenPose com checksum (US06)
 ├── video/
 │   └── pose/                  # Análise postural com OpenPose (US06)
+├── audio/
+│   ├── text/                  # Termos críticos e sentimento nas transcrições (US13)
+│   └── tests/                 # Testes da US13 com a API mockada
+├── data/
+│   └── text_samples/          # Consultas simuladas e anotações da US13 (versionadas)
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
@@ -86,11 +92,11 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `GOOGLE_DRIVE_FOLDER_URL`         | Sim                              | URL da pasta do Google Drive cujo conteúdo será baixado para `conteudos/`. O script aborta com erro se não estiver definida. | `https://drive.google.com/drive/folders/1sJN538ANpeud1JzqPMjoNXK_CDXDTo3M?usp=sharing` |
 | `AZURE_SPEECH_KEY`                | Sim (para transcrição)           | Chave da API do serviço Azure Speech. Obtida via `terraform output speech_key`.                                              | `a1b2c3d4e5f6...`                                                                      |
 | `AZURE_SPEECH_REGION`             | Sim (para transcrição)           | Região do serviço Azure Speech. Fixada em `eastus` para usar tier gratuita.                                                  | `eastus`                                                                               |
-| `AZURE_LANGUAGE_ENDPOINT`         | Sim (para análise de sentimento) | Endpoint do serviço Azure AI Language. Obtido via `terraform output language_endpoint`.                                      | `https://monitoramento-language-dev.cognitiveservices.azure.com/`                      |
-| `AZURE_LANGUAGE_KEY`              | Sim (para análise de sentimento) | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`.                                          | `a1b2c3d4e5f6...`                                                                      |
+| `AZURE_LANGUAGE_ENDPOINT`         | Sim (sentimento e US13)          | Endpoint do serviço Azure AI Language. Obtido via `terraform output language_endpoint`.                                      | `https://monitoramento-language-dev.cognitiveservices.azure.com/`                      |
+| `AZURE_LANGUAGE_KEY`              | Sim (sentimento e US13)          | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`.                                          | `a1b2c3d4e5f6...`                                                                      |
 | `AZURE_STORAGE_CONNECTION_STRING` | Sim (para transcrição)           | Connection string do Azure Blob Storage. Obtida via `terraform output storage_connection_string`.                            | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
 | `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
-| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e pela US13 quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
 | `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose`. Padrão: `500`.                                                        | `500`                                                                                  |
 
@@ -692,6 +698,121 @@ Os vídeos clínicos de treino vêm do dataset **REHAB24-6** (fisioterapia), que
 **Licença**: [Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/). Uso apenas não comercial, com atribuição. Os vídeos derivados foram alterados (anonimização de rostos e amostragem de frames).
 
 Para uso comercial, entre em contato com a VisionCraft pelo e-mail info@visioncraft.ai.
+
+## Termos críticos e sentimento nas transcrições (US13)
+
+Lê as transcrições diarizadas da US11, envia **só as falas do paciente** ao Azure AI Language e emite eventos no contrato da US04 (`modality="texto"`):
+
+- **Text Analytics for health** extrai sintomas, medicamentos, dosagens e diagnósticos, com categoria, confiança, nome normalizado e asserções.
+- Um **filtro de asserção** descarta negações, sintomas de terceiros e hipóteses, e rebaixa o histórico passado.
+- As entidades que restam são comparadas com a lista versionada de termos críticos.
+- O **sentimento** é calculado por sentença e resumido por consulta.
+
+A fala do médico ("você sente falta de ar?") não é enviada à Azure e nunca gera achado. Ela só entra como contexto, em `pergunta_medico` na evidência.
+
+```bash
+pip install -r audio/requirements.txt         # ou uv sync
+python -m audio.text.run --input outputs/transcripts --config audio/text/config.yaml
+python -m audio.text.run --input data/text_samples --config audio/text/config.yaml   # amostras simuladas
+python scripts/eval_us13.py                   # recall/precision/F1 → outputs/text_analysis/eval.md
+python -m contratos.validar outputs/text_analysis/consulta-*.json
+curl -X POST localhost:8000/text/analysis -H 'Content-Type: application/json' --data @data/text_samples/consulta-07.json   # pela API
+pytest audio/tests                            # API mockada, sem rede
+```
+
+| Arquivo | Conteúdo |
+| --- | --- |
+| `audio/text/config.yaml` | Idiomas, limites e lotes do serviço, retry, cache, rótulos de falante, marcadores de passado e limiar de sentimento |
+| `audio/text/critical_terms.yaml` | Lista versionada de 15 termos críticos: nome canônico, sinônimos em pt-BR, nomes normalizados (UMLS), categorias e severidade |
+| `audio/text/alerts.py` | **Stub** do motor de alertas: assina o barramento e só registra no log os eventos de severidade alta. Será trocado pela US19 |
+| `data/text_samples/` | 15 consultas simuladas, com negações, sintomas de terceiros, hipóteses e histórico passado de propósito, e o `annotations.csv` |
+
+**Variáveis de ambiente**
+
+| Variável | Uso |
+| --- | --- |
+| `AZURE_LANGUAGE_ENDPOINT` | Endpoint do recurso Azure AI Language (`terraform output language_endpoint`) |
+| `AZURE_LANGUAGE_KEY` | Chave do recurso. Só por variável de ambiente; nunca no código ou no config |
+| `PSEUDONYM_KEY` | Pseudonimiza o `patient_id` da transcrição (contrato da US04) |
+| `EVENTOS_JSONL` | Barramento local onde os eventos são publicados. Padrão: `saida/eventos.jsonl` |
+| `TEXT_CONFIG_PATH` | Config usado pela rota `POST /text/analysis`. Padrão: `audio/text/config.yaml` |
+
+**Códigos de idioma**
+
+| Serviço | Código | Por quê |
+| --- | --- | --- |
+| Text Analytics for health | `pt` | É o único código de português que o serviço aceita; não existe variante `pt-BR` |
+| Análise de sentimento | `pt-BR` | No sentimento, `pt` é interpretado como **pt-PT**. Para o português do Brasil é preciso pedir `pt-BR` explicitamente |
+
+**Limites do serviço**: até 5.120 caracteres por documento. Falas mais longas são divididas por sentença; uma sentença maior que isso é cortada no último espaço. O sentimento aceita até 10 documentos por requisição e o health até 25. Os offsets devolvidos pelo serviço são remapeados para a posição na fala original.
+
+**Erros**: HTTP 429 (e 5xx transitório) tem retry exponencial (1 s, 2 s, 4 s…, até `azure.retry.max_delay_s`), e o `Retry-After` do serviço tem precedência. HTTP 401 e 403 interrompem o lote com uma mensagem que aponta a causa provável. O retry interno do SDK fica desligado, para haver uma política só, visível no log.
+
+**Cache**: cada resposta fica em `saida/cache_azure/language/`, com o hash de operação, idioma, versão do modelo e texto como chave. Rodar de novo, regravar o vídeo ou ajustar limiares não repete chamadas à Azure. Apague a pasta para forçar uma nova análise.
+
+**Filtro de asserção** (cada descarte é registrado no log e em `detalhes/<audio_id>.json` com o motivo):
+
+| Asserção | Exemplo | Decisão |
+| --- | --- | --- |
+| certeza `negative` ou `negative_possible` | "nego dor no peito" | descarta |
+| associação `other` | "meu pai teve infarto" | descarta |
+| condicionalidade `hypothetical` ou `conditional` | "se a falta de ar piorar" | descarta |
+| temporalidade `past` | "há cinco anos tive uma convulsão" | mantém, com a severidade um nível abaixo (alta → media → baixa → info) |
+
+> **Temporalidade:** a API GA (`2023-04-01`, usada pelo `azure-ai-textanalytics` 5.3.0) devolve certeza, condicionalidade e associação, mas **não** temporalidade. O cliente lê `temporality` da resposta crua, caso o serviço passe a devolvê-la. Enquanto isso não acontece, a sentença da entidade é comparada com os marcadores de passado de `assertions.past_markers` (ex.: "há N anos", "já tive", "ano passado"). A origem de cada decisão fica em `temporalidade_fonte` (`servico` ou `regra_local`).
+
+**Casamento com a lista**: a categoria da entidade precisa estar entre as do termo. Além disso, o nome normalizado precisa coincidir com um dos `normalized`, ou o texto da entidade precisa conter um dos sinônimos como palavra inteira. Caixa e acentos são ignorados. Um termo repetido na consulta gera um único evento, com `ocorrencias`.
+
+**Sentimento**: uma sentença é negativa quando o score negativo é ≥ `sentiment.negative_threshold` (0,7). A consulta é predominantemente negativa quando a fração de sentenças negativas do paciente é ≥ `sentiment.min_negative_ratio` (0,5). Nesse caso sai um evento `sentimento_negativo` (severidade `baixa`) com o score médio como `score`.
+
+**Saída**
+
+| Caminho | Conteúdo |
+| --- | --- |
+| `outputs/text_analysis/<audio_id>.json` | Lista de `EventoAchado`: `termo_critico`, `sentimento_negativo` ou `sem_achados` |
+| `outputs/text_analysis/detalhes/<audio_id>.json` | Todas as entidades com asserções e decisão, os descartes com motivo e o sentimento por sentença com os três scores e o resumo da consulta |
+| `outputs/text_analysis/run.log` | Log do lote, incluindo o motivo de cada descarte |
+| `saida/eventos.jsonl` | Barramento local; o stub de alertas recebe daqui os eventos de severidade alta |
+
+Formato de um evento `termo_critico` (resumido e com valores ilustrativos; o exemplo real da rodada fica no `eval.md`):
+
+```json
+{
+  "modality": "texto",
+  "event_type": "termo_critico",
+  "score": 0.97,
+  "severity": "alta",
+  "evidence": {
+    "summary": "Paciente relata dor torácica: “dor no peito” (afirmado, sem negação)",
+    "features": {
+      "termo": "dor torácica", "texto": "dor no peito", "categoria": "SymptomOrSign",
+      "nome_normalizado": "Chest Pain", "confianca": 0.97,
+      "certeza": "positive", "condicionalidade": null, "associacao": "subject",
+      "temporalidade": null, "rebaixada": false, "falante": "paciente", "offset_ms": 6512,
+      "trecho": "Desde ontem à noite estou com uma dor no peito muito forte, ...",
+      "pergunta_medico": "Bom dia. O que trouxe o senhor aqui hoje?"
+    },
+    "models": {"azure-text-analytics-for-health": "<modelVersion>", "idioma-health": "pt", "idioma-sentimento": "pt-BR"},
+    "artifacts": [{"kind": "transcricao", "uri": "data/text_samples/consulta-01.json", "start_ms": 3615, "end_ms": 11675}]
+  },
+  "model_version": "texto-nlp@0.1.0"
+}
+```
+
+**Formato da transcrição esperado da US11** (`outputs/transcripts/<audio_id>.json`). `recorded_at` + `offset_ms` dá o `timestamp` UTC que o contrato exige:
+
+```json
+{
+  "audio_id": "consulta-01",
+  "patient_id": "sim-paciente-01",
+  "recorded_at": "2026-10-01T13:00:00Z",
+  "segments": [{"speaker": "paciente", "text": "...", "offset_ms": 3615, "duration_ms": 8060, "confidence": 0.89}]
+}
+```
+
+**API**: `POST /text/analysis` recebe a transcrição no formato acima e devolve os eventos (com `?detalhes=true`, também entidades, descartes e sentimento). Rotas, códigos de erro e a coleção Postman estão em `postman/README.md`.
+
+**Avaliação**: `scripts/eval_us13.py` compara, por consulta, os termos anotados em `data/text_samples/annotations.csv` com os eventos `termo_critico`. Ele grava em `eval.md` a precision, o recall, o F1, os falsos positivos e os falsos negativos (com o motivo de cada um) e os descartes corretos, além de um exemplo de termo detectado e um de negação ignorada para o relatório.
 
 ## Demo ponta a ponta
 

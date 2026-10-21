@@ -1,0 +1,465 @@
+{
+  "info": {
+    "_postman_id": "100b8501-5152-5c43-87de-3151e028bdd5",
+    "name": "Monitoramento Médico - Áudio e Texto (US11, US13)",
+    "description": "Rotas de áudio e texto da API local (FastAPI). Suba a API com `uvicorn app.main:app --reload` e ajuste `baseUrl` se não for http://127.0.0.1:8000. Instruções completas em postman/README.md. As rotas de pose (US06) estão em video-pose.json.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "job_name",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Confere se a API está no ar."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"status ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "US13 - Termos críticos e sentimento",
+      "description": "POST /text/analysis recebe a transcrição diarizada da US11 e devolve os eventos EventoAchado (modality=texto): termo_critico, sentimento_negativo ou sem_achados. Só as falas do paciente vão ao Azure AI Language. Precisa de AZURE_LANGUAGE_ENDPOINT, AZURE_LANGUAGE_KEY e PSEUDONYM_KEY no .env. A primeira chamada de cada texto leva alguns segundos; repetições vêm do cache (saida/cache_azure/language).",
+      "item": [
+        {
+          "name": "Termo crítico afirmado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/text/analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "text",
+                "analysis"
+              ]
+            },
+            "description": "Consulta simulada 07: sangue nas fezes e tontura relatados pelo paciente. Esperado: termo_critico de sangramento (alta) e tontura (media).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_id\": \"consulta-07\",\n  \"patient_id\": \"sim-paciente-07\",\n  \"recorded_at\": \"2026-10-07T13:00:00Z\",\n  \"is_synthetic\": true,\n  \"segments\": [\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Qual é a queixa principal?\",\n      \"offset_ms\": 500,\n      \"duration_ms\": 1690,\n      \"confidence\": 0.86\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Estou com sangue nas fezes há uma semana e isso está me deixando muito preocupado.\",\n      \"offset_ms\": 2640,\n      \"duration_ms\": 5330,\n      \"confidence\": 0.885\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Sente fraqueza ou tontura?\",\n      \"offset_ms\": 8420,\n      \"duration_ms\": 1690,\n      \"confidence\": 0.91\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Sinto tontura quando levanto da cama, a vista escurece. Vômito eu não tive.\",\n      \"offset_ms\": 10560,\n      \"duration_ms\": 4875,\n      \"confidence\": 0.935\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Alguém da família teve câncer de intestino?\",\n      \"offset_ms\": 15885,\n      \"duration_ms\": 2795,\n      \"confidence\": 0.96\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Minha mãe teve câncer de intestino. Tenho muito medo de ser a mesma coisa.\",\n      \"offset_ms\": 19130,\n      \"duration_ms\": 4810,\n      \"confidence\": 0.86\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality texto e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"texto\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "    });",
+                  "});",
+                  "const termos = corpo.eventos.filter(e => e.event_type === \"termo_critico\").map(e => e.evidence.features.termo);",
+                  "pm.test(\"detecta sangramento e tontura\", () => pm.expect(termos).to.include.members([\"sangramento\", \"tontura\"]));",
+                  "pm.test(\"sangramento tem severidade alta\", () => {",
+                  "    const ev = corpo.eventos.find(e => e.evidence.features.termo === \"sangramento\");",
+                  "    pm.expect(ev.severity).to.eql(\"alta\");",
+                  "});",
+                  "pm.test(\"sem detalhes por padrão\", () => pm.expect(corpo).to.not.have.property(\"detalhes\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Negação ignorada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/text/analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "text",
+                "analysis"
+              ]
+            },
+            "description": "Consulta simulada 02: o paciente nega dor no peito, falta de ar e febre. Esperado: nenhum termo_critico; a pergunta do médico também não gera achado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_id\": \"consulta-02\",\n  \"patient_id\": \"sim-paciente-02\",\n  \"recorded_at\": \"2026-10-02T13:00:00Z\",\n  \"is_synthetic\": true,\n  \"segments\": [\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Boa tarde. Como a senhora está desde a última consulta?\",\n      \"offset_ms\": 500,\n      \"duration_ms\": 3575,\n      \"confidence\": 0.86\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Estou bem melhor. Só fiquei com uma tosse seca que incomoda à noite.\",\n      \"offset_ms\": 4525,\n      \"duration_ms\": 4420,\n      \"confidence\": 0.885\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Alguma dor no peito ou falta de ar?\",\n      \"offset_ms\": 9395,\n      \"duration_ms\": 2275,\n      \"confidence\": 0.91\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Não, não sinto dor no peito. Também nego falta de ar, consigo caminhar normalmente.\",\n      \"offset_ms\": 12120,\n      \"duration_ms\": 5395,\n      \"confidence\": 0.935\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"E febre?\",\n      \"offset_ms\": 17965,\n      \"duration_ms\": 1200,\n      \"confidence\": 0.96\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Não tive febre em nenhum momento.\",\n      \"offset_ms\": 19615,\n      \"duration_ms\": 2145,\n      \"confidence\": 0.86\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Ótimo. Vou receitar um xarope para a tosse.\",\n      \"offset_ms\": 22210,\n      \"duration_ms\": 2795,\n      \"confidence\": 0.885\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Obrigada, doutora.\",\n      \"offset_ms\": 25455,\n      \"duration_ms\": 1200,\n      \"confidence\": 0.91\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality texto e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"texto\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "    });",
+                  "});",
+                  "const termos = corpo.eventos.filter(e => e.event_type === \"termo_critico\").map(e => e.evidence.features.termo);",
+                  "pm.test(\"nenhum termo crítico\", () => pm.expect(termos).to.be.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sintoma de terceiro ignorado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/text/analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "text",
+                "analysis"
+              ]
+            },
+            "description": "Consulta simulada 03 (sem a fala sobre a irmã): infarto do pai e AVC da mãe. Esperado: nenhum termo_critico (associação = outra pessoa).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_id\": \"consulta-03\",\n  \"patient_id\": \"sim-paciente-03\",\n  \"recorded_at\": \"2026-10-03T13:00:00Z\",\n  \"is_synthetic\": true,\n  \"segments\": [\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Olá. Vamos fazer o check-up anual. Tem histórico de doenças na família?\",\n      \"offset_ms\": 500,\n      \"duration_ms\": 4615,\n      \"confidence\": 0.86\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Tenho sim. Meu pai teve infarto com cinquenta anos e minha mãe teve AVC no ano passado.\",\n      \"offset_ms\": 5565,\n      \"duration_ms\": 5655,\n      \"confidence\": 0.885\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"E o senhor, sente alguma coisa?\",\n      \"offset_ms\": 18515,\n      \"duration_ms\": 2015,\n      \"confidence\": 0.96\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Eu estou bem, doutor. Durmo bem, me alimento direito e faço caminhada três vezes por semana.\",\n      \"offset_ms\": 20980,\n      \"duration_ms\": 5980,\n      \"confidence\": 0.86\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality texto e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"texto\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "    });",
+                  "});",
+                  "const termos = corpo.eventos.filter(e => e.event_type === \"termo_critico\").map(e => e.evidence.features.termo);",
+                  "pm.test(\"infarto e AVC de familiares não viram achado\", () => pm.expect(termos).to.not.include.members([\"infarto\", \"AVC\"]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Com detalhes (entidades, descartes e sentimento)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/text/analysis?detalhes=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "text",
+                "analysis"
+              ],
+              "query": [
+                {
+                  "key": "detalhes",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Mesma consulta 02 com ?detalhes=true: devolve as entidades extraídas com as asserções, os descartes com o motivo e o sentimento por sentença.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_id\": \"consulta-02\",\n  \"patient_id\": \"sim-paciente-02\",\n  \"recorded_at\": \"2026-10-02T13:00:00Z\",\n  \"is_synthetic\": true,\n  \"segments\": [\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Boa tarde. Como a senhora está desde a última consulta?\",\n      \"offset_ms\": 500,\n      \"duration_ms\": 3575,\n      \"confidence\": 0.86\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Estou bem melhor. Só fiquei com uma tosse seca que incomoda à noite.\",\n      \"offset_ms\": 4525,\n      \"duration_ms\": 4420,\n      \"confidence\": 0.885\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Alguma dor no peito ou falta de ar?\",\n      \"offset_ms\": 9395,\n      \"duration_ms\": 2275,\n      \"confidence\": 0.91\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Não, não sinto dor no peito. Também nego falta de ar, consigo caminhar normalmente.\",\n      \"offset_ms\": 12120,\n      \"duration_ms\": 5395,\n      \"confidence\": 0.935\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"E febre?\",\n      \"offset_ms\": 17965,\n      \"duration_ms\": 1200,\n      \"confidence\": 0.96\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Não tive febre em nenhum momento.\",\n      \"offset_ms\": 19615,\n      \"duration_ms\": 2145,\n      \"confidence\": 0.86\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Ótimo. Vou receitar um xarope para a tosse.\",\n      \"offset_ms\": 22210,\n      \"duration_ms\": 2795,\n      \"confidence\": 0.885\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Obrigada, doutora.\",\n      \"offset_ms\": 25455,\n      \"duration_ms\": 1200,\n      \"confidence\": 0.91\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality texto e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"texto\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "    });",
+                  "});",
+                  "const termos = corpo.eventos.filter(e => e.event_type === \"termo_critico\").map(e => e.evidence.features.termo);",
+                  "pm.test(\"descartes trazem o motivo da negação\", () => {",
+                  "    const motivos = corpo.detalhes.descartes.map(d => d.motivo);",
+                  "    pm.expect(motivos).to.include(\"certeza=negative\");",
+                  "});",
+                  "pm.test(\"resumo do sentimento presente\", () => pm.expect(corpo.detalhes.sentimento.resumo).to.have.property(\"pct_negativas\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Erro 422 - recorded_at fora de UTC",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/text/analysis",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "text",
+                "analysis"
+              ]
+            },
+            "description": "recorded_at precisa estar em UTC (sufixo Z), porque compõe o timestamp do evento. Esperado: 422 com a mensagem do validador.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audio_id\": \"consulta-07\",\n  \"patient_id\": \"sim-paciente-07\",\n  \"recorded_at\": \"2026-10-07T10:00:00-03:00\",\n  \"is_synthetic\": true,\n  \"segments\": [\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Qual é a queixa principal?\",\n      \"offset_ms\": 500,\n      \"duration_ms\": 1690,\n      \"confidence\": 0.86\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Estou com sangue nas fezes há uma semana e isso está me deixando muito preocupado.\",\n      \"offset_ms\": 2640,\n      \"duration_ms\": 5330,\n      \"confidence\": 0.885\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Sente fraqueza ou tontura?\",\n      \"offset_ms\": 8420,\n      \"duration_ms\": 1690,\n      \"confidence\": 0.91\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Sinto tontura quando levanto da cama, a vista escurece. Vômito eu não tive.\",\n      \"offset_ms\": 10560,\n      \"duration_ms\": 4875,\n      \"confidence\": 0.935\n    },\n    {\n      \"speaker\": \"medico\",\n      \"text\": \"Alguém da família teve câncer de intestino?\",\n      \"offset_ms\": 15885,\n      \"duration_ms\": 2795,\n      \"confidence\": 0.96\n    },\n    {\n      \"speaker\": \"paciente\",\n      \"text\": \"Minha mãe teve câncer de intestino. Tenho muito medo de ser a mesma coisa.\",\n      \"offset_ms\": 19130,\n      \"duration_ms\": 4810,\n      \"confidence\": 0.86\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"mensagem cita UTC\", () => pm.expect(pm.response.json().detail).to.include(\"UTC\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Sentimento",
+      "item": [
+        {
+          "name": "Analisar sentimento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sentiment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sentiment"
+              ]
+            },
+            "description": "Sentimento de um texto avulso no Azure AI Language. language_code: pt (vira pt-BR), pt-PT, en ou en-US.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Estou com muita dor e não consigo dormir, estou muito preocupado.\",\n  \"language_code\": \"pt\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"rótulo válido\", () => pm.expect([\"POSITIVE\", \"NEUTRAL\", \"NEGATIVE\", \"MIXED\"]).to.include(corpo.sentiment));",
+                  "pm.test(\"scores somam ~1\", () => {",
+                  "    const s = corpo.sentiment_score;",
+                  "    pm.expect(s.positive + s.neutral + s.negative).to.be.closeTo(1, 0.01);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "US11 - Transcrição",
+      "description": "Precisa de AZURE_SPEECH_KEY, AZURE_SPEECH_REGION e AZURE_STORAGE_CONNECTION_STRING. Selecione um áudio (wav, mp3, mp4, flac, ogg, webm) no campo audio_file antes de enviar. Limitação atual: o GET usa recognize_once e devolve só a primeira frase do áudio, sem diarização; por isso a US13 ainda não consome esta saída diretamente.",
+      "item": [
+        {
+          "name": "Enviar áudio",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transcription",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transcription"
+              ]
+            },
+            "description": "Envia o áudio ao Blob Storage e cria o job. Guarda job_name na variável da coleção.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "audio_file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"job criado\", () => pm.expect(corpo.job_name).to.match(/^transcription-[0-9a-f]{12}$/));",
+                  "pm.collectionVariables.set(\"job_name\", corpo.job_name);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resultado da transcrição",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transcription/{{job_name}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transcription",
+                "{{job_name}}"
+              ]
+            },
+            "description": "Transcreve (na primeira chamada) e devolve o texto. Repita enquanto vier IN_PROGRESS."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status conhecido\", () => pm.expect([\"IN_PROGRESS\", \"COMPLETED\"]).to.include(pm.response.json().status));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
