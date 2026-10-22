@@ -9,7 +9,6 @@ import pytest
 
 from video import ConfiguracaoDetector, DetectorYolo, avaliar_detector
 from video.metricas import (
-    MetricasCocoBaseline,
     MetricasDeteccao,
     avaliar_pesos,
     metricas_coco_baseline,
@@ -117,20 +116,20 @@ def test_dataset_ausente_nao_finge_metricas(tmp_path: Path):
         avaliar_detector(detector, tmp_path / "ausente.yaml")
 
 
-def test_baseline_coco_usa_numero_oficial_publicado_no_model_card():
+def test_baseline_coco_tem_as_quatro_metricas_medidas_no_val2017():
     m = metricas_coco_baseline()
-    assert m == MetricasCocoBaseline(mapa_50_95=0.373)
-    assert m.mapa_50 is None
-    assert m.precisao is None
-    assert m.recall is None
+    assert (m.mapa_50, m.mapa_50_95, m.precisao, m.recall) == (0.5283, 0.3657, 0.6366, 0.4874)
     assert m.pesos == "yolov8n.pt"
-    assert m.origem == "coco"
-    assert m.referencia.startswith("https://docs.ultralytics.com/models/yolov8")
+    assert m.origem == "coco_val2017_medido"
+    assert "metricas_coco_val2017.json" in m.referencia
+    # Coerente com o model card (0,373), sem copiar dele.
+    assert abs(m.mapa_50_95 - 0.373) < 0.01
 
 
 def test_baseline_coco_salvar_json(tmp_path: Path):
     destino = metricas_coco_baseline().salvar_json(tmp_path / "baseline.json")
     texto = destino.read_text(encoding="utf-8")
-    assert '"mAP@0.5:0.95": 0.373' in texto
-    assert '"origem": "coco"' in texto
+    assert '"mAP@0.5:0.95": 0.3657' in texto
+    assert '"mAP@0.5": 0.5283' in texto
+    assert '"origem": "coco_val2017_medido"' in texto
     assert '"referencia"' in texto

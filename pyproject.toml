@@ -25,6 +25,7 @@ dependencies = [
     "pandas==2.3.3",
     "pyyaml==6.0.3",
     "pydantic>=2.9",
+    "lap>=0.5.12",
 ]
 
 [dependency-groups]

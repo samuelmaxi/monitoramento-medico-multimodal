@@ -24,12 +24,16 @@ do repositório.
   (severidade `info`, `score 0.0`) com o resumo do processo (quadros lidos,
   detecções, duração, classes), relatando explicitamente que não houve queda ou
   saída (`video/eventos.py::montar_sem_achados`).
-- **Métricas quantitativas não são fabricadas**: sem dataset anotado não há
-  cálculo de mAP; o script `avaliar_us07.py` produz as métricas quando recebe um
-  `data.yaml` YOLO. Sem fine-tuning, o relatório registra apenas o **baseline
-  COCO** do model card oficial (`mAP@0.5:0.95 = 0,373` para `yolov8n.pt`, com URL
-  de referência) e a validação qualitativa; `mAP@0.5`/Precision/Recall ficam
-  `null` porque a fonte oficial não os publica — **não são estimados**.
+- **Métricas medidas, não copiadas nem estimadas**: sem fine-tuning, o braço
+  do DoD é "modelo pré-treinado COCO + validação qualitativa". As quatro métricas
+  do `yolov8n.pt` foram **medidas** no COCO val2017 (5000 imagens) com o mesmo
+  `scripts/avaliar_us07.py` do item 5; o mAP@0.5:0.95 medido (0,366) confere com
+  o model card (0,373). Métricas no domínio clínico continuam dependendo de
+  dataset anotado (item 5).
+- **Entrada e saída pareadas**: só há `saida_area_critica` de um track que teve
+  `entrada_area_critica`. Sem isso, fragmentos do ByteTrack (track novo nascido
+  já dentro da área) geravam "saídas" sem entrada — 4 dos 6 eventos da rodada
+  anterior.
 
 ## Quadro DoD → código
 
@@ -53,7 +57,9 @@ do repositório.
 
 ### 2. Áreas críticas como ROIs (polígonos) configuráveis por vídeo/câmera
 
-**Status:** ✔ implementado (com exemplo por câmera em `config/leito_uti_07.json`).
+**Status:** ✔ implementado — `config/leito_uti_07.json` tem duas ROIs: `lateral_leito`
+(retângulo) e `borda_leito` (trapézio na borda do colchão por onde o paciente sai da
+cama — risco de queda). Prévia desenhada: `saida/video/rois_leito_uti_07.jpg`.
 
 - **Código:** modelo/validação em `video/areas.py`
   (`AreaCrud`, `para_escala` em `video/areas.py:238`, ponto/função de contenção);
@@ -114,18 +120,38 @@ do repositório.
 
 ### 6. Métricas mAP@0.5, mAP@0.5:0.95, Precision e Recall registradas no relatório
 
-**Status:** ✔ registradas no relatório — braço baseline COCO (quantitativa própria depende do dataset).
+**Status:** ✔ registradas no relatório — as quatro medidas no COCO val2017 (braço sem fine-tuning).
 
 - **Quantitativa real (dataset anotado):** `scripts/avaliar_us07.py` roda o
   validator Ultralytics e grava `mAP@0.5`, `mAP@0.5:0.95`, precision, recall e
   metadados; o gate salva `dataset_us07/reports/avaliacao_<split>.json`.
 - **Braço sem fine-tuning (vigente):** a seção `avaliacao` do
-  `relatorio_us07.json` registra `metricas_coco_baseline()` (`video/metricas.py`):
-  `mAP@0.5:0.95 = 0.373` (valor **oficial do model card**, com URL de referência);
-  `mAP@0.5`/Precision/Recall ficam `null` porque **a página oficial não os
-  publica** — não são estimados para não fabricar métrica. `quantitativa_em_ground_truth`
-  fica `null` e `qualitativa.videos_anotados` lista os vídeos da validação
-  qualitativa (`GravadorVideo`, quando `visualizacao.ativa`).
+  `relatorio_us07.json` registra `metricas_coco_baseline()` (`video/metricas.py`),
+  com os valores medidos (resultado completo, inclusive AP por classe, em
+  `saida/video/metricas_coco_val2017.json`):
+
+| Métrica (COCO val2017, `yolov8n.pt`, conf 0,001, IoU NMS 0,5) | Valor |
+  |---|---|
+  | mAP@0.5 | **0,528** |
+  | mAP@0.5:0.95 | **0,366** (model card publica 0,373) |
+  | Precision | **0,637** |
+  | Recall | **0,487** |
+  | AP@0.5 das classes de interesse | person 0,503 · bed 0,425 · couch 0,431 · bottle 0,296 · chair 0,253 |
+
+  Como reproduzir:
+
+  ```bash
+  # COCO val2017 (5000 imagens) fora do repositório, ex.: ~/datasets/coco_val2017
+  #   imagens: http://images.cocodataset.org/zips/val2017.zip
+  #   labels:  https://github.com/ultralytics/assets/releases/download/v0.0.0/coco2017labels.zip (só labels/val2017)
+  #   data.yaml: path, train/val = images/val2017 e os 80 names de ultralytics/cfg/datasets/coco.yaml
+  uv run python scripts/avaliar_us07.py ~/datasets/coco_val2017/data.yaml \
+    --weights yolov8n.pt --split val --output saida/video/metricas_coco_val2017.json
+  ```
+
+- **Validação qualitativa:** `qualitativa.videos_anotados` aponta
+  `saida/video/video_anotado_leito_uti_07.mp4` (caixas, track e ROIs por quadro).
+  `quantitativa_em_ground_truth` segue `null` até existir dataset clínico anotado.
 - **Teste:** `tests/video/test_metricas.py` e `tests/video/test_cli_avaliar.py`.
 
 ### 7. Evento emitido (schema US04) quando pessoa/objeto entra ou sai de área crítica, com timestamp
@@ -140,21 +166,39 @@ do repositório.
   `1.0.0`); timestamp UTC (`timestamp`) + instante relativo do quadro
   (`evidence.features.tempo_video_s`) + `frame_index`. Sem transições, o arquivo
   recebe um registro `sem_achados` (`video/pipeline.py`, emitido após o resumo).
-- **Evidência de execução:** B_D_0016 → 6 eventos válidos (1 entrada + 5 saídas);
+- **Evidência de execução:** B_D_0016 (`config/leito_uti_07.json`) → 10 eventos
+  válidos (5 entradas + 5 saídas, todas pareadas por track e área);
   B_N_87 (0 transições) → 1 `sem_achados` válido; ambos validados por
   `contratos.validar.validar_arquivo` com 0 erros.
 - **Testes:** `tests/video/test_eventos.py`, `tests/video/test_pipeline_integracao.py`.
+
+### 8. Disponível em API
+
+**Status:** ✔ implementado.
+
+- **Código:** `app/routers/video_areas.py` (`POST /video/areas-criticas`,
+  `GET /video/areas-criticas/{job_id}`, `GET /video/areas-criticas/{job_id}/eventos`)
+  e `app/areas_jobs.py` (fila em processo, mesmo desenho de `app/pose_jobs.py`).
+  O job roda o mesmo `PipelineAreaCritica` da CLI.
+- **ROIs por câmera/requisição:** `camera_id` → `config/<camera_id>.json`; o campo
+  `areas` (JSON) substitui as ROIs só naquele job.
+- **Evidência:** `B_D_0016.mp4` enviado com `camera_id=leito_uti_07` → 360 quadros,
+  922 detecções, 10 eventos (5 entradas + 5 saídas), mesmos números da CLI.
+- **Testes:** `tests/video/test_api_areas.py` (detector falso: entrada/saída no
+  contrato US04, timestamp, ROIs da requisição, `sem_achados`, erros 400/404/422,
+  job relido do disco).
 
 ## Evidência de execução (últimas rodadas)
 
 | Fonte | Quadros | Detecções | Eventos | Entradas/Saídas | Validação US04 |
 |---|---|---|---|---|---|
-| `B_D_0016.mp4` (config exemplo) | 360 | 922 | 6 | 1 entrada + 5 saídas | 6 válidos / 0 erros |
+| `B_D_0016.mp4` (`leito_uti_07`, 2 ROIs) | 360 | 922 | 10 | 5 entradas + 5 saídas (pareadas) | 10 válidos / 0 erros |
 | `B_N_87_resized.mp4` (`--video`) | 120 | 216 | 0 | — | 1 registro `sem_achados` (info) válido / 0 erros |
 
 | Evidência de avaliação | Valor registrado |
 |---|---|
-| Baseline COCO `yolov8n.pt` (model card) | `mAP@0.5:0.95 = 0.373`; `mAP@0.5`/**P**/**R** = `null` (não publicados; não estimados) |
+| COCO val2017 `yolov8n.pt` (medido) | mAP@0.5 = 0,528 · mAP@0.5:0.95 = 0,366 · P = 0,637 · R = 0,487 |
+| Validação qualitativa | `saida/video/video_anotado_leito_uti_07.mp4`, `saida/video/rois_leito_uti_07.jpg` |
 | Quantitativa própria (ground truth) | `null` — aguarda anotações (item 5); gate `avaliar_us07.py` pronto |
 
 Execução dos comandos em `README.md` e `docs/arquitetura/us07_deteccao_areas_criticas.md`.

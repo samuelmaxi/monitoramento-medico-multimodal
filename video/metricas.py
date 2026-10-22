@@ -93,9 +93,28 @@ class MetricasCocoBaseline:
         return destino
 
 
+REFERENCIA_COCO_MEDIDO = (
+    "saida/video/metricas_coco_val2017.json — scripts/avaliar_us07.py "
+    "<coco_val2017>/data.yaml --weights yolov8n.pt --split val (conf 0.001, iou 0.5)"
+)
+"""Medição própria no COCO val2017 (5000 imagens), mesmo validator do item 5 do DoD."""
+
+
 def metricas_coco_baseline() -> MetricasCocoBaseline:
-    """Baseline COCO do ``yolov8n.pt`` lido do model card oficial (verificado)."""
-    return MetricasCocoBaseline(mapa_50_95=0.373)
+    """Baseline COCO do ``yolov8n.pt`` medido no COCO val2017 (Ultralytics 8.4.177).
+
+    Os quatro valores vêm da mesma execução. O model card publica só
+    ``mAP@0.5:0.95 = 0,373`` (``REFERENCIA_YOLOV8N_COCO``); a diferença para o
+    medido (0,366) vem do NMS ``iou=0.5`` do projeto contra 0,7 do Ultralytics.
+    """
+    return MetricasCocoBaseline(
+        mapa_50_95=0.3657,
+        mapa_50=0.5283,
+        precisao=0.6366,
+        recall=0.4874,
+        origem="coco_val2017_medido",
+        referencia=REFERENCIA_COCO_MEDIDO,
+    )
 
 
 def avaliar_detector(

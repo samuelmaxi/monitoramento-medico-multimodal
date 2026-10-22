@@ -237,7 +237,7 @@ def test_cli_grava_relatorio_em_arquivo(monkeypatch, tmp_path):
     assert "resumos" in dados
     avaliacao = dados["avaliacao"]
     assert avaliacao["metodo"] == "baseline_coco"
-    assert avaliacao["metricas"]["mAP@0.5:0.95"] == 0.373
+    assert avaliacao["metricas"]["mAP@0.5:0.95"] == 0.3657
     assert avaliacao["quantitativa_em_ground_truth"] is None
 
 

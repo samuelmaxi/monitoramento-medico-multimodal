@@ -32,6 +32,14 @@ Duas proteções evitam eventos falsos de sistemas de vigilância:
   da área emite ``entrada``. Sem isso, o primeiro quadro do vídeo geraria um
   evento falso sempre que alguém já estivesse na área crítica. Desligue com
   ``False`` quando o início do vídeo for cropped e a entrada importar.
+
+Pareamento
+----------
+Só há ``saida`` de quem teve ``entrada`` emitida. Um objeto visto pela primeira
+vez já dentro (com ``primeira_observacao_entra=False``, ou um track novo que o
+ByteTrack criou ao fragmentar outro) não gera nem entrada nem saída. Um objeto
+que some por mais de ``persistencia_quadros`` passa a contar como fora (sem
+perder o estado), então ao reaparecer dentro emite ``entrada``.
 """
 
 from __future__ import annotations
@@ -90,6 +98,7 @@ class _Estado:
     track_id: int | None = None
     ausente_ha: int = 0
     quadros_dentro: int = 0
+    entrada_emitida: bool = False
 
 
 @dataclass(slots=True)
@@ -165,6 +174,7 @@ class MonitorAreas:
         estado = self._estados.get(chave)
 
         if estado is None:
+            entra = contencao.dentro and self.primeira_observacao_entra
             self._estados[chave] = _Estado(
                 dentro=contencao.dentro,
                 contencao=contencao,
@@ -173,8 +183,9 @@ class MonitorAreas:
                 track_id=deteccao.track_id,
                 ausente_ha=0,
                 quadros_dentro=1 if contencao.dentro else 0,
+                entrada_emitida=entra,
             )
-            if contencao.dentro and self.primeira_observacao_entra:
+            if entra:
                 return [self._evento(Transicao.ENTRADA, area, deteccao, contencao, 1)]
             return []
 
@@ -188,6 +199,9 @@ class MonitorAreas:
 
         if not mudou:
             return []
+        if not contencao.dentro and not estado.entrada_emitida:
+            return []  # entrou sem evento (primeira observação dentro): saída sem par
+        estado.entrada_emitida = contencao.dentro
         transicao = Transicao.ENTRADA if contencao.dentro else Transicao.SAIDA
         return [self._evento(transicao, area, deteccao, contencao, estado.quadros_dentro)]
 
@@ -197,9 +211,9 @@ class MonitorAreas:
         for chave in [c for c in self._estados if c not in self._vistos_no_quadro]:
             estado = self._estados[chave]
             estado.ausente_ha += 1
-            if estado.ausente_ha <= self.persistencia_quadros:
+            if estado.ausente_ha <= self.persistencia_quadros or not estado.dentro:
                 continue
-            if estado.dentro:
+            if estado.entrada_emitida:
                 area = self.areas.por_id(estado.area)
                 nome_area = area.nome if area else estado.area
                 eventos.append(
@@ -221,7 +235,12 @@ class MonitorAreas:
                     estado.area,
                     estado.ausente_ha,
                 )
-            del self._estados[chave]
+            # Mantém o estado como "fora": se reaparecer dentro, é uma entrada.
+            # shortcut: estados crescem com o nº de tracks do vídeo (limpos em reiniciar());
+            # limpar por idade se um dia rodar em stream contínuo.
+            estado.dentro = False
+            estado.entrada_emitida = False
+            estado.quadros_dentro = 0
         return eventos
 
     @staticmethod

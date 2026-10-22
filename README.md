@@ -16,10 +16,12 @@ sistema.
 │   ├── errors.py                 # Tradução de erros Azure em HTTPException (401/403/429)
 │   ├── schemas.py                 # Modelos Pydantic de request/response
 │   ├── pose_jobs.py               # Fila em processo dos jobs de pose (US06)
+│   ├── areas_jobs.py              # Fila em processo dos jobs de áreas críticas (US07)
 │   └── routers/
 │       ├── transcription.py       # POST /transcription, GET /transcription/{job_name}
 │       ├── sentiment.py            # POST /sentiment
-│       └── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
+│       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
+│       └── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
 │   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
@@ -89,9 +91,12 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `AZURE_LANGUAGE_KEY`              | Sim (para análise de sentimento) | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`.                                          | `a1b2c3d4e5f6...`                                                                      |
 | `AZURE_STORAGE_CONNECTION_STRING` | Sim (para transcrição)           | Connection string do Azure Blob Storage. Obtida via `terraform output storage_connection_string`.                            | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
 | `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
-| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e `POST /video/areas-criticas` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
-| `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose`. Padrão: `500`.                                                        | `500`                                                                                  |
+| `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose` e `POST /video/areas-criticas`. Padrão: `500`.                         | `500`                                                                                  |
+| `US07_CONFIG_PATH`                | Não                              | Config da US07 usada pela API quando o `POST` não informa `camera_id`. Padrão: `config/exemplo_us07.json`.                   | `config/exemplo_us07.json`                                                             |
+| `US07_CONFIG_DIR`                 | Não                              | Pasta das configs por câmera: `camera_id=X` lê `<US07_CONFIG_DIR>/X.json`. Padrão: `config`.                                 | `config`                                                                               |
+| `US07_OUTPUT_DIR`                 | Não                              | Onde a API da US07 grava `eventos.jsonl` e `job.json` de cada job. Padrão: `saida/video/api`.                                | `saida/video/api`                                                                      |
 
 O template pronto pode ser copiado de `.env.sample`:
 
@@ -182,7 +187,7 @@ uv run python scripts/rodar_us07_video.py config/exemplo_us07.json
 Esse modo gera:
 
 - `saida/video/eventos_<stem>.jsonl` — eventos US04 do vídeo (recriado a cada execução).
-- `saida/video/relatorio_<stem>.json` — resumo único: quadros, detecções, classes, eventos e seção `avaliacao` (baseline COCO `mAP@0.5:0.95 = 0.373`, demais métricas `null` quando não publicadas).
+- `saida/video/relatorio_<stem>.json` — resumo único: quadros, detecções, classes, eventos e seção `avaliacao` (as quatro métricas do `yolov8n.pt` medidas no COCO val2017 e a lista de vídeos anotados).
 
 Exemplo de validação:
 
@@ -244,10 +249,29 @@ carregado uma única vez e o `tracker` é reiniciado entre vídeos.
 
 #### 6. Baseline e métricas
 
-Sem dataset anotado, o relatório registra o **baseline COCO** oficial do `yolov8n.pt`:
-`mAP@0.5:0.95 = 0.373`; `mAP@0.5`, `precision` e `recall` ficam `null` porque não
-são publicados no model card (princípio: nunca fabricar métricas). Ao existir um
-dataset YOLO com `data.yaml`, use:
+Sem fine-tuning, o relatório registra as métricas do `yolov8n.pt` **medidas** no
+COCO val2017 (`metricas_coco_baseline()`, em `video/metricas.py`):
+
+| Métrica (COCO val2017, `yolov8n.pt`, conf 0,001, IoU NMS 0,5) | Valor |
+|---|---|
+| mAP@0.5 | **0,528** |
+| mAP@0.5:0.95 | **0,366** (model card publica 0,373) |
+| Precision | **0,637** |
+| Recall | **0,487** |
+| AP@0.5 das classes de interesse | person 0,503 · bed 0,425 · couch 0,431 · bottle 0,296 · chair 0,253 |
+
+Para medir de novo:
+
+```bash
+# COCO val2017 (5000 imagens) fora do repositório, ex.: ~/datasets/coco_val2017
+#   imagens: http://images.cocodataset.org/zips/val2017.zip
+#   labels:  https://github.com/ultralytics/assets/releases/download/v0.0.0/coco2017labels.zip (só labels/val2017)
+#   data.yaml: path, train/val = images/val2017 e os 80 names de ultralytics/cfg/datasets/coco.yaml
+uv run python scripts/avaliar_us07.py ~/datasets/coco_val2017/data.yaml \
+  --weights yolov8n.pt --split val --output saida/video/metricas_coco_val2017.json
+```
+
+Com um dataset clínico anotado (YOLO, `data.yaml`), o mesmo script mede o domínio do projeto:
 
 ```bash
 uv run python scripts/avaliar_us07.py caminho/para/data.yaml \
@@ -285,9 +309,14 @@ print("mAP@0.5:0.95:", r["avaliacao"]["metricas"]["mAP@0.5:0.95"])
 PY
 ```
 
-#### 8. Evidências e conformidade
+#### 8. Pela API
 
-A rastreabilidade completa (itens 1–7 do DoD) está em
+O mesmo pipeline está exposto em `POST /video/areas-criticas`; veja
+[Detecção em áreas críticas pela API](#detecção-em-áreas-críticas-pela-api-videoareas-criticas).
+
+#### 9. Evidências e conformidade
+
+A rastreabilidade completa (itens 1–8 do DoD) está em
 [`docs/relatorio_us07_dod.md`](docs/relatorio_us07_dod.md). A arquitetura, ROIs,
 decisões e parâmetros estão em
 [`docs/arquitetura/us07_deteccao_areas_criticas.md`](docs/arquitetura/us07_deteccao_areas_criticas.md).
@@ -421,6 +450,9 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/pose/{job_id}/feedback`  | Resultado em linguagem natural: resumo, pontos positivos, negativos e de alerta.                                                            |
 | `GET`  | `/video/pose/{job_id}/keypoints` | Baixa o JSON de pose por quadro (mesmo formato de `outputs/pose/<video_id>.json`).                                                          |
 | `GET`  | `/video/pose/{job_id}/angles`    | Baixa o CSV de ângulos por quadro.                                                                                                          |
+| `POST` | `/video/areas-criticas`          | Recebe um vídeo (`video_file`) e enfileira a detecção YOLOv8 + ROIs (US07). Responde `202` com o `job_id`.                                  |
+| `GET`  | `/video/areas-criticas/{job_id}` | Status do job, parâmetros usados (conf, IoU, classes, ROIs) e resumo (quadros, detecções, entradas, saídas).                                |
+| `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
 
 Exemplos com `curl`:
 
@@ -442,6 +474,13 @@ curl -X POST http://127.0.0.1:8000/video/pose \
 curl http://127.0.0.1:8000/video/pose/<job_id>
 curl http://127.0.0.1:8000/video/pose/<job_id>/feedback
 curl -O http://127.0.0.1:8000/video/pose/<job_id>/angles
+
+curl -X POST http://127.0.0.1:8000/video/areas-criticas \
+  -F "video_file=@conteudos/videos/B_D_0016.mp4" \
+  -F "camera_id=leito_uti_07" -F "recorded_at=2026-10-05T19:00:00Z"
+
+curl http://127.0.0.1:8000/video/areas-criticas/<job_id>
+curl http://127.0.0.1:8000/video/areas-criticas/<job_id>/eventos
 ```
 
 ### Análise de pose pela API (`/video/pose`)
@@ -512,6 +551,60 @@ foram validados clinicamente**. Duas limitações: os ângulos são projeções 
 da vertical, não a curvatura da coluna.
 
 Testes (estimador falso, sem pesos nem Azure): `uv run pytest video/tests`.
+
+### Detecção em áreas críticas pela API (`/video/areas-criticas`)
+
+Mesmo fluxo de `scripts/rodar_us07_video.py` (YOLOv8 → ByteTrack → ROI →
+evento US04), sem Azure. Precisa só do `yolov8n.pt` (na raiz do repositório;
+se faltar, a Ultralytics baixa no primeiro job).
+
+- **Assíncrono**, como a pose: o `POST` grava o upload e devolve o `job_id`; os
+  jobs rodam um por vez. O modelo YOLO é carregado no primeiro job e reaproveitado,
+  e o rastreamento é reiniciado entre vídeos.
+- **ROIs por câmera.** `camera_id` escolhe `config/<camera_id>.json` (ex.:
+  `leito_uti_07`); sem ele vale `US07_CONFIG_PATH`. Para outra câmera, crie o
+  arquivo com `scripts/gerar_config_us07.py` — não precisa reiniciar a API para
+  câmeras novas (o arquivo de uma câmera já usada fica em cache até reiniciar).
+- **ROIs na requisição.** O campo `areas` aceita uma lista JSON no mesmo formato
+  de `areas[]` dos configs e substitui as ROIs da câmera só neste job:
+
+  ```bash
+  curl -X POST http://127.0.0.1:8000/video/areas-criticas \
+    -F "video_file=@conteudos/videos/B_D_0016.mp4" -F "camera_id=leito_uti_07" \
+    -F 'areas=[{"id":"borda_leito","nome":"Borda do leito","classe_filtro":"person",
+               "largura_ref":1920,"altura_ref":1080,
+               "points":[[700,300],[1300,300],[1350,1000],[650,1000]]}]'
+  ```
+- **Demais campos opcionais**: `patient_id`/`encounter_id` (pseudônimo pronto ou
+  ID de origem, pseudonimizado com `PSEUDONYM_KEY`), `bed_id`, `source_id`,
+  `procedure_type` e `recorded_at` (ISO-8601 em UTC). O que não vier é lido da
+  config da câmera. Com `recorded_at`, o `timestamp` do evento é
+  `recorded_at + tempo do quadro`; sem ele, parte do início da análise.
+- **Resultado.** O `GET /{job_id}` traz `config` (pesos, `confianca` 0,25, `iou`
+  0,5, classes, critério e ids das ROIs) e `summary` (quadros, detecções por
+  classe, entradas, saídas). O `GET /{job_id}/eventos` traz os `EventoAchado`
+  (schema `contratos/schema/evento_achado.v1.schema.json`), com `timestamp`,
+  `track_id`, `area_critica_id`, caixa e `tempo_video_s` em `evidence.features`.
+  Sem transição, vem um único evento `sem_achados`.
+- **Arquivos.** `saida/video/api/<job_id>/eventos.jsonl` e `job.json` (relido se
+  a API reiniciar). O vídeo enviado é apagado ao fim do job. Job que estava na fila ou
+  em andamento quando a API reiniciou aparece como `FAILED` ("Job interrompido");
+  basta reenviar o vídeo.
+- **`--reload`.** O `--reload` sem filtro observa também o `.venv` e reinicia a
+  API se algo for instalado nele (a Ultralytics instala sozinha o que falta, como
+  o `lap` do ByteTrack, se o `uv sync` não foi rodado). Para desenvolver, limite
+  as pastas observadas:
+
+  ```bash
+  uv run uvicorn app.main:app --reload --reload-dir app --reload-dir video --reload-dir contratos
+  ```
+- **Erros.** **400** extensão não suportada, arquivo vazio ou `camera_id` com
+  caracteres fora de `[A-Za-z0-9_-]`; **404** câmera sem config ou job
+  desconhecido; **409** eventos pedidos antes de `COMPLETED`; **413** acima de
+  `VIDEO_MAX_UPLOAD_MB`; **422** `areas` inválidas ou `recorded_at` fora de UTC.
+  Vídeo ilegível vira job `FAILED` com `failure_reason`.
+
+Testes (detector falso, sem pesos): `uv run pytest tests/video/test_api_areas.py`.
 
 ### Tratamento de erros (429 / 401 / 403)
 
