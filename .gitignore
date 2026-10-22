@@ -251,3 +251,10 @@ uv.lock
 
 # Saídas do pipeline de vídeo
 /saida/
+dataset_medico/
+
+# Dataset construído pela US07 (frames, labels e treinos gerados localmente)
+/dataset_us07/
+/anotavel/
+runs/
+.agents
