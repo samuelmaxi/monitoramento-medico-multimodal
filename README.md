@@ -19,7 +19,10 @@ sistema.
 │   └── routers/
 │       ├── transcription.py       # POST /transcription, GET /transcription/{job_name}
 │       ├── sentiment.py            # POST /sentiment
+│       ├── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
 │       └── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
+├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
+├── dados/                     # MIMIC-IV Demo baixado por script (gitignored)
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
 │   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
@@ -27,7 +30,11 @@ sistema.
 ├── conteudos/                 # Conteúdos baixados do Google Drive (gitignored)
 ├── scripts/
 │   ├── get_content_script.py  # Download dos conteúdos do Google Drive
-│   └── download_openpose_models.sh  # Pesos do OpenPose com checksum (US06)
+│   ├── download_openpose_models.sh  # Pesos do OpenPose com checksum (US06)
+│   ├── baixar_sinais.py       # Download do MIMIC-IV Demo (US15)
+│   ├── demo_us15.py           # Roda e confere cada item da DoD da US15
+│   ├── rodar_us15.py          # Replay em tempo real dos sinais vitais (US15)
+│   └── avaliar_us15.py        # Avaliação com anomalias injetadas (US15)
 ├── video/
 │   └── pose/                  # Análise postural com OpenPose (US06)
 ├── teste/
@@ -90,7 +97,7 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `AZURE_LANGUAGE_KEY`              | Sim (para análise de sentimento) | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`.                                          | `a1b2c3d4e5f6...`                                                                      |
 | `AZURE_STORAGE_CONNECTION_STRING` | Sim (para transcrição)           | Connection string do Azure Blob Storage. Obtida via `terraform output storage_connection_string`.                            | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
 | `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
-| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e `POST /sinais-vitais/medicoes` quando `patient_id`/`encounter_id` não chegam já pseudonimizados, e pelos scripts da US15. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
 | `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose`. Padrão: `500`.                                                        | `500`                                                                                  |
 
@@ -489,6 +496,8 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/pose/{job_id}/feedback`  | Resultado em linguagem natural: resumo, pontos positivos, negativos e de alerta.                                                            |
 | `GET`  | `/video/pose/{job_id}/keypoints` | Baixa o JSON de pose por quadro (mesmo formato de `outputs/pose/<video_id>.json`).                                                          |
 | `GET`  | `/video/pose/{job_id}/angles`    | Baixa o CSV de ângulos por quadro.                                                                                                          |
+| `POST` | `/sinais-vitais/news2`           | Recebe um conjunto de sinais vitais e devolve os pontos NEWS2 por parâmetro, o total e o gatilho (US15).                                   |
+| `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados. A baseline de cada paciente é mantida entre chamadas (US15).          |
 
 Exemplos com `curl`:
 
@@ -510,6 +519,14 @@ curl -X POST http://127.0.0.1:8000/video/pose \
 curl http://127.0.0.1:8000/video/pose/<job_id>
 curl http://127.0.0.1:8000/video/pose/<job_id>/feedback
 curl -O http://127.0.0.1:8000/video/pose/<job_id>/angles
+
+curl -X POST http://127.0.0.1:8000/sinais-vitais/news2 \
+  -H "Content-Type: application/json" \
+  -d '{"fc": 115, "spo2": 93, "fr": 22, "temp": 38.5, "pas": 120}'
+
+curl -X POST http://127.0.0.1:8000/sinais-vitais/medicoes \
+  -H "Content-Type: application/json" \
+  -d '{"medicoes": [{"patient_id": "10000032", "timestamp": "2026-10-24T08:00:00Z", "sinal": "fc", "valor": 135}]}'
 ```
 
 ### Análise de pose pela API (`/video/pose`)
@@ -692,6 +709,121 @@ Os vídeos clínicos de treino vêm do dataset **REHAB24-6** (fisioterapia), que
 **Licença**: [Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)](https://creativecommons.org/licenses/by-nc/4.0/). Uso apenas não comercial, com atribuição. Os vídeos derivados foram alterados (anonimização de rostos e amostragem de frames).
 
 Para uso comercial, entre em contato com a VisionCraft pelo e-mail info@visioncraft.ai.
+
+## Anomalias em sinais vitais (US15)
+
+Módulo em `sinais/` que detecta anomalias nas séries de frequência cardíaca,
+pressão arterial (sistólica e diastólica), SpO2, frequência respiratória e
+temperatura de cada paciente. Roda local, só com numpy e pandas. Não usa o
+Azure AI Anomaly Detector, que foi aposentado em 01/10/2026.
+
+Cada medição passa por três etapas, uma de cada vez, como num stream:
+
+1. **Limpeza.** Valores fisiologicamente impossíveis (SpO2 = 0, FC > 300 etc.)
+   são descartados e contados. Um valor ausente não é interpolado: o último
+   válido continua valendo por um prazo (2 h para FC, PA, SpO2 e FR; 6 h para
+   temperatura; 8 h para O2 e consciência). Depois disso o parâmetro fica de
+   fora e o evento sai marcado como `news2_parcial`.
+2. **Regras clínicas (NEWS2, RCP 2017).** Pontos por parâmetro e total.
+   Total 5–6 ou 3 pontos em um parâmetro gera `news2_resposta_urgente`;
+   total ≥ 7 gera `news2_emergencia`.
+3. **ML não supervisionado.** Compara cada sinal com a baseline do próprio
+   paciente. A mudança súbita (`desvio_baseline`) usa um z-score robusto
+   (mediana/MAD das últimas 12 h). A tendência (`tendencia_deterioracao`) usa
+   a inclinação de uma reta nas últimas 6 h.
+
+Os achados seguem o contrato `EventoAchado` (`contratos/`), com `modality`
+`sinais_vitais` e o paciente pseudonimizado.
+
+```
+sinais/
+├── limpeza.py      # Faixas fisiológicas e validade do último valor
+├── news2.py        # Tabela NEWS2, pontos por parâmetro, total e gatilhos
+├── detector.py     # DetectorSinais.processar(medicao): estado por paciente e janelas deslizantes
+├── mimic.py        # Leitura do chartevents do MIMIC-IV Demo
+└── avaliacao.py    # Injeção de anomalias rotuladas e matriz de confusão
+```
+
+As regras de limpeza e as decisões de projeto estão em
+[`docs/arquitetura/us15_sinais_vitais.md`](docs/arquitetura/us15_sinais_vitais.md).
+A rastreabilidade de cada item da DoD está em
+[`docs/relatorio_us15_dod.md`](docs/relatorio_us15_dod.md).
+
+### Dados
+
+São 100 pacientes de UTI do **MIMIC-IV Clinical Database Demo 2.2** (PhysioNet,
+acesso aberto, cerca de 77 mil medições). Os dados ficam fora do Git, em
+`dados/mimic-iv-demo/`:
+
+```bash
+uv run python scripts/baixar_sinais.py
+```
+
+### Como rodar
+
+`PSEUDONYM_KEY` precisa estar no `.env` (veja [Variáveis de ambiente](#variáveis-de-ambiente)).
+
+```bash
+# Confere todos os itens da DoD no terminal (ou só alguns: news2 gatilhos ml ...)
+uv run python scripts/demo_us15.py
+
+# Replay em "tempo real": 1 h de dados por segundo; Ctrl+C para parar
+uv run python scripts/rodar_us15.py --pacientes 3 --velocidade 3600
+
+# Replay completo sem espera; eventos em saida/sinais/eventos_us15.jsonl
+uv run python scripts/rodar_us15.py
+
+# Avaliação (cerca de 1,5 min): saida/sinais/relatorio_us15.json e rotulos_us15.csv
+uv run python scripts/avaliar_us15.py
+
+# Testes
+uv run pytest tests/sinais
+```
+
+Pelo código:
+
+```python
+from datetime import UTC, datetime
+from sinais import DetectorSinais, Medicao, news2
+
+news2.calcular({"fc": 115, "spo2": 93, "fr": 22, "temp": 38.5}).gatilho   # 'news2_emergencia'
+
+detector = DetectorSinais()
+eventos = detector.processar(Medicao("pt_" + "0" * 24, datetime.now(UTC), "fc", 135))
+```
+
+A API expõe o mesmo detector em `POST /sinais-vitais/news2` e
+`POST /sinais-vitais/medicoes` (veja [Endpoints](#endpoints)). O estado das
+baselines fica na memória do processo: é perdido quando a API reinicia e não é
+compartilhado entre workers.
+
+### Avaliação
+
+O MIMIC não tem anomalias rotuladas. Por isso a avaliação injeta degraus e
+rampas de piora (FC +30 bpm, PAS −30 mmHg, SpO2 −6 % etc.) em metade das janelas
+de 6 h de cada paciente e marca essas janelas. Os limiares foram ajustados nos
+pacientes de `subject_id` par. As métricas abaixo são as dos ímpares:
+
+|                       | Predito anomalia | Predito normal |
+| --------------------- | ---------------: | -------------: |
+| **Anomalia injetada** |             1264 |            244 |
+| **Normal**            |              574 |            842 |
+
+| Métrica  | Teste | Meta   |
+| -------- | ----: | ------ |
+| Recall   | 0,838 | ≥ 0,80 |
+| Precisão | 0,688 | —      |
+| F1       | 0,756 | ≥ 0,70 |
+
+Os falsos positivos incluem variações reais dos pacientes de UTI, que não têm
+rótulo. A precisão medida é, portanto, um limite inferior.
+
+### Licença dos dados
+
+O MIMIC-IV Clinical Database Demo é distribuído pelo PhysioNet sob a
+[Open Data Commons Open Database License v1.0](https://physionet.org/content/mimic-iv-demo/view-license/2.2/).
+Ao usar os dados, cite o dataset conforme a
+[página do PhysioNet](https://physionet.org/content/mimic-iv-demo/2.2/).
 
 ## Demo ponta a ponta
 

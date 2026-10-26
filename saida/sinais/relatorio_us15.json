@@ -11,7 +11,7 @@
   "semente": 42,
   "medicoes": 77245,
   "pacientes": 100,
-  "ms_por_medicao": 0.1022,
+  "ms_por_medicao": 0.1015,
   "artefatos_descartados": {
     "fr": 31,
     "pad": 71,
