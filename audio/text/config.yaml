@@ -1,0 +1,73 @@
+# Configuração da US13: termos críticos e sentimento nas transcrições de consulta.
+#
+#   python -m audio.text.run --input saida/transcricao --config audio/text/config.yaml
+#
+# Todos os parâmetros vêm deste arquivo; o código não tem valores padrão escondidos.
+
+azure:
+  # Text Analytics for health aceita "pt" (não existe a variante pt-BR nesse serviço).
+  health_language: pt
+  # No sentimento, "pt" é interpretado como pt-PT. O português do Brasil é "pt-BR".
+  sentiment_language: pt-BR
+  model_version: latest
+  # Limites do serviço: 5.120 caracteres por documento (sentimento síncrono e health),
+  # 10 documentos por requisição de sentimento e 25 por requisição do health.
+  max_chars_per_document: 5120
+  sentiment_batch_size: 10
+  health_batch_size: 25
+  # O health é assíncrono (o SDK consulta o job até terminar). No nível gratuito um job
+  # às vezes fica parado na fila; passado este tempo, a chamada conta como falha
+  # transitória e entra no retry abaixo, em vez de travar o lote.
+  health_timeout_s: 120
+  # Retry exponencial em 429 (e 5xx transitório): espera initial_delay_s * 2^(tentativa-1),
+  # limitada a max_delay_s. O cabeçalho Retry-After do serviço tem precedência.
+  retry:
+    max_attempts: 5
+    initial_delay_s: 1.0
+    max_delay_s: 30.0
+  # Cache obrigatório pela arquitetura (docs/arquitetura/README.md): o mesmo texto
+  # não é reenviado à Azure. Apague a pasta para forçar uma nova chamada.
+  cache_dir: saida/cache_azure/language
+
+# Rótulos de falante da diarização (US11), comparados sem caixa e sem acento.
+# Só as falas do paciente vão para a Azure; as do médico ficam como contexto.
+speakers:
+  patient: [paciente, patient]
+  doctor: [medico, doctor]
+
+critical_terms: audio/text/critical_terms.yaml
+
+assertions:
+  # A API GA (2023-04-01) do Text Analytics for health devolve certeza, condicionalidade
+  # e associação, mas não temporalidade. Quando o serviço não devolve `temporality`,
+  # a sentença da entidade é comparada com estes padrões (regex, sem acento e sem caixa)
+  # para marcar histórico passado. O valor do serviço, se vier, tem precedência.
+  past_markers:
+    - '\bja (tive|tinha|sofri|fiz|passei por)\b'
+    - '\bha (\d+|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|alguns|muitos) anos?\b'
+    - '\b(\d+|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|alguns|muitos) anos? atras\b'
+    - '\bano passado\b'
+    - '\bna (infancia|adolescencia|juventude)\b'
+    - '\bquando (eu )?era (crianca|jovem|mais nov[oa])\b'
+    - '\b(antigamente|no passado)\b'
+    - '\bhistorico de\b'
+
+sentiment:
+  # Sentença negativa: score negativo do serviço >= negative_threshold.
+  negative_threshold: 0.7
+  # Consulta predominantemente negativa: % de sentenças negativas do paciente >= min_negative_ratio.
+  min_negative_ratio: 0.5
+  # Severidade do evento sentimento_negativo (sozinho, não dispara alerta de alta prioridade).
+  severity: baixa
+
+input:
+  extensions: [.json]
+
+output:
+  # <audio_id>.json: lista de EventoAchado (valida com `python -m contratos.validar`).
+  dir: outputs/text_analysis
+  # <audio_id>.json: entidades, asserções, descartes e sentimento por sentença.
+  details_dir: outputs/text_analysis/detalhes
+
+event:
+  model_version: texto-nlp@0.1.0

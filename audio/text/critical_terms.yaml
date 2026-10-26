@@ -1,0 +1,104 @@
+# Termos críticos da US13. Versionado: mudar a lista muda os alertas, então
+# toda alteração passa por PR e sobe `version`.
+#
+# Uma entidade do Text Analytics for health vira termo crítico quando:
+#   1. a categoria dela está em `categories`; e
+#   2. o nome normalizado dela está em `normalized` (nomes UMLS, em inglês) OU
+#      o texto dela contém um dos `synonyms` (palavra inteira).
+# A comparação ignora caixa e acentos. A severidade é a do termo; histórico
+# passado rebaixa um nível (alta → media → baixa → info).
+#
+# Categorias do serviço: https://learn.microsoft.com/azure/ai-services/language-service/text-analytics-for-health/concepts/health-entity-categories
+
+version: 1.0.0
+
+terms:
+  - name: dor torácica
+    synonyms: [dor torácica, dor no peito, aperto no peito, dor precordial, pressão no peito, dor forte no peito]
+    normalized: [chest pain, angina pectoris, precordial pain]
+    categories: [SymptomOrSign]
+    severity: alta
+
+  - name: falta de ar
+    synonyms: [falta de ar, dispneia, cansaço para respirar, dificuldade para respirar, falta de fôlego, sem ar]
+    normalized: [dyspnea, shortness of breath]
+    categories: [SymptomOrSign]
+    severity: alta
+
+  - name: síncope
+    synonyms: [síncope, desmaio, desmaiei, desmaiou, desmaios, perda de consciência, perdi a consciência]
+    normalized: [syncope, loss of consciousness]
+    categories: [SymptomOrSign, Diagnosis]
+    severity: alta
+
+  - name: confusão mental
+    synonyms: [confusão mental, confusão, desorientação, desorientado, desorientada, confuso, confusa]
+    normalized: [confusion, mental confusion, disorientation]
+    categories: [SymptomOrSign]
+    severity: alta
+
+  - name: sangramento
+    synonyms: [sangramento, hemorragia, sangrando, sangue nas fezes, sangue na urina, vômito com sangue, hematêmese, melena]
+    normalized: [hemorrhage, bleeding, hematochezia, hematemesis, melena, hematuria]
+    categories: [SymptomOrSign, Diagnosis]
+    severity: alta
+
+  - name: convulsão
+    synonyms: [convulsão, convulsões, crise convulsiva, ataque epiléptico, crise epiléptica]
+    normalized: [seizure, seizures, convulsions, epileptic seizure]
+    categories: [SymptomOrSign, Diagnosis]
+    severity: alta
+
+  - name: infarto
+    synonyms: [infarto, infarto do miocárdio, enfarte, ataque cardíaco]
+    normalized: [myocardial infarction, heart attack]
+    categories: [Diagnosis, SymptomOrSign]
+    severity: alta
+
+  - name: AVC
+    synonyms: [avc, acidente vascular cerebral, derrame]
+    normalized: [cerebrovascular accident, stroke]
+    categories: [Diagnosis, SymptomOrSign]
+    severity: alta
+
+  - name: ideação suicida
+    synonyms: [ideação suicida, pensamentos suicidas, pensamento suicida, vontade de morrer, pensamentos de me matar, vontade de me matar]
+    normalized: [suicidal ideation, suicidal thoughts]
+    categories: [SymptomOrSign, Diagnosis]
+    severity: alta
+
+  - name: febre
+    synonyms: [febre, febre alta, febril]
+    normalized: [fever]
+    categories: [SymptomOrSign]
+    severity: media
+
+  - name: vômito
+    synonyms: [vômito, vômitos, vomitando, vomitei]
+    normalized: [vomiting]
+    categories: [SymptomOrSign]
+    severity: media
+
+  - name: tontura
+    synonyms: [tontura, tonturas, tonteira, vertigem, tonto, tonta]
+    normalized: [dizziness, vertigo]
+    categories: [SymptomOrSign]
+    severity: media
+
+  - name: palpitação
+    synonyms: [palpitação, palpitações, coração disparado, coração acelerado, taquicardia]
+    normalized: [palpitations, tachycardia]
+    categories: [SymptomOrSign, Diagnosis]
+    severity: media
+
+  - name: cefaleia
+    synonyms: [cefaleia, dor de cabeça]
+    normalized: [headache]
+    categories: [SymptomOrSign]
+    severity: baixa
+
+  - name: edema
+    synonyms: [edema, inchaço, inchaço nas pernas, pernas inchadas, inchaço nos pés, pés inchados, inchadas, inchados]
+    normalized: [edema, leg edema, swelling, swelling of lower limb]
+    categories: [SymptomOrSign]
+    severity: baixa

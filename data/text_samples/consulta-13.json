@@ -1,0 +1,50 @@
+{
+  "audio_id": "consulta-13",
+  "patient_id": "sim-paciente-13",
+  "recorded_at": "2026-10-13T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "O senhor tem algum problema de saúde?",
+      "offset_ms": 500,
+      "duration_ms": 2405,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Tive um infarto há dois anos e coloquei um stent. Desde então tomo AAS 100 mg todo dia.",
+      "offset_ms": 3355,
+      "duration_ms": 5655,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "E o que trouxe o senhor hoje?",
+      "offset_ms": 9460,
+      "duration_ms": 1885,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "Estou com vômitos desde ontem à tarde, já foram umas cinco vezes.",
+      "offset_ms": 11795,
+      "duration_ms": 4225,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "Dor no peito junto com os vômitos?",
+      "offset_ms": 16470,
+      "duration_ms": 2210,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Não sinto dor no peito, só enjoo.",
+      "offset_ms": 19130,
+      "duration_ms": 2145,
+      "confidence": 0.86
+    }
+  ]
+}

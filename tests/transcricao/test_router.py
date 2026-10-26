@@ -31,10 +31,11 @@ def cliente(tmp_path, monkeypatch):
     return TestClient(app)
 
 
-def _enviar(cliente, nome="consulta.wav"):
+def _enviar(cliente, nome="consulta.wav", **campos):
     return cliente.post(
         "/transcription",
         files={"audio_file": (nome, b"RIFF-consulta", "audio/wav")},
+        data=campos,
     )
 
 
@@ -88,4 +89,30 @@ def test_formato_nao_suportado_e_rejeitado_antes_de_gravar(cliente, tmp_path):
     resposta = _enviar(cliente, nome="video.mp4")
 
     assert resposta.status_code == 400
+    assert not list(tmp_path.glob("transcription-*"))
+
+
+def test_metadados_e_papeis_vao_para_a_transcricao(cliente, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        transcription_service, "transcrever_arquivo", lambda audio_path, **kw: RESPOSTA_API
+    )
+
+    resposta = _enviar(
+        cliente, patient_id="10000032", recorded_at="2026-10-01T13:00:00Z", medico_falante="1"
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    pasta = next(tmp_path.glob("transcription-*"))
+    assert corpo["audio_id"] == pasta.name
+    assert corpo["patient_id"] == "10000032"
+    assert corpo["recorded_at"] == "2026-10-01T13:00:00Z"
+    assert corpo["falas"][0]["papel"] == "medico"
+
+
+def test_recorded_at_fora_de_utc_da_422_sem_gravar_o_audio(cliente, tmp_path):
+    resposta = _enviar(cliente, recorded_at="2026-10-01T10:00:00-03:00")
+
+    assert resposta.status_code == 422
+    assert "UTC" in resposta.json()["detail"]
     assert not list(tmp_path.glob("transcription-*"))
