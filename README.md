@@ -17,7 +17,7 @@ sistema.
 │   ├── schemas.py                 # Modelos Pydantic de request/response
 │   ├── pose_jobs.py               # Fila em processo dos jobs de pose (US06)
 │   └── routers/
-│       ├── transcription.py       # POST /transcription, GET /transcription/{job_name}
+│       ├── transcription.py       # POST /transcription (síncrono, US11)
 │       ├── sentiment.py            # POST /sentiment
 │       └── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
 ├── tests/
@@ -94,7 +94,9 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `AZURE_SPEECH_REGION`             | Sim (para transcrição)           | Região do serviço Azure Speech. Fixada em `eastus` para usar tier gratuita.                                                  | `eastus`                                                                               |
 | `AZURE_LANGUAGE_ENDPOINT`         | Sim (sentimento e US13)          | Endpoint do serviço Azure AI Language. Obtido via `terraform output language_endpoint`.                                      | `https://monitoramento-language-dev.cognitiveservices.azure.com/`                      |
 | `AZURE_LANGUAGE_KEY`              | Sim (sentimento e US13)          | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`.                                          | `a1b2c3d4e5f6...`                                                                      |
-| `AZURE_STORAGE_CONNECTION_STRING` | Sim (para transcrição)           | Connection string do Azure Blob Storage. Obtida via `terraform output storage_connection_string`.                            | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
+| `AZURE_SPEECH_ENDPOINT`           | Não                              | Endpoint do recurso Speech. Padrão: `https://<AZURE_SPEECH_REGION>.api.cognitive.microsoft.com`.                             | `https://spc-tc4-multimodal.cognitiveservices.azure.com`                               |
+| `TRANSCRIPTION_OUTPUT_DIR`        | Não                              | Pasta das transcrições (JSON e áudio de origem). Padrão: `saida/transcricao`.                                                | `saida/transcricao`                                                                    |
+| `AZURE_STORAGE_CONNECTION_STRING` | Não (não usada pela transcrição) | Connection string do Azure Blob Storage. Não é mais usada pela transcrição (US11), que envia o áudio direto na requisição.  | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
 | `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
 | `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e pela US13 quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
@@ -366,6 +368,46 @@ vermelho = direito, verde = linha média).
   Sedmidubsky e Budikova, SISAP 2024.
 - **FallVision**: CC0 1.0.
 
+## Transcrição de consultas com Azure AI Speech (US11)
+
+Usa a API de transcrição rápida (síncrona, o áudio vai na requisição, sem Blob
+Storage) em pt-BR, com diarização de até 2 falantes e timestamps por frase e
+por palavra. Código em `app/transcription_client.py` (REST, com retry),
+`app/transcription_format.py` (JSON do projeto) e `app/transcription_service.py`
+(cache por SHA-256 e gravação).
+
+```bash
+# Um ou mais áudios -> saida/transcricao/<nome>.json
+python scripts/transcrever.py consulta_01.wav
+python scripts/transcrever.py consulta_01.wav --medico-falante 1   # falante 1 = médico
+
+# API: POST /transcription (multipart, campo audio_file) devolve o mesmo JSON
+```
+
+Cada JSON traz `texto_completo` e `falas`, e cada fala tem `texto`, `falante`,
+`papel` (`medico`/`paciente` só com `--medico-falante`), `offset_ms`,
+`duracao_ms`, `confianca` (por frase; a API não dá confiança por palavra) e
+`palavras`.
+
+Falhas: timeouts, erros de conexão e 429/5xx são retentados (3 tentativas, com
+`Retry-After` quando houver). O áudio de origem é gravado em
+`saida/transcricao/<job>/` antes da chamada e nunca é apagado.
+
+### Medição do WER
+
+Cada áudio de referência precisa de um `.txt` de mesmo nome com a transcrição
+manual, em `dados/transcricao/` (fora do Git):
+
+```bash
+python scripts/avaliar_wer.py                  # sem phrase list
+python scripts/avaliar_wer.py --frases-medicas # só se o WER passar de 20%
+```
+
+Saída: `saida/transcricao/avaliacao/<sem_frases|com_frases>/relatorio_wer.md`
+(WER global e por áudio, e amostra de transcrição) e `wer.json`. O DoD pede ao
+menos 10 áudios; o script avisa quando há menos. A phrase list fica em
+`app/frases_medicas.txt`. Custom Speech não está implementado.
+
 ## Infraestrutura (Terraform)
 
 O projeto usa serviços de IA do **Azure** para os módulos de transcrição de fala e
@@ -487,8 +529,7 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | Método | Rota                        | Descrição                                                                                                                                        |
 | ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `GET`  | `/health`                   | Verifica se o servidor está no ar (não chama Azure).                                                                                             |
-| `POST` | `/transcription`            | Recebe um áudio (`multipart/form-data`, campo `audio_file`), sobe para Azure Blob Storage e inicia um job assíncrono para transcrição (`pt-BR`). |
-| `GET`  | `/transcription/{job_name}` | Consulta o status/resultado de um job de transcrição.                                                                                            |
+| `POST` | `/transcription`            | Recebe um áudio (`multipart/form-data`, campo `audio_file`) e devolve a transcrição síncrona em `pt-BR`, com falantes e timestamps (US11).     |
 | `POST` | `/sentiment`                | Recebe `{"text": "...", "language_code": "pt"}` e retorna o sentimento via Azure Language Service.                                               |
 | `POST` | `/video/pose`               | Recebe um vídeo (`multipart/form-data`, campo `video_file`) e enfileira a análise de pose (US06). Responde `202` com o `job_id`.                 |
 | `GET`  | `/video/pose/{job_id}`      | Status (`QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`) e resultado: métricas de detecção, resumo dos ângulos e artefatos.                       |
@@ -505,8 +546,6 @@ curl -X POST http://127.0.0.1:8000/sentiment \
 
 curl -X POST http://127.0.0.1:8000/transcription \
   -F "audio_file=@caminho/para/audio_curto.wav"
-
-curl http://127.0.0.1:8000/transcription/<job_name>
 
 curl -X POST http://127.0.0.1:8000/video/pose \
   -F "video_file=@caminho/para/agachamento.mp4" \
