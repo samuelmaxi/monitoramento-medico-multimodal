@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "skills": {
+    "computer-vision-opencv": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "computer-vision-opencv/SKILL.md",
+      "computedHash": "07d2f35a381b86991164e77833f661e55420a92c8d879473b504dce1fc945af5"
+    },
+    "platform-cli": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/platform-cli/SKILL.md",
+      "computedHash": "350bb6dd7a3e7260dced7b238291280ff6321c20001ae7d09893172f9627e5e4"
+    },
+    "python-developer": {
+      "source": "gvre/skills",
+      "sourceType": "github",
+      "skillPath": "python-developer/SKILL.md",
+      "computedHash": "e132af6557a44b6d8a3fecfd42272059d0233eee6db0ab0d83f2924e9c8f1c5c"
+    },
+    "yolo": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/yolo/SKILL.md",
+      "computedHash": "7879fd316b32c1057b2e435a15e43dd433cc41195116ff9c0e31e5b1f46b6d2d"
+    },
+    "yolo-datasets": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/yolo-datasets/SKILL.md",
+      "computedHash": "ff114cc5d6b0a3641d20c67d40b41d1a80e235fafa790ad224869510151e576f"
+    },
+    "yolo-export": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/yolo-export/SKILL.md",
+      "computedHash": "f096e5e5b159db4257291744d18cfb0aa47a20a17de22608182c072c5539b138"
+    },
+    "yolo-inference": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/yolo-inference/SKILL.md",
+      "computedHash": "2aa91bd255a1ed8fcf3939a382222d955fff826e02326deb24580fc4c4643724"
+    },
+    "yolo-models": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/yolo-models/SKILL.md",
+      "computedHash": "6d85519a12c1ddcb3e1d4437691eb36c56afbaa8b5075d7821bc480d59b48f8e"
+    },
+    "yolo-training": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/yolo-training/SKILL.md",
+      "computedHash": "42d67cf36c9cf2693b938ab65df4a46c85534013c754ce3600b5a3d499bee2bf"
+    },
+    "yolo-tuning": {
+      "source": "ultralytics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/yolo-tuning/SKILL.md",
+      "computedHash": "8102d722f66d4ce0aee53fbde59fdb044a900bd0f1acbeef0fa5b6d31e1b9981"
+    }
+  }
+}

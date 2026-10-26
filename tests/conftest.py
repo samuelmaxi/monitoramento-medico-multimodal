@@ -22,6 +22,7 @@ def _require_azure_env():
             "Variáveis de ambiente Azure ausentes para o smoke test: "
             f"{missing}. Configure o .env antes de rodar estes testes."
         )
+    return None
 
 
 @pytest.fixture

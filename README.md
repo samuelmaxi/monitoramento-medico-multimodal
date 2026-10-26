@@ -16,12 +16,14 @@ sistema.
 │   ├── errors.py                 # Tradução de erros Azure em HTTPException (401/403/429)
 │   ├── schemas.py                 # Modelos Pydantic de request/response
 │   ├── pose_jobs.py               # Fila em processo dos jobs de pose (US06)
+│   ├── areas_jobs.py              # Fila em processo dos jobs de áreas críticas (US07)
 │   └── routers/
 │       ├── transcription.py       # POST /transcription (síncrono, US11)
 │       ├── text_analysis.py       # POST /text/analysis (US13)
 │       ├── audio_analysis.py      # POST /audio/analysis (áudio → US11 → US13)
 │       ├── sentiment.py            # POST /sentiment
-│       └── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
+│       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
+│       └── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
 │   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
@@ -29,15 +31,8 @@ sistema.
 ├── conteudos/                 # Conteúdos baixados do Google Drive (gitignored)
 ├── scripts/
 │   ├── get_content_script.py  # Download dos conteúdos do Google Drive
-│   ├── eval_us13.py           # Recall/precision dos termos críticos (US13)
-│   └── download_openpose_models.sh  # Pesos do OpenPose com checksum (US06)
-├── video/
-│   └── pose/                  # Análise postural com OpenPose (US06)
-├── audio/
-│   ├── text/                  # Termos críticos e sentimento nas transcrições (US13)
-│   └── tests/                 # Testes da US13 com a API mockada
-├── data/
-│   └── text_samples/          # Consultas simuladas e anotações da US13 (versionadas)
+│   ├── rodar_us07_video.py   # Executa pipeline de detecção de vídeo
+│   └── avaliar_us07.py       # Avalia YOLO em dataset anotado
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
@@ -100,9 +95,12 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `TRANSCRIPTION_OUTPUT_DIR`        | Não                              | Pasta das transcrições (JSON e áudio de origem). Padrão: `saida/transcricao`.                                                | `saida/transcricao`                                                                    |
 | `AZURE_STORAGE_CONNECTION_STRING` | Não (não usada pela transcrição) | Connection string do Azure Blob Storage. Não é mais usada pela transcrição (US11), que envia o áudio direto na requisição.  | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
 | `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
-| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e pela US13 quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e `POST /video/areas-criticas` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
-| `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose`. Padrão: `500`.                                                        | `500`                                                                                  |
+| `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose` e `POST /video/areas-criticas`. Padrão: `500`.                         | `500`                                                                                  |
+| `US07_CONFIG_PATH`                | Não                              | Config da US07 usada pela API quando o `POST` não informa `camera_id`. Padrão: `config/exemplo_us07.json`.                   | `config/exemplo_us07.json`                                                             |
+| `US07_CONFIG_DIR`                 | Não                              | Pasta das configs por câmera: `camera_id=X` lê `<US07_CONFIG_DIR>/X.json`. Padrão: `config`.                                 | `config`                                                                               |
+| `US07_OUTPUT_DIR`                 | Não                              | Onde a API da US07 grava `eventos.jsonl` e `job.json` de cada job. Padrão: `saida/video/api`.                                | `saida/video/api`                                                                      |
 
 O template pronto pode ser copiado de `.env.sample`:
 
@@ -144,231 +142,188 @@ python scripts/get_content_script.py
 - O `gdown` cria uma subpasta com o nome da pasta remota, por exemplo
   `conteudos/conteudos/videos/`.
 
-## Análise postural com OpenPose (US06)
+### US07 — detecção de objetos e áreas críticas em vídeo
 
-Módulo em `video/pose/` que extrai a pose de vídeos clínicos (fisioterapia e
-movimentação no leito) com os pesos oficiais do **OpenPose** (CMU) via
-`cv2.dnn.readNetFromCaffe` — sem compilar o OpenPose — e calcula ângulos
-articulares por quadro. A detecção de desvios fica para a US08; aqui só são
-gerados os dados que ela consome.
+O pipeline aplica `YOLOv8` (Ultralytics) a vídeos, avalia áreas críticas (ROIs) em
+formato de polígonos configuráveis por câmera e emite eventos `entrada_area_critica`
+e `saida_area_critica` no schema da US04. Os dados de saída são JSONL e relatórios
+compatíveis com a validação do projeto.
 
-```
-video/
-├── requirements.txt          # Dependências fixadas do módulo (Python 3.14)
-├── pose/
-│   ├── config.yaml           # Modelo, fps, limiares, caminhos (nada fixo no código)
-│   ├── extract.py            # API: extract_pose(video, config) e compute_angles(seq)
-│   ├── run.py                # CLI de lote: JSON + CSV de ângulos + summary.csv
-│   ├── visualize.py          # Figuras com o esqueleto desenhado
-│   ├── openpose.py           # Inferência cv2.dnn + agrupamento por PAF
-│   ├── angles.py             # Geometria dos ângulos
-│   ├── sequence.py           # PoseSequence e serialização JSON
-│   ├── models.py             # Keypoints e pares do BODY_25 e do COCO
-│   └── config.py             # Leitura e validação do config.yaml
-└── tests/                    # pytest (ângulos, keypoints null, amostragem, config)
-```
-
-### Instalação
-
-Requer Python 3.14.
+#### 1. Preparação rápida
 
 ```bash
-python3.14 -m venv .venv-pose
-source .venv-pose/bin/activate
-pip install -r video/requirements.txt
+uv sync
 ```
 
-O `uv sync` da raiz também instala essas dependências (nas mesmas versões), e é
-esse ambiente que a API usa em `POST /video/pose`. O OpenCV fica fixado em
-4.14: o 5.x removeu o `cv2.dnn.readNetFromCaffe`.
+Crie/edite o arquivo `.env` se for baixar vídeos via `scripts/get_content_script.py`.
 
-O `opencv-python-headless` do PyPI roda em CPU. O backend CUDA
-(`model.backend: auto` ou `cuda`) só é usado se o OpenCV instalado tiver sido
-compilado com CUDA e houver GPU; caso contrário o módulo avisa e usa CPU.
+#### 1b. Gerar config por vídeo (recomendado)
 
-### Download dos modelos
+O script `scripts/gerar_config_us07.py` copia um template e ajusta apenas o vídeo, o `fonte.id` e os caminhos de saída.
 
 ```bash
-scripts/download_openpose_models.sh            # BODY_25 (padrão) em models/openpose/
-scripts/download_openpose_models.sh coco       # COCO
-scripts/download_openpose_models.sh all
+uv run python scripts/gerar_config_us07.py \
+  --video conteudos/videos/B_D_0003.mp4 \
+  --template config/exemplo_us07.json \
+  --saida config/B_D_0003.json
 ```
 
-O script baixa o `.prototxt` do repositório oficial da CMU no GitHub (commit
-fixado) e o `.caffemodel` do espelho do repositório OpenPose no Hugging Face
-(revisão fixada), porque o servidor original da CMU está fora do ar. Cada
-arquivo tem o SHA-256 conferido; se não bater, o arquivo é apagado e o script
-falha. Os pesos ficam em `models/` e não são versionados.
+Isso gera `config/B_D_0003.json` com as mesmas classes/ROIs do template, o FPS do vídeo preenchido (via OpenCV) e o JSONL em `saida/video/eventos_B_D_0003.jsonl`. Use `--forcar` para sobrescrever, `--sem-metadados` para não abrir o vídeo e `--patient-id` para trocar o pseudônimo.
 
-### Datasets
+#### 2. Processar vídeo da configuração (padrão)
 
-Os caminhos ficam em `video/pose/config.yaml` (`datasets.*`).
+O arquivo `config/exemplo_us07.json` define: vídeo, pesos `yolov8n.pt`, classes
+`["person","bed","chair","couch","bottle"]`, ROI `lateral_leito` (polígono),
+`conf=0.25`, `iou=0.5`, rastreamento `ByteTrack` e caminho para `eventos_us07.jsonl`.
 
-- **REHAB24-6** ([Zenodo](https://zenodo.org/records/13305826), CC BY-NC 4.0):
-  `Segmentation.csv`, `joints_names.txt` e `videos.zip` descompactado em
-  `data/rehab24/videos/` (`Ex1..Ex6/PM_XXX-Camera17-30fps.mp4` e
-  `PM_XXX-Camera18-30fps-transposed.mp4`).
-- **FallVision** ([Harvard Dataverse](https://doi.org/10.7910/DVN/75QPKK), CC0):
-  só os RAR de **Raw Video** (os de _Mask Video_ são ignorados pelo filtro
-  `input.exclude_substrings`), extraídos em `data/fallvision/` mantendo a
-  estrutura `Fall|No Fall/Bed|Chair|Stand/Raw Video/<pacote>/*.mp4`. O dataset
-  completo tem ~50 GB; baixe só os pacotes necessários, por exemplo:
-
-  ```bash
-  mkdir -p "data/fallvision/Fall/Bed/Raw Video"
-  curl -L -o /tmp/f_raw_b_3.rar https://dataverse.harvard.edu/api/access/datafile/8138614
-  bsdtar -xf /tmp/f_raw_b_3.rar -C "data/fallvision/Fall/Bed/Raw Video"   # ou unrar x
-  ```
-
-### Como rodar
-
-Sempre a partir da raiz do repositório:
+Para fazer um teste rápido:
 
 ```bash
-# Lote: pasta(s) ou arquivo(s), varridas recursivamente
-python -m video.pose.run --input data/rehab24/videos/Ex1 --config video/pose/config.yaml
-
-# FallVision: use --id-root para o video_id incluir as pastas (os nomes de
-# arquivo se repetem entre pacotes, ex.: B_N_01.mp4)
-python -m video.pose.run --input data/fallvision --id-root data/fallvision \
-    --config video/pose/config.yaml
-
-# Opções: --limit N, --skip-existing (retoma um lote), -v
-
-# Figuras (depois do run)
-python -m video.pose.visualize --config video/pose/config.yaml rehab24     # 1 rep. correta + 1 incorreta
-python -m video.pose.visualize --config video/pose/config.yaml fallvision  # 1 queda da cama
-python -m video.pose.visualize --config video/pose/config.yaml frames \
-    --video-id PM_000-Camera17-30fps --start 180 --end 377
-
-# Testes
-python -m pytest video/tests
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json --max-frames 100
 ```
 
-#### Com um vídeo próprio
-
-`--input` aceita qualquer vídeo que o OpenCV abra (`.mp4`, `.mov`, `.avi`,
-`.mkv`), não só os dos datasets. O `video_id` é o nome do arquivo sem extensão.
-As figuras usam o subcomando `frames`, com o trecho em quadros (segundos × fps):
+Para processar o vídeo por inteiro:
 
 ```bash
-python -m video.pose.run --config video/pose/config.yaml --input ~/Downloads/agachamento.mp4
-python -m video.pose.visualize --config video/pose/config.yaml frames \
-    --video-id agachamento --start 60 --end 180
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json
 ```
 
-Dicas de gravação:
+Esse modo gera:
 
-- Corpo inteiro no quadro durante todo o movimento, câmera parada e boa luz.
-- Os ângulos são 2D, medidos na imagem: grave de perfil para medir flexão de
-  joelho, quadril e inclinação do tronco. De frente, a flexão quase não aparece.
-- De preferência, só uma pessoa no quadro. Com mais de uma, fica a de
-  esqueleto mais completo.
-- Caminhos com "mask" são ignorados (`input.exclude_substrings`).
-- Se o vídeo não abrir (`status=erro` no `summary.csv`), converta para H.264:
-  `ffmpeg -i video.mov -c:v libx264 video.mp4`.
+- `saida/video/eventos_<stem>.jsonl` — eventos US04 do vídeo (recriado a cada execução).
+- `saida/video/relatorio_<stem>.json` — resumo único: quadros, detecções, classes, eventos e seção `avaliacao` (as quatro métricas do `yolov8n.pt` medidas no COCO val2017 e a lista de vídeos anotados).
 
-Uso como biblioteca:
+Exemplo de validação:
 
-```python
-from video.pose.config import load_config
-from video.pose.extract import extract_pose, compute_angles
+```bash
+python - <<'PY'
+import json
 
-cfg = load_config("video/pose/config.yaml")
-seq = extract_pose("data/rehab24/videos/Ex1/PM_000-Camera17-30fps.mp4", cfg)
-df = compute_angles(seq)            # pandas.DataFrame, um quadro por linha
-seq.save_json("outputs/pose/PM_000-Camera17-30fps.json")
+r = json.load(open("saida/video/relatorio_B_D_0016.json"))
+print("vídeo:", r["video"])
+print("quadros:", r["quadros_lidos"], "| detecções:", r["deteccoes_total"])
+print("eventos:", r["eventos"], "(entrada/saída:", r["entradas"], "/", r["saidas"], ")")
+print("classes:", r["classes_detectadas"])
+print("avaliacao:", r["avaliacao"]["metodo"], "| mAP@0.5:0.95:", r["avaliacao"]["metricas"]["mAP@0.5:0.95"])
+PY
 ```
 
-Um vídeo inválido levanta `VideoReadError`; no CLI o erro vai para o log
-(`outputs/pose/run.log`) e para o `summary.csv` com `status=erro`, e o lote
-continua.
+Caso não haja transições, o JSONL registra um único `sem_achados` (severidade `info`).
 
-### Formato das saídas (`outputs/pose/`)
+#### 3. Processar um vídeo específico (dinâmico)
 
-**`<video_id>.json`** — pose por quadro processado:
+Sobrescreve `fonte.video` e usa o nome do arquivo como `source_id`:
 
-```json
-{
-  "schema_version": "1.0",
-  "video_id": "PM_001-Camera17-30fps",
-  "source_path": "data/rehab24/videos/Ex1/PM_001-Camera17-30fps.mp4",
-  "metadata": {
-    "model": "BODY_25",
-    "backend": "cpu",
-    "input_height": 368,
-    "source_fps": 30.0,
-    "target_fps": 10.0,
-    "processed_fps": 10.0,
-    "conf_threshold": 0.3,
-    "min_valid_keypoints": 8,
-    "frame_width": 1920,
-    "frame_height": 1080,
-    "n_source_frames": 3016,
-    "n_processed_frames": 1006,
-    "module_version": "0.1.0",
-    "opencv_version": "4.14.0",
-    "created_at": "..."
-  },
-  "keypoint_names": ["Nose", "Neck", "RShoulder", "..."],
-  "frames": [
-    {
-      "frame_idx": 0,
-      "timestamp_ms": 0,
-      "n_valid_keypoints": 24,
-      "skeleton_detected": true,
-      "keypoints": {
-        "Nose": [756.1, 259.2, 0.915],
-        "LBigToe": null,
-        "...": "..."
-      }
-    }
-  ]
-}
+```bash
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
+  --video conteudos/videos/B_D_0002.mp4
 ```
 
-- `frame_idx` é o índice do quadro no vídeo original (o mesmo do
-  `Segmentation.csv` do REHAB24-6); `timestamp_ms = frame_idx * 1000 / fps`.
-- Keypoint = `[x, y, conf]` em pixels do quadro original, ou `null` se não
-  detectado ou com `conf < keypoints.conf_threshold`.
-- Só a pessoa principal é registrada (a com mais keypoints ligados pelos PAFs).
-- Esquerdo/direito são do paciente (`LKnee` = joelho esquerdo).
+Cria:
 
-**`<video_id>_angles.csv`** — uma linha por quadro processado, ângulos em graus:
+```text
+saida/video/eventos_B_D_0002.jsonl
+saida/video/relatorio_B_D_0002.json
+```
 
-| Coluna                                                                               | Definição                                                                   |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `frame_idx`, `timestamp_ms`                                                          | Iguais ao JSON                                                              |
-| `joelho_esquerdo`, `joelho_direito`                                                  | Quadril–joelho–tornozelo                                                    |
-| `quadril_esquerdo`, `quadril_direito`                                                | Ombro–quadril–joelho                                                        |
-| `ombro_esquerdo`, `ombro_direito`                                                    | Quadril–ombro–cotovelo                                                      |
-| `cotovelo_esquerdo`, `cotovelo_direito`                                              | Ombro–cotovelo–punho                                                        |
-| `inclinacao_tronco`                                                                  | Ângulo entre centro do quadril→pescoço e a vertical (0° em pé, 90° deitado) |
-| `assimetria_joelho`, `assimetria_quadril`, `assimetria_ombro`, `assimetria_cotovelo` | \|esquerdo − direito\|                                                      |
+#### 4. Processar todos os vídeos de uma pasta (lote)
 
-Os ângulos articulares são internos (0°–180°): membro esticado ≈ 180°, e a
-flexão é `180 − ângulo`. São ângulos 2D na imagem, logo dependem do ponto de
-vista da câmera. Ângulo vazio (NaN) = faltou algum keypoint necessário.
+```bash
+uv run python scripts/rodar_us07_video.py config/exemplo_us07.json \
+  --videos-dir conteudos/videos \
+  --saida-relatorio saida/video/relatorio_todos.json
+```
 
-**`summary.csv`** — uma linha por vídeo (lotes seguintes atualizam pelo
-`video_id`): `status`, `erro`, `frames_processados`, `frames_com_esqueleto`,
-`pct_frames_com_esqueleto` (quadros com ≥ `min_valid_keypoints` keypoints
-válidos), fps de origem e processado, duração e tempo de processamento.
+Cria:
 
-**`figures/`** — mosaicos com o esqueleto desenhado (azul = lado esquerdo,
-vermelho = direito, verde = linha média).
+- `saida/video/eventos_<stem>.jsonl` para cada vídeo processado com sucesso
+- `saida/video/relatorio_<stem>.json` para cada vídeo (para inspeção por arquivo)
+- `saida/video/relatorio_todos.json` — relatório consolidado (`videos_processados`, `videos_com_falha`, `eventos_totais`, `resumos`, `falhas`, `avaliacao`)
 
-### Licenças
+Ao usar `--max-frames` é ideal para validação rápida. Vídeos com falha não geram
+seu JSONL e ficam registrados em `falhas` (exit code `1`). O detector YOLO é
+carregado uma única vez e o `tracker` é reiniciado entre vídeos.
 
-- **OpenPose** (código e modelos): licença acadêmica da Carnegie Mellon
-  University, **uso não comercial apenas** — pesquisa, ensino e avaliação. Uso
-  comercial exige licença da CMU. Veja o
-  [LICENSE](https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/LICENSE).
-  Cite: Cao et al., _OpenPose: Realtime Multi-Person 2D Pose Estimation using
-  Part Affinity Fields_, IEEE TPAMI, 2019.
-- **REHAB24-6**: uso acadêmico/não comercial (CC BY-NC 4.0); cite Černek,
-  Sedmidubsky e Budikova, SISAP 2024.
-- **FallVision**: CC0 1.0.
+#### 5. Parâmetros e configuração por câmera
+
+- **Classes:** `detector.classes` — justifica-se cobrir `person`, `bed`, `chair`, `couch`, `bottle`. Classes clínicas (instrumentos cirúrgicos, etc.) exigem dataset próprio + fine-tuning.
+- **Limiar:** `detector.confianca = 0.25` (padrão Ultralytics), `detector.iou = 0.5` (NMS, coerente com `mAP@0.5`).
+- **ROIs:** definidas em `areas[]` com `points` (polígono), `largura_ref`/`altura_ref` (resolução de referência), `area_minima`, `classe_filtro`. São **configuráveis por vídeo/câmera**: use `config/leito_uti_07.json` como modelo para outra câmera (muda `fonte.id`, `fonte.video`, `eventos.caminho_jsonl` e calibração dos pontos).
+- **Rastreamento:** `detector.rastrear = true`, `tracker = bytetrack.yaml` (ByteTrack) com `monitor.persistencia_quadros = 8`.
+
+#### 6. Baseline e métricas
+
+Sem fine-tuning, o relatório registra as métricas do `yolov8n.pt` **medidas** no
+COCO val2017 (`metricas_coco_baseline()`, em `video/metricas.py`):
+
+| Métrica (COCO val2017, `yolov8n.pt`, conf 0,001, IoU NMS 0,5) | Valor |
+|---|---|
+| mAP@0.5 | **0,528** |
+| mAP@0.5:0.95 | **0,366** (model card publica 0,373) |
+| Precision | **0,637** |
+| Recall | **0,487** |
+| AP@0.5 das classes de interesse | person 0,503 · bed 0,425 · couch 0,431 · bottle 0,296 · chair 0,253 |
+
+Para medir de novo:
+
+```bash
+# COCO val2017 (5000 imagens) fora do repositório, ex.: ~/datasets/coco_val2017
+#   imagens: http://images.cocodataset.org/zips/val2017.zip
+#   labels:  https://github.com/ultralytics/assets/releases/download/v0.0.0/coco2017labels.zip (só labels/val2017)
+#   data.yaml: path, train/val = images/val2017 e os 80 names de ultralytics/cfg/datasets/coco.yaml
+uv run python scripts/avaliar_us07.py ~/datasets/coco_val2017/data.yaml \
+  --weights yolov8n.pt --split val --output saida/video/metricas_coco_val2017.json
+```
+
+Com um dataset clínico anotado (YOLO, `data.yaml`), o mesmo script mede o domínio do projeto:
+
+```bash
+uv run python scripts/avaliar_us07.py caminho/para/data.yaml \
+  --weights yolov8n.pt --split val --output saida/video/metricas.json
+```
+
+O comando `--baseline` também pode ser usado para obter o mesmo JSON:
+
+```bash
+uv run python scripts/avaliar_us07.py --baseline --output saida/video/metricas_baseline.json
+```
+
+#### 7. Validação rápida dos artefatos
+
+Verificar eventos contra o schema US04:
+
+```bash
+uv run python - <<'PY'
+from contratos.validar import validar_arquivo
+
+validos, erros = validar_arquivo("saida/video/eventos_B_D_0002.jsonl")
+print("válidos:", len(validos), "| erros:", erros)
+PY
+```
+
+Conferir relatório por vídeo:
+
+```bash
+python - <<'PY'
+import json
+
+r = json.load(open("saida/video/relatorio_B_D_0002.json"))
+print(r.keys())
+print("mAP@0.5:0.95:", r["avaliacao"]["metricas"]["mAP@0.5:0.95"])
+PY
+```
+
+#### 8. Pela API
+
+O mesmo pipeline está exposto em `POST /video/areas-criticas`; veja
+[Detecção em áreas críticas pela API](#detecção-em-áreas-críticas-pela-api-videoareas-criticas).
+
+#### 9. Evidências e conformidade
+
+A rastreabilidade completa (itens 1–8 do DoD) está em
+[`docs/relatorio_us07_dod.md`](docs/relatorio_us07_dod.md). A arquitetura, ROIs,
+decisões e parâmetros estão em
+[`docs/arquitetura/us07_deteccao_areas_criticas.md`](docs/arquitetura/us07_deteccao_areas_criticas.md).
 
 ## Transcrição de consultas com Azure AI Speech (US11)
 
@@ -551,6 +506,9 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/pose/{job_id}/feedback`  | Resultado em linguagem natural: resumo, pontos positivos, negativos e de alerta.                                                            |
 | `GET`  | `/video/pose/{job_id}/keypoints` | Baixa o JSON de pose por quadro (mesmo formato de `outputs/pose/<video_id>.json`).                                                          |
 | `GET`  | `/video/pose/{job_id}/angles`    | Baixa o CSV de ângulos por quadro.                                                                                                          |
+| `POST` | `/video/areas-criticas`          | Recebe um vídeo (`video_file`) e enfileira a detecção YOLOv8 + ROIs (US07). Responde `202` com o `job_id`.                                  |
+| `GET`  | `/video/areas-criticas/{job_id}` | Status do job, parâmetros usados (conf, IoU, classes, ROIs) e resumo (quadros, detecções, entradas, saídas).                                |
+| `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
 
 Exemplos com `curl`:
 
@@ -574,6 +532,13 @@ curl -X POST http://127.0.0.1:8000/video/pose \
 curl http://127.0.0.1:8000/video/pose/<job_id>
 curl http://127.0.0.1:8000/video/pose/<job_id>/feedback
 curl -O http://127.0.0.1:8000/video/pose/<job_id>/angles
+
+curl -X POST http://127.0.0.1:8000/video/areas-criticas \
+  -F "video_file=@conteudos/videos/B_D_0016.mp4" \
+  -F "camera_id=leito_uti_07" -F "recorded_at=2026-10-05T19:00:00Z"
+
+curl http://127.0.0.1:8000/video/areas-criticas/<job_id>
+curl http://127.0.0.1:8000/video/areas-criticas/<job_id>/eventos
 ```
 
 ### Análise de pose pela API (`/video/pose`)
@@ -644,6 +609,60 @@ foram validados clinicamente**. Duas limitações: os ângulos são projeções 
 da vertical, não a curvatura da coluna.
 
 Testes (estimador falso, sem pesos nem Azure): `uv run pytest video/tests`.
+
+### Detecção em áreas críticas pela API (`/video/areas-criticas`)
+
+Mesmo fluxo de `scripts/rodar_us07_video.py` (YOLOv8 → ByteTrack → ROI →
+evento US04), sem Azure. Precisa só do `yolov8n.pt` (na raiz do repositório;
+se faltar, a Ultralytics baixa no primeiro job).
+
+- **Assíncrono**, como a pose: o `POST` grava o upload e devolve o `job_id`; os
+  jobs rodam um por vez. O modelo YOLO é carregado no primeiro job e reaproveitado,
+  e o rastreamento é reiniciado entre vídeos.
+- **ROIs por câmera.** `camera_id` escolhe `config/<camera_id>.json` (ex.:
+  `leito_uti_07`); sem ele vale `US07_CONFIG_PATH`. Para outra câmera, crie o
+  arquivo com `scripts/gerar_config_us07.py` — não precisa reiniciar a API para
+  câmeras novas (o arquivo de uma câmera já usada fica em cache até reiniciar).
+- **ROIs na requisição.** O campo `areas` aceita uma lista JSON no mesmo formato
+  de `areas[]` dos configs e substitui as ROIs da câmera só neste job:
+
+  ```bash
+  curl -X POST http://127.0.0.1:8000/video/areas-criticas \
+    -F "video_file=@conteudos/videos/B_D_0016.mp4" -F "camera_id=leito_uti_07" \
+    -F 'areas=[{"id":"borda_leito","nome":"Borda do leito","classe_filtro":"person",
+               "largura_ref":1920,"altura_ref":1080,
+               "points":[[700,300],[1300,300],[1350,1000],[650,1000]]}]'
+  ```
+- **Demais campos opcionais**: `patient_id`/`encounter_id` (pseudônimo pronto ou
+  ID de origem, pseudonimizado com `PSEUDONYM_KEY`), `bed_id`, `source_id`,
+  `procedure_type` e `recorded_at` (ISO-8601 em UTC). O que não vier é lido da
+  config da câmera. Com `recorded_at`, o `timestamp` do evento é
+  `recorded_at + tempo do quadro`; sem ele, parte do início da análise.
+- **Resultado.** O `GET /{job_id}` traz `config` (pesos, `confianca` 0,25, `iou`
+  0,5, classes, critério e ids das ROIs) e `summary` (quadros, detecções por
+  classe, entradas, saídas). O `GET /{job_id}/eventos` traz os `EventoAchado`
+  (schema `contratos/schema/evento_achado.v1.schema.json`), com `timestamp`,
+  `track_id`, `area_critica_id`, caixa e `tempo_video_s` em `evidence.features`.
+  Sem transição, vem um único evento `sem_achados`.
+- **Arquivos.** `saida/video/api/<job_id>/eventos.jsonl` e `job.json` (relido se
+  a API reiniciar). O vídeo enviado é apagado ao fim do job. Job que estava na fila ou
+  em andamento quando a API reiniciou aparece como `FAILED` ("Job interrompido");
+  basta reenviar o vídeo.
+- **`--reload`.** O `--reload` sem filtro observa também o `.venv` e reinicia a
+  API se algo for instalado nele (a Ultralytics instala sozinha o que falta, como
+  o `lap` do ByteTrack, se o `uv sync` não foi rodado). Para desenvolver, limite
+  as pastas observadas:
+
+  ```bash
+  uv run uvicorn app.main:app --reload --reload-dir app --reload-dir video --reload-dir contratos
+  ```
+- **Erros.** **400** extensão não suportada, arquivo vazio ou `camera_id` com
+  caracteres fora de `[A-Za-z0-9_-]`; **404** câmera sem config ou job
+  desconhecido; **409** eventos pedidos antes de `COMPLETED`; **413** acima de
+  `VIDEO_MAX_UPLOAD_MB`; **422** `areas` inválidas ou `recorded_at` fora de UTC.
+  Vídeo ilegível vira job `FAILED` com `failure_reason`.
+
+Testes (detector falso, sem pesos): `uv run pytest tests/video/test_api_areas.py`.
 
 ### Tratamento de erros (429 / 401 / 403)
 
