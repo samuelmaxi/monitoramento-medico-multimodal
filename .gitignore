@@ -258,3 +258,5 @@ dataset_medico/
 /anotavel/
 runs/
 .agents
+# Sinais vitais (US15): MIMIC-IV Demo baixado por script
+/dados/

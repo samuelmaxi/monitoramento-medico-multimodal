@@ -1,0 +1,253 @@
+{
+  "config": {
+    "janela_baseline": 12.0,
+    "min_pontos_baseline": 6,
+    "limiar_z": 2.5,
+    "medicoes_consecutivas": 2,
+    "janela_tendencia": 6.0,
+    "min_pontos_tendencia": 4,
+    "limiar_tendencia": 2.5
+  },
+  "semente": 42,
+  "medicoes": 77245,
+  "pacientes": 100,
+  "ms_por_medicao": 0.1022,
+  "artefatos_descartados": {
+    "fr": 31,
+    "pad": 71,
+    "pas": 74,
+    "fc": 3,
+    "spo2": 3,
+    "temp": 3
+  },
+  "eventos_por_tipo": {
+    "news2_resposta_urgente": 1242,
+    "news2_emergencia": 2005,
+    "desvio_baseline": 3100,
+    "tendencia_deterioracao": 4821
+  },
+  "ajuste": {
+    "matriz_confusao": {
+      "vp": 1206,
+      "fp": 551,
+      "fn": 195,
+      "vn": 811
+    },
+    "recall": 0.8608,
+    "precisao": 0.6864,
+    "f1": 0.7638,
+    "n": 2763,
+    "por_tipo": {
+      "negativo": {
+        "matriz_confusao": {
+          "vp": 0,
+          "fp": 551,
+          "fn": 0,
+          "vn": 811
+        },
+        "recall": 0.0,
+        "precisao": 0.0,
+        "f1": 0.0,
+        "n": 1362
+      },
+      "degrau": {
+        "matriz_confusao": {
+          "vp": 523,
+          "fp": 0,
+          "fn": 127,
+          "vn": 0
+        },
+        "recall": 0.8046,
+        "precisao": 1.0,
+        "f1": 0.8917,
+        "n": 650
+      },
+      "rampa": {
+        "matriz_confusao": {
+          "vp": 683,
+          "fp": 0,
+          "fn": 68,
+          "vn": 0
+        },
+        "recall": 0.9095,
+        "precisao": 1.0,
+        "f1": 0.9526,
+        "n": 751
+      }
+    },
+    "por_sinal": {
+      "fc": {
+        "matriz_confusao": {
+          "vp": 246,
+          "fp": 121,
+          "fn": 38,
+          "vn": 161
+        },
+        "recall": 0.8662,
+        "precisao": 0.6703,
+        "f1": 0.7558,
+        "n": 566
+      },
+      "fr": {
+        "matriz_confusao": {
+          "vp": 246,
+          "fp": 101,
+          "fn": 45,
+          "vn": 161
+        },
+        "recall": 0.8454,
+        "precisao": 0.7089,
+        "f1": 0.7712,
+        "n": 553
+      },
+      "pad": {
+        "matriz_confusao": {
+          "vp": 242,
+          "fp": 118,
+          "fn": 39,
+          "vn": 140
+        },
+        "recall": 0.8612,
+        "precisao": 0.6722,
+        "f1": 0.7551,
+        "n": 539
+      },
+      "pas": {
+        "matriz_confusao": {
+          "vp": 224,
+          "fp": 113,
+          "fn": 51,
+          "vn": 154
+        },
+        "recall": 0.8145,
+        "precisao": 0.6647,
+        "f1": 0.732,
+        "n": 542
+      },
+      "spo2": {
+        "matriz_confusao": {
+          "vp": 248,
+          "fp": 98,
+          "fn": 22,
+          "vn": 195
+        },
+        "recall": 0.9185,
+        "precisao": 0.7168,
+        "f1": 0.8052,
+        "n": 563
+      }
+    }
+  },
+  "teste": {
+    "matriz_confusao": {
+      "vp": 1264,
+      "fp": 574,
+      "fn": 244,
+      "vn": 842
+    },
+    "recall": 0.8382,
+    "precisao": 0.6877,
+    "f1": 0.7555,
+    "n": 2924,
+    "por_tipo": {
+      "negativo": {
+        "matriz_confusao": {
+          "vp": 0,
+          "fp": 574,
+          "fn": 0,
+          "vn": 842
+        },
+        "recall": 0.0,
+        "precisao": 0.0,
+        "f1": 0.0,
+        "n": 1416
+      },
+      "degrau": {
+        "matriz_confusao": {
+          "vp": 603,
+          "fp": 0,
+          "fn": 159,
+          "vn": 0
+        },
+        "recall": 0.7913,
+        "precisao": 1.0,
+        "f1": 0.8835,
+        "n": 762
+      },
+      "rampa": {
+        "matriz_confusao": {
+          "vp": 661,
+          "fp": 0,
+          "fn": 85,
+          "vn": 0
+        },
+        "recall": 0.8861,
+        "precisao": 1.0,
+        "f1": 0.9396,
+        "n": 746
+      }
+    },
+    "por_sinal": {
+      "fc": {
+        "matriz_confusao": {
+          "vp": 269,
+          "fp": 121,
+          "fn": 49,
+          "vn": 163
+        },
+        "recall": 0.8459,
+        "precisao": 0.6897,
+        "f1": 0.7599,
+        "n": 602
+      },
+      "fr": {
+        "matriz_confusao": {
+          "vp": 260,
+          "fp": 108,
+          "fn": 41,
+          "vn": 200
+        },
+        "recall": 0.8638,
+        "precisao": 0.7065,
+        "f1": 0.7773,
+        "n": 609
+      },
+      "pad": {
+        "matriz_confusao": {
+          "vp": 239,
+          "fp": 125,
+          "fn": 53,
+          "vn": 142
+        },
+        "recall": 0.8185,
+        "precisao": 0.6566,
+        "f1": 0.7287,
+        "n": 559
+      },
+      "pas": {
+        "matriz_confusao": {
+          "vp": 235,
+          "fp": 119,
+          "fn": 50,
+          "vn": 162
+        },
+        "recall": 0.8246,
+        "precisao": 0.6638,
+        "f1": 0.7355,
+        "n": 566
+      },
+      "spo2": {
+        "matriz_confusao": {
+          "vp": 261,
+          "fp": 101,
+          "fn": 51,
+          "vn": 175
+        },
+        "recall": 0.8365,
+        "precisao": 0.721,
+        "f1": 0.7745,
+        "n": 588
+      }
+    }
+  }
+}
