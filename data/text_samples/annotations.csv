@@ -1,0 +1,22 @@
+audio_id,termo,caso,observacao
+consulta-01,dor torácica,afirmado,
+consulta-01,falta de ar,afirmado,"médico pergunta ""você sente falta de ar?"" (não pode gerar achado); negação: febre"
+consulta-02,,negacao,"nega dor no peito, falta de ar e febre"
+consulta-03,,terceiro,"pai: infarto; mãe: AVC; irmã: convulsões"
+consulta-04,,hipotetico,"se a falta de ar piorar; caso eu tenha febre"
+consulta-05,cefaleia,afirmado,
+consulta-05,convulsão,passado,"há cinco anos: severidade rebaixada de alta para media"
+consulta-06,síncope,afirmado,
+consulta-06,confusão mental,afirmado,"negação: convulsão"
+consulta-07,sangramento,afirmado,
+consulta-07,tontura,afirmado,"negação: vômito; terceiro: câncer da mãe"
+consulta-08,palpitação,afirmado,"médico pergunta dor no peito e paciente responde só ""Não."""
+consulta-09,febre,afirmado,
+consulta-09,vômito,afirmado,
+consulta-10,ideação suicida,afirmado,"sentimento negativo esperado"
+consulta-11,febre,afirmado,"terceiro: convulsão e febre do filho; hipotético: falta de ar"
+consulta-12,edema,afirmado,"negação possível: falta de ar; negação: tontura"
+consulta-13,infarto,passado,"há dois anos: severidade rebaixada de alta para media"
+consulta-13,vômito,afirmado,"negação: dor no peito"
+consulta-14,,negacao,"nega febre e sangramento; sentimento positivo"
+consulta-15,falta de ar,afirmado,"fala com mais de 5.120 caracteres; negação: dor no peito e febre; terceiro: AVC do irmão"

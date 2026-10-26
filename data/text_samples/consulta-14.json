@@ -1,0 +1,50 @@
+{
+  "audio_id": "consulta-14",
+  "patient_id": "sim-paciente-14",
+  "recorded_at": "2026-10-14T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "Bom dia! Como está a recuperação da cirurgia?",
+      "offset_ms": 500,
+      "duration_ms": 2925,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Bom dia, doutora! Estou me sentindo muito melhor, a cicatriz está ótima.",
+      "offset_ms": 3875,
+      "duration_ms": 4680,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "Teve febre ou sangramento no curativo?",
+      "offset_ms": 9005,
+      "duration_ms": 2470,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "Não tive febre e não teve sangramento nenhum. Estou muito feliz com o resultado.",
+      "offset_ms": 11925,
+      "duration_ms": 5200,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "Excelente. Pode voltar a caminhar devagar.",
+      "offset_ms": 17575,
+      "duration_ms": 2730,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Que notícia boa, muito obrigada pelo cuidado de toda a equipe.",
+      "offset_ms": 20755,
+      "duration_ms": 4030,
+      "confidence": 0.86
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "audio_id": "consulta-07",
+  "patient_id": "sim-paciente-07",
+  "recorded_at": "2026-10-07T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "Qual é a queixa principal?",
+      "offset_ms": 500,
+      "duration_ms": 1690,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Estou com sangue nas fezes há uma semana e isso está me deixando muito preocupado.",
+      "offset_ms": 2640,
+      "duration_ms": 5330,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "Sente fraqueza ou tontura?",
+      "offset_ms": 8420,
+      "duration_ms": 1690,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "Sinto tontura quando levanto da cama, a vista escurece. Vômito eu não tive.",
+      "offset_ms": 10560,
+      "duration_ms": 4875,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "Alguém da família teve câncer de intestino?",
+      "offset_ms": 15885,
+      "duration_ms": 2795,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Minha mãe teve câncer de intestino. Tenho muito medo de ser a mesma coisa.",
+      "offset_ms": 19130,
+      "duration_ms": 4810,
+      "confidence": 0.86
+    }
+  ]
+}

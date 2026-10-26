@@ -1,0 +1,9 @@
+# Dependências do módulo de texto da US13 (audio/text). Python 3.13+.
+# Instalação: pip install -r audio/requirements.txt
+azure-ai-textanalytics==5.3.0
+azure-core==1.41.0
+pydantic==2.14.1
+PyYAML==6.0.3
+python-dotenv==1.2.4
+pytest==9.1.1
+jsonschema==4.26.0
