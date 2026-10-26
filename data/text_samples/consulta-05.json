@@ -1,0 +1,50 @@
+{
+  "audio_id": "consulta-05",
+  "patient_id": "sim-paciente-05",
+  "recorded_at": "2026-10-05T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "Bom dia. Conte o que está acontecendo.",
+      "offset_ms": 500,
+      "duration_ms": 2470,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Há três dias estou com dor de cabeça forte, principalmente de manhã.",
+      "offset_ms": 3420,
+      "duration_ms": 4420,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "Já teve algum problema neurológico?",
+      "offset_ms": 8290,
+      "duration_ms": 2275,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "Há cinco anos eu tive uma convulsão, mas nunca mais aconteceu. Fiz tratamento e parei o remédio.",
+      "offset_ms": 11015,
+      "duration_ms": 6240,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "Está tomando algum medicamento agora?",
+      "offset_ms": 17705,
+      "duration_ms": 2405,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Só paracetamol 750 mg quando a dor aperta.",
+      "offset_ms": 20560,
+      "duration_ms": 2730,
+      "confidence": 0.86
+    }
+  ]
+}
