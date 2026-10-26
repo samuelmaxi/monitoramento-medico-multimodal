@@ -35,6 +35,7 @@ def transcrever_arquivo(
     chave: str,
     frases: list[str] | None = None,
     max_speakers: int = 2,
+    locale: str = LOCALE,
     timeout_s: float = 600.0,
     max_tentativas: int = 3,
     espera_base_s: float = 2.0,
@@ -47,7 +48,7 @@ def transcrever_arquivo(
     existem para os testes.
     """
     definicao: dict = {
-        "locales": [LOCALE],
+        "locales": [locale],
         "diarization": {"enabled": True, "maxSpeakers": max_speakers},
         "profanityFilterMode": "None",
     }

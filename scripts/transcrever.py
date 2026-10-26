@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Envia a phrase list de termos clínicos (usar só se o WER passar de 20%%).",
     )
     parser.add_argument("--max-falantes", type=int, default=2, help="Máximo de falantes na diarização.")
+    parser.add_argument("--locale", default="pt-BR", help="Idioma da transcrição (padrão: pt-BR).")
     parser.add_argument(
         "--medico-falante",
         type=int,
@@ -62,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
                 usar_frases=args.frases_medicas,
                 max_speakers=args.max_falantes,
                 medico_falante=args.medico_falante,
+                locale=args.locale,
             )
         except (TranscricaoError, OSError) as exc:
             print(f"[ERRO] {audio}: {exc}", file=sys.stderr)

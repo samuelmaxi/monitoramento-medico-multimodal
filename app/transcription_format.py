@@ -19,6 +19,7 @@ def formatar_transcricao(
     max_speakers: int,
     frases_medicas: bool,
     medico_falante: int | None = None,
+    locale: str = "pt-BR",
 ) -> dict:
     """Monta o documento salvo em JSON a partir do retorno bruto da API.
 
@@ -31,7 +32,7 @@ def formatar_transcricao(
     return {
         "schema_version": SCHEMA_VERSION,
         "arquivo": {"nome": nome_arquivo, "sha256": sha256, "bytes": tamanho_bytes},
-        "idioma": "pt-BR",
+        "idioma": locale,
         "duracao_ms": resposta.get("durationMilliseconds"),
         "diarizacao": {"habilitada": True, "max_falantes": max_speakers},
         "frases_medicas": frases_medicas,

@@ -13,6 +13,10 @@ from dataclasses import dataclass
 
 _NAO_PALAVRA = re.compile(r"[^\w\s]", re.UNICODE)
 
+# Interjeições do inglês que as referências do dataset trazem ("hmm, hmm"). Usadas
+# só na métrica secundária sem interjeições, nunca na principal.
+INTERJEICOES_EN = frozenset({"hmm", "hm", "mm", "mhm", "uh", "uhm", "um", "ah", "er", "eh", "huh"})
+
 
 @dataclass(frozen=True)
 class ResultadoWER:
@@ -27,16 +31,19 @@ class ResultadoWER:
         return self.substituicoes + self.delecoes + self.insercoes
 
 
-def normalizar(texto: str) -> list[str]:
+def normalizar(texto: str, remover_interjeicoes: bool = False) -> list[str]:
     """Devolve as palavras do texto em minúsculas, sem pontuação."""
     texto = unicodedata.normalize("NFC", texto).lower()
     texto = _NAO_PALAVRA.sub(" ", texto)
-    return texto.split()
+    palavras = texto.split()
+    if remover_interjeicoes:
+        palavras = [p for p in palavras if p not in INTERJEICOES_EN]
+    return palavras
 
 
-def calcular_wer(referencia: str, hipotese: str) -> ResultadoWER:
-    ref = normalizar(referencia)
-    hip = normalizar(hipotese)
+def calcular_wer(referencia: str, hipotese: str, remover_interjeicoes: bool = False) -> ResultadoWER:
+    ref = normalizar(referencia, remover_interjeicoes)
+    hip = normalizar(hipotese, remover_interjeicoes)
 
     if not ref:
         # Sem palavras na referência, qualquer palavra reconhecida é inserção.

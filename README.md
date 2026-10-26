@@ -390,17 +390,27 @@ Falhas: timeouts, erros de conexão e 429/5xx são retentados (3 tentativas, com
 ### Medição do WER
 
 Cada áudio de referência precisa de um `.txt` de mesmo nome com a transcrição
-manual, em `dados/transcricao/` (fora do Git):
+de referência, em `dados/transcricao/` (fora do Git). O `--baixar N` baixa uma
+amostra do dataset [Eka Medical ASR](https://huggingface.co/datasets/ekacare/eka-medical-asr-evaluation-dataset)
+(config `en`, inglês indiano, licença MIT): sorteia N linhas com semente fixa
+(`--seed`, padrão 42), converte para WAV 16 kHz mono e grava as referências e o
+`manifest.json`. Os `.m4a` originais ficam em `dados/transcricao/origem/`.
 
 ```bash
-python scripts/avaliar_wer.py                  # sem phrase list
-python scripts/avaliar_wer.py --frases-medicas # só se o WER passar de 20%
+python scripts/avaliar_wer.py --baixar 10                   # amostra de 10, en-IN
+python scripts/avaliar_wer.py --baixar 10 --frases-medicas  # com phrase list (se WER > 20%)
+python scripts/avaliar_wer.py --locale pt-BR                # áudios próprios em pt-BR
 ```
 
-Saída: `saida/transcricao/avaliacao/<sem_frases|com_frases>/relatorio_wer.md`
-(WER global e por áudio, e amostra de transcrição) e `wer.json`. O DoD pede ao
-menos 10 áudios; o script avisa quando há menos. A phrase list fica em
-`app/frases_medicas.txt`. Custom Speech não está implementado.
+Requer `ffmpeg` no PATH (`winget install Gyan.FFmpeg`). O locale padrão do
+`avaliar_wer.py` é `en-IN`. O DoD da US11 cita pt-BR, e não há dataset de
+referência em português: o relatório registra esse desvio.
+
+Saída: `saida/transcricao/avaliacao/<locale>_<sem|com>_frases/relatorio_wer.md`
+(WER global e por áudio, WER sem interjeições como métrica secundária e amostra
+de transcrição) e `wer.json`. O DoD pede ao menos 10 áudios; o script avisa
+quando há menos. A phrase list em `app/frases_medicas.txt` é em português. Custom
+Speech não está implementado.
 
 ## Infraestrutura (Terraform)
 

@@ -38,6 +38,7 @@ def transcrever_e_salvar(
     usar_frases: bool = False,
     max_speakers: int = 2,
     medico_falante: int | None = None,
+    locale: str = "pt-BR",
     **opcoes_cliente,
 ) -> dict:
     """Transcreve `audio_path` e grava `<saida_dir>/<nome>.json`.
@@ -48,7 +49,9 @@ def transcrever_e_salvar(
     sha256 = sha256_arquivo(audio_path)
     destino = saida_dir / f"{audio_path.stem}.json"
 
-    existente = _ler_se_compativel(destino, sha256, usar_frases, max_speakers, medico_falante)
+    existente = _ler_se_compativel(
+        destino, sha256, usar_frases, max_speakers, medico_falante, locale
+    )
     if existente is not None:
         return existente
 
@@ -59,6 +62,7 @@ def transcrever_e_salvar(
         chave=chave,
         frases=frases,
         max_speakers=max_speakers,
+        locale=locale,
         **opcoes_cliente,
     )
     resultado = formatar_transcricao(
@@ -69,6 +73,7 @@ def transcrever_e_salvar(
         max_speakers=max_speakers,
         frases_medicas=usar_frases,
         medico_falante=medico_falante,
+        locale=locale,
     )
     _gravar_json(destino, resultado)
     return resultado
@@ -80,6 +85,7 @@ def _ler_se_compativel(
     usar_frases: bool,
     max_speakers: int,
     medico_falante: int | None,
+    locale: str,
 ) -> dict | None:
     if not destino.is_file():
         return None
@@ -93,6 +99,7 @@ def _ler_se_compativel(
         and existente.get("frases_medicas") == usar_frases
         and existente.get("diarizacao", {}).get("max_falantes") == max_speakers
         and existente.get("medico_falante") == medico_falante
+        and existente.get("idioma") == locale
     )
     return existente if compativel else None
 
