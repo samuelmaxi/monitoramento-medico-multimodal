@@ -1,6 +1,22 @@
-"""Leitura das transcrições diarizadas da US11 (``outputs/transcripts/<audio_id>.json``).
+"""Leitura das transcrições diarizadas da US11.
 
-Formato esperado::
+Aceita dois formatos. O primeiro é o JSON gravado pela própria US11
+(``saida/transcricao/<nome>.json``, ``POST /transcription``)::
+
+    {
+      "schema_version": "1.1",
+      "audio_id": "consulta-01", "patient_id": "10000032", "recorded_at": "2026-10-01T13:00:00Z",
+      "medico_falante": 1,
+      "falas": [
+        {"texto": "...", "falante": 1, "papel": "medico", "offset_ms": 0, "duracao_ms": 2400, "confianca": 0.94}
+      ],
+      ...
+    }
+
+``papel`` só vem preenchido quando a transcrição foi feita com ``medico_falante``;
+sem ele não dá para separar a fala do paciente, e a leitura falha.
+
+O segundo é o formato compacto usado nas amostras (``data/text_samples``)::
 
     {
       "audio_id": "consulta-01",               # vira context.source_id e o nome da saída
@@ -13,7 +29,8 @@ Formato esperado::
     }
 
 ``recorded_at`` + ``offset_ms`` dá o ``timestamp`` UTC do evento, que o contrato
-da US04 exige; por isso ``recorded_at`` e ``patient_id`` são obrigatórios aqui.
+da US04 exige; por isso ``recorded_at`` e ``patient_id`` são obrigatórios aqui,
+nos dois formatos.
 """
 
 from __future__ import annotations
@@ -62,7 +79,7 @@ class Transcript:
 
 
 def _exigir(dados: dict[str, Any], chave: str, origem: str) -> Any:
-    if chave not in dados:
+    if dados.get(chave) is None:
         raise TranscriptError(f"{origem}: campo obrigatório ausente: '{chave}'")
     return dados[chave]
 
@@ -85,10 +102,39 @@ def _inteiro_nao_negativo(valor: Any, campo: str, origem: str) -> int:
     return valor
 
 
+def _segmentos_da_us11(dados: dict[str, Any], origem: str) -> list[Any]:
+    """Converte ``falas`` do JSON da US11 em ``segments``; o falante vira o ``papel``."""
+    falas = dados["falas"]
+    if not isinstance(falas, list):
+        raise TranscriptError(f"{origem}: 'falas' deve ser uma lista")
+    if falas and dados.get("medico_falante") is None:
+        raise TranscriptError(
+            f"{origem}: transcrição sem papéis de falante. Transcreva informando qual falante é o "
+            "médico (medico_falante na API, --medico-falante no script); sem isso a fala do médico "
+            "iria para a análise"
+        )
+    segmentos = []
+    for i, fala in enumerate(falas):
+        local = f"{origem} falas[{i}]"
+        if not isinstance(fala, dict):
+            raise TranscriptError(f"{local}: esperado um objeto")
+        segmentos.append({
+            # Fala sem falante na diarização: a análise registra e ignora.
+            "speaker": fala.get("papel") or "desconhecido",
+            "text": _exigir(fala, "texto", local),
+            "offset_ms": _exigir(fala, "offset_ms", local),
+            "duration_ms": _exigir(fala, "duracao_ms", local),
+            "confidence": fala.get("confianca"),
+        })
+    return segmentos
+
+
 def transcript_from_dict(dados: dict[str, Any], source: Optional[Path] = None) -> Transcript:
     origem = str(source) if source else "transcrição"
     if not isinstance(dados, dict):
         raise TranscriptError(f"{origem}: esperado um objeto JSON")
+    if "segments" not in dados and "falas" in dados:
+        dados = {**dados, "segments": _segmentos_da_us11(dados, origem)}
 
     audio_id = str(_exigir(dados, "audio_id", origem))
     if not re.fullmatch(PADRAO_ID_CURTO, audio_id):

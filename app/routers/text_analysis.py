@@ -4,20 +4,24 @@ A análise é síncrona: uma consulta leva alguns segundos no Azure AI Language
 (o health é assíncrono do lado da Azure, mas o cliente espera o resultado). Os
 eventos também são publicados no barramento local (``EVENTOS_JSONL``), onde o
 stub de alertas recebe os de severidade alta, como em ``audio.text.run``.
+
+O corpo pode ser o JSON da US11 (o mesmo que ``POST /transcription`` devolve,
+transcrito com ``medico_falante``) ou o formato compacto com ``segments``.
 """
 
 from functools import lru_cache
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Body, HTTPException, Query
 
 from app import config as app_config
-from app.schemas import TextAnalysisRequest, TextAnalysisResponse
+from app.schemas import TextAnalysisRequest, TextAnalysisResponse, TranscricaoResponse
 from audio.text.alerts import assinar_alertas
 from audio.text.analyze import analyze_transcript
 from audio.text.config import ConfigError, TextConfig, load_config
 from audio.text.language_client import LanguageAuthError, LanguageClient, LanguageServiceError
 from audio.text.terms import TermMatcher
-from audio.text.transcript import TranscriptError, transcript_from_dict
+from audio.text.transcript import Transcript, TranscriptError, transcript_from_dict
 from contratos import BarramentoLocal, ChavePseudonimizacaoAusente
 
 router = APIRouter(prefix="/text/analysis")
@@ -47,24 +51,39 @@ def get_barramento() -> BarramentoLocal:
 
 @router.post("", response_model=TextAnalysisResponse, response_model_exclude_none=True)
 def analyze_text(
-    payload: TextAnalysisRequest,
+    payload: TextAnalysisRequest | TranscricaoResponse = Body(
+        description="Transcrição da US11 (JSON de POST /transcription) ou formato compacto com segments"
+    ),
     detalhes: bool = Query(False, description="Inclui entidades, descartes e sentimento por sentença"),
 ) -> TextAnalysisResponse:
+    transcricao = ler_transcricao(payload.model_dump())
+    return analisar(transcricao, detalhes)
+
+
+def ler_transcricao(dados: dict, source: Path | None = None) -> Transcript:
     try:
-        transcricao = transcript_from_dict(payload.model_dump())
+        return transcript_from_dict(dados, source=source)
     except TranscriptError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+
+def verificar_disponibilidade() -> None:
+    """Falha com 503 se config ou credenciais do Azure AI Language estiverem faltando."""
     try:
-        config = get_text_config()
-        cliente = get_language_client()
+        get_text_config()
+        get_language_client()
     except (OSError, ConfigError) as exc:
         raise HTTPException(status_code=503, detail=f"Análise de texto indisponível: {exc}") from exc
     except LanguageAuthError as exc:  # variável de ambiente ausente
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+
+def analisar(transcricao: Transcript, detalhes: bool) -> TextAnalysisResponse:
+    verificar_disponibilidade()
     try:
-        resultado = analyze_transcript(transcricao, config, cliente, get_barramento(), matcher=get_matcher())
+        resultado = analyze_transcript(
+            transcricao, get_text_config(), get_language_client(), get_barramento(), matcher=get_matcher()
+        )
     except ChavePseudonimizacaoAusente as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LanguageAuthError as exc:  # a Azure recusou a credencial (401/403)

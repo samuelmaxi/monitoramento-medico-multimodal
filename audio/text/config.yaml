@@ -1,6 +1,6 @@
 # Configuração da US13: termos críticos e sentimento nas transcrições de consulta.
 #
-#   python -m audio.text.run --input outputs/transcripts --config audio/text/config.yaml
+#   python -m audio.text.run --input saida/transcricao --config audio/text/config.yaml
 #
 # Todos os parâmetros vêm deste arquivo; o código não tem valores padrão escondidos.
 

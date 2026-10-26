@@ -1,6 +1,10 @@
 """Processa um lote de transcrições da US11: termos críticos e sentimento (US13).
 
-    python -m audio.text.run --input outputs/transcripts --config audio/text/config.yaml
+As transcrições são os JSONs de ``scripts/transcrever.py`` / ``POST /transcription``
+(feitos com medico_falante, patient_id e recorded_at) ou o formato compacto de
+``data/text_samples``; veja ``audio/text/transcript.py``.
+
+    python -m audio.text.run --input saida/transcricao --config audio/text/config.yaml
 
 Para cada transcrição grava ``<output.dir>/<audio_id>.json`` (lista de
 ``EventoAchado``, valida com ``python -m contratos.validar``) e

@@ -11,7 +11,7 @@
       "value": "http://127.0.0.1:8000"
     },
     {
-      "key": "job_name",
+      "key": "transcricao",
       "value": ""
     }
   ],
@@ -383,11 +383,11 @@
       ]
     },
     {
-      "name": "US11 - Transcrição",
-      "description": "Precisa de AZURE_SPEECH_KEY, AZURE_SPEECH_REGION e AZURE_STORAGE_CONNECTION_STRING. Selecione um áudio (wav, mp3, mp4, flac, ogg, webm) no campo audio_file antes de enviar. Limitação atual: o GET usa recognize_once e devolve só a primeira frase do áudio, sem diarização; por isso a US13 ainda não consome esta saída diretamente.",
+      "name": "US11 + US13 - Áudio da consulta",
+      "description": "Precisa de AZURE_SPEECH_KEY e AZURE_SPEECH_REGION (transcrição) e de AZURE_LANGUAGE_ENDPOINT, AZURE_LANGUAGE_KEY e PSEUDONYM_KEY (análise). Selecione um áudio (wav, mp3, ogg, opus, flac, wma, aac, amr, webm, speex) no campo audio_file antes de enviar e ajuste medico_falante: a diarização numera os falantes, mas não diz qual é o médico.",
       "item": [
         {
-          "name": "Enviar áudio",
+          "name": "Transcrever áudio",
           "request": {
             "method": "POST",
             "header": [],
@@ -400,7 +400,7 @@
                 "transcription"
               ]
             },
-            "description": "Envia o áudio ao Blob Storage e cria o job. Guarda job_name na variável da coleção.",
+            "description": "Transcrição síncrona em pt-BR com diarização (US11). Guarda o JSON devolvido na variável transcricao, usada pela requisição seguinte.",
             "body": {
               "mode": "formdata",
               "formdata": [
@@ -408,6 +408,24 @@
                   "key": "audio_file",
                   "type": "file",
                   "src": []
+                },
+                {
+                  "key": "patient_id",
+                  "value": "10000032",
+                  "type": "text",
+                  "description": "ID de origem ou pseudônimo pt_…"
+                },
+                {
+                  "key": "recorded_at",
+                  "value": "2026-10-01T13:00:00Z",
+                  "type": "text",
+                  "description": "Início da gravação, UTC"
+                },
+                {
+                  "key": "medico_falante",
+                  "value": "1",
+                  "type": "text",
+                  "description": "Número do falante que é o médico (ouça o áudio ou veja a 1ª transcrição)"
                 }
               ]
             }
@@ -421,29 +439,47 @@
                 "exec": [
                   "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
                   "const corpo = pm.response.json();",
-                  "pm.test(\"job criado\", () => pm.expect(corpo.job_name).to.match(/^transcription-[0-9a-f]{12}$/));",
-                  "pm.collectionVariables.set(\"job_name\", corpo.job_name);"
+                  "pm.test(\"metadados da consulta\", () => {",
+                  "    pm.expect(corpo.audio_id).to.be.a(\"string\");",
+                  "    pm.expect(corpo.recorded_at).to.eql(\"2026-10-01T13:00:00Z\");",
+                  "});",
+                  "pm.test(\"falas com papel\", () => corpo.falas.forEach(f => pm.expect([\"medico\", \"paciente\", null]).to.include(f.papel)));",
+                  "pm.collectionVariables.set(\"transcricao\", JSON.stringify(corpo));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Resultado da transcrição",
+          "name": "Analisar a transcrição (US13)",
           "request": {
-            "method": "GET",
-            "header": [],
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
-              "raw": "{{baseUrl}}/transcription/{{job_name}}",
+              "raw": "{{baseUrl}}/text/analysis",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "transcription",
-                "{{job_name}}"
+                "text",
+                "analysis"
               ]
             },
-            "description": "Transcreve (na primeira chamada) e devolve o texto. Repita enquanto vier IN_PROGRESS."
+            "description": "Envia o JSON da requisição anterior a POST /text/analysis: termos críticos e sentimento na fala do paciente.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{transcricao}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": [],
           "event": [
@@ -453,7 +489,90 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"status conhecido\", () => pm.expect([\"IN_PROGRESS\", \"COMPLETED\"]).to.include(pm.response.json().status));"
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality texto e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"texto\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Áudio ponta a ponta",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/audio/analysis?detalhes=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "audio",
+                "analysis"
+              ],
+              "query": [
+                {
+                  "key": "detalhes",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "POST /audio/analysis: transcreve (US11) e analisa (US13) numa chamada. Devolve a transcrição, os eventos e, com detalhes=true, o sentimento por sentença.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "audio_file",
+                  "type": "file",
+                  "src": []
+                },
+                {
+                  "key": "patient_id",
+                  "value": "10000032",
+                  "type": "text",
+                  "description": "ID de origem ou pseudônimo pt_…"
+                },
+                {
+                  "key": "recorded_at",
+                  "value": "2026-10-01T13:00:00Z",
+                  "type": "text",
+                  "description": "Início da gravação, UTC"
+                },
+                {
+                  "key": "medico_falante",
+                  "value": "1",
+                  "type": "text",
+                  "description": "Número do falante que é o médico (ouça o áudio ou veja a 1ª transcrição)"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality texto e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"texto\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "    });",
+                  "});",
+                  "pm.test(\"transcrição e sentimento\", () => {",
+                  "    pm.expect(corpo.transcricao.falas).to.be.an(\"array\");",
+                  "    pm.expect(corpo.detalhes).to.have.property(\"sentimento\");",
+                  "});"
                 ]
               }
             }

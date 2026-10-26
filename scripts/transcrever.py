@@ -2,8 +2,12 @@
 
     python scripts/transcrever.py consulta_01.wav consulta_02.mp3
     python scripts/transcrever.py consulta_01.wav --frases-medicas --medico-falante 1
+    python scripts/transcrever.py consulta_01.wav --medico-falante 1 \
+        --patient-id 10000032 --recorded-at 2026-10-01T13:00:00Z
 
-O JSON vai para saida/transcricao/<nome>.json. Se ele já existir para o mesmo
+O JSON vai para saida/transcricao/<nome>.json. Com --medico-falante,
+--patient-id e --recorded-at ele já serve de entrada para a US13
+(python -m audio.text.run --input saida/transcricao/consulta_01.json ...). Se ele já existir para o mesmo
 áudio e as mesmas opções, a API não é chamada de novo.
 """
 
@@ -41,8 +45,16 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         help="Número do falante que é o médico; os demais viram 'paciente'.",
     )
+    parser.add_argument("--patient-id", help="ID de origem ou pseudônimo pt_… do paciente.")
+    parser.add_argument("--recorded-at", help="Início da gravação, ISO-8601 UTC (ex.: 2026-10-01T13:00:00Z).")
+    parser.add_argument(
+        "--audio-id",
+        help="ID curto da consulta, sem dados pessoais (só com um áudio). Padrão: nome do arquivo.",
+    )
     parser.add_argument("--saida", type=Path, default=Path(TRANSCRIPTION_OUTPUT_DIR))
     args = parser.parse_args(argv)
+    if args.audio_id and len(args.audios) > 1:
+        parser.error("--audio-id só pode ser usado com um áudio por vez")
 
     try:
         endpoint = require_azure_speech_endpoint()
@@ -62,8 +74,11 @@ def main(argv: list[str] | None = None) -> int:
                 usar_frases=args.frases_medicas,
                 max_speakers=args.max_falantes,
                 medico_falante=args.medico_falante,
+                audio_id=args.audio_id,
+                patient_id=args.patient_id,
+                recorded_at=args.recorded_at,
             )
-        except (TranscricaoError, OSError) as exc:
+        except (TranscricaoError, OSError, ValueError) as exc:
             print(f"[ERRO] {audio}: {exc}", file=sys.stderr)
             status = 1
             continue

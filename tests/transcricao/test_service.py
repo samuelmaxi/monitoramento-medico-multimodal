@@ -141,3 +141,68 @@ def test_frases_medicas_ignora_linhas_vazias_e_comentarios():
 
     assert "dispneia" in frases
     assert all(frase and not frase.startswith("#") for frase in frases)
+
+
+def test_metadados_da_consulta_vao_para_o_json(audio, tmp_path, api_falsa):
+    documento = transcrever_e_salvar(
+        audio, tmp_path / "saida", endpoint="https://x", chave="k",
+        patient_id="10000032", recorded_at="2026-10-01T13:00:00+00:00",
+    )
+
+    assert documento["audio_id"] == "consulta_01"
+    assert documento["patient_id"] == "10000032"
+    assert documento["recorded_at"] == "2026-10-01T13:00:00Z"
+    assert documento["schema_version"] == "1.1"
+
+
+def test_nome_de_arquivo_que_nao_serve_de_id_deixa_audio_id_nulo(tmp_path, api_falsa):
+    audio = tmp_path / "consulta com espaço.wav"
+    audio.write_bytes(b"RIFF")
+
+    documento = transcrever_e_salvar(audio, tmp_path / "saida", endpoint="https://x", chave="k")
+
+    assert documento["audio_id"] is None
+
+
+@pytest.mark.parametrize(
+    ("opcoes", "mensagem"),
+    [
+        ({"recorded_at": "2026-10-01T10:00:00-03:00"}, "UTC"),
+        ({"recorded_at": "ontem"}, "inválido"),
+        ({"audio_id": "consulta 01"}, "audio_id"),
+    ],
+)
+def test_metadados_invalidos_falham_antes_da_api(audio, tmp_path, api_falsa, opcoes, mensagem):
+    with pytest.raises(ValueError, match=mensagem):
+        transcrever_e_salvar(audio, tmp_path / "saida", endpoint="https://x", chave="k", **opcoes)
+
+    assert api_falsa.chamadas == []
+
+
+def test_reaproveitamento_atualiza_metadados_sem_chamar_a_api(audio, tmp_path, api_falsa):
+    saida = tmp_path / "saida"
+    transcrever_e_salvar(audio, saida, endpoint="https://x", chave="k", patient_id="p-1")
+
+    segunda = transcrever_e_salvar(
+        audio, saida, endpoint="https://x", chave="k", recorded_at="2026-10-01T13:00:00Z"
+    )
+
+    assert len(api_falsa.chamadas) == 1
+    assert segunda["patient_id"] == "p-1"
+    assert segunda["recorded_at"] == "2026-10-01T13:00:00Z"
+    gravado = json.loads((saida / "consulta_01.json").read_text(encoding="utf-8"))
+    assert gravado == segunda
+
+
+def test_json_anterior_ao_schema_1_1_ganha_os_campos_de_metadados(audio, tmp_path, api_falsa):
+    saida = tmp_path / "saida"
+    primeira = transcrever_e_salvar(audio, saida, endpoint="https://x", chave="k")
+    antigo = {k: v for k, v in primeira.items() if k not in ("audio_id", "patient_id", "recorded_at")}
+    (saida / "consulta_01.json").write_text(json.dumps({**antigo, "schema_version": "1.0"}), encoding="utf-8")
+
+    reaproveitado = transcrever_e_salvar(audio, saida, endpoint="https://x", chave="k")
+
+    assert len(api_falsa.chamadas) == 1
+    assert reaproveitado["schema_version"] == "1.1"
+    assert reaproveitado["audio_id"] == "consulta_01"
+    assert reaproveitado["patient_id"] is None

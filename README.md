@@ -18,6 +18,8 @@ sistema.
 │   ├── pose_jobs.py               # Fila em processo dos jobs de pose (US06)
 │   └── routers/
 │       ├── transcription.py       # POST /transcription (síncrono, US11)
+│       ├── text_analysis.py       # POST /text/analysis (US13)
+│       ├── audio_analysis.py      # POST /audio/analysis (áudio → US11 → US13)
 │       ├── sentiment.py            # POST /sentiment
 │       └── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
 ├── tests/
@@ -381,13 +383,24 @@ por palavra. Código em `app/transcription_client.py` (REST, com retry),
 python scripts/transcrever.py consulta_01.wav
 python scripts/transcrever.py consulta_01.wav --medico-falante 1   # falante 1 = médico
 
-# API: POST /transcription (multipart, campo audio_file) devolve o mesmo JSON
+# Pronto para a US13: papéis, paciente e início da gravação
+python scripts/transcrever.py consulta_01.wav --medico-falante 1 \
+  --patient-id 10000032 --recorded-at 2026-10-01T13:00:00Z
+
+# API: POST /transcription (multipart, campo audio_file; opcionais patient_id,
+# recorded_at, audio_id e medico_falante) devolve o mesmo JSON
 ```
 
-Cada JSON traz `texto_completo` e `falas`, e cada fala tem `texto`, `falante`,
-`papel` (`medico`/`paciente` só com `--medico-falante`), `offset_ms`,
-`duracao_ms`, `confianca` (por frase; a API não dá confiança por palavra) e
-`palavras`.
+Cada JSON traz `audio_id`, `patient_id`, `recorded_at`, `texto_completo` e
+`falas`, e cada fala tem `texto`, `falante`, `papel` (`medico`/`paciente` só
+com `--medico-falante`), `offset_ms`, `duracao_ms`, `confianca` (por frase; a
+API não dá confiança por palavra) e `palavras`.
+
+`audio_id` (padrão: nome do arquivo no script, `job_id` na API), `patient_id` e
+`recorded_at` (ISO-8601 UTC, início da gravação) usam os nomes do contrato de
+eventos. São o que a US13 precisa para ler o JSON direto. Eles não mudam a
+transcrição: rodar de novo só para preenchê-los reaproveita o JSON em cache e
+não chama a API.
 
 Falhas: timeouts, erros de conexão e 429/5xx são retentados (3 tentativas, com
 `Retry-After` quando houver). O áudio de origem é gravado em
@@ -530,6 +543,8 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | ------ | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `GET`  | `/health`                   | Verifica se o servidor está no ar (não chama Azure).                                                                                             |
 | `POST` | `/transcription`            | Recebe um áudio (`multipart/form-data`, campo `audio_file`) e devolve a transcrição síncrona em `pt-BR`, com falantes e timestamps (US11).     |
+| `POST` | `/text/analysis`            | Termos críticos e sentimento na fala do paciente de uma transcrição (US13). Aceita o JSON da US11.                                              |
+| `POST` | `/audio/analysis`           | Áudio da consulta → transcrição (US11) → termos críticos e sentimento (US13), numa chamada. Exige `patient_id`, `recorded_at` e `medico_falante`. |
 | `POST` | `/sentiment`                | Recebe `{"text": "...", "language_code": "pt"}` e retorna o sentimento via Azure Language Service.                                               |
 | `POST` | `/video/pose`               | Recebe um vídeo (`multipart/form-data`, campo `video_file`) e enfileira a análise de pose (US06). Responde `202` com o `job_id`.                 |
 | `GET`  | `/video/pose/{job_id}`      | Status (`QUEUED`, `IN_PROGRESS`, `COMPLETED`, `FAILED`) e resultado: métricas de detecção, resumo dos ângulos e artefatos.                       |
@@ -546,6 +561,10 @@ curl -X POST http://127.0.0.1:8000/sentiment \
 
 curl -X POST http://127.0.0.1:8000/transcription \
   -F "audio_file=@caminho/para/audio_curto.wav"
+
+curl -X POST "http://127.0.0.1:8000/audio/analysis?detalhes=true" \
+  -F "audio_file=@caminho/para/consulta.wav" -F "patient_id=10000032" \
+  -F "recorded_at=2026-10-01T13:00:00Z" -F "medico_falante=1"
 
 curl -X POST http://127.0.0.1:8000/video/pose \
   -F "video_file=@caminho/para/agachamento.mp4" \
@@ -749,9 +768,12 @@ Lê as transcrições diarizadas da US11, envia **só as falas do paciente** ao 
 
 A fala do médico ("você sente falta de ar?") não é enviada à Azure e nunca gera achado. Ela só entra como contexto, em `pergunta_medico` na evidência.
 
+**Do áudio aos eventos**: a entrada é o JSON da US11, transcrito com `--medico-falante` (é ele que separa a fala do paciente), `--patient-id` e `--recorded-at`. Pela API, `POST /audio/analysis` faz as duas etapas numa chamada.
+
 ```bash
 pip install -r audio/requirements.txt         # ou uv sync
-python -m audio.text.run --input outputs/transcripts --config audio/text/config.yaml
+python scripts/transcrever.py consulta_01.wav --medico-falante 1 --patient-id 10000032 --recorded-at 2026-10-01T13:00:00Z
+python -m audio.text.run --input saida/transcricao/consulta_01.json --config audio/text/config.yaml
 python -m audio.text.run --input data/text_samples --config audio/text/config.yaml   # amostras simuladas
 python scripts/eval_us13.py                   # recall/precision/F1 → outputs/text_analysis/eval.md
 python -m contratos.validar outputs/text_analysis/consulta-*.json
@@ -838,7 +860,7 @@ Formato de um evento `termo_critico` (resumido e com valores ilustrativos; o exe
 }
 ```
 
-**Formato da transcrição esperado da US11** (`outputs/transcripts/<audio_id>.json`). `recorded_at` + `offset_ms` dá o `timestamp` UTC que o contrato exige:
+**Formatos de transcrição aceitos**. O principal é o JSON da US11 (seção acima): cada fala vira um segmento e o falante é o `papel`. Sem `medico_falante` não há papel, e a leitura falha em vez de mandar a fala do médico para a análise. Uma fala sem falante na diarização é registrada no log e ignorada. `audio_id`, `patient_id` e `recorded_at` são obrigatórios nos dois formatos; `recorded_at` + `offset_ms` dá o `timestamp` UTC que o contrato exige. O segundo é o formato compacto das amostras simuladas (`data/text_samples/`):
 
 ```json
 {
@@ -849,7 +871,7 @@ Formato de um evento `termo_critico` (resumido e com valores ilustrativos; o exe
 }
 ```
 
-**API**: `POST /text/analysis` recebe a transcrição no formato acima e devolve os eventos (com `?detalhes=true`, também entidades, descartes e sentimento). Rotas, códigos de erro e a coleção Postman estão em `postman/README.md`.
+**API**: `POST /text/analysis` recebe a transcrição em qualquer dos dois formatos e devolve os eventos (com `?detalhes=true`, também entidades, descartes e sentimento). Rotas, códigos de erro e a coleção Postman estão em `postman/README.md`.
 
 **Avaliação**: `scripts/eval_us13.py` compara, por consulta, os termos anotados em `data/text_samples/annotations.csv` com os eventos `termo_critico`. Ele grava em `eval.md` a precision, o recall, o F1, os falsos positivos e os falsos negativos (com o motivo de cada um) e os descartes corretos, além de um exemplo de termo detectado e um de negação ignorada para o relatório.
 
