@@ -43,17 +43,18 @@ vídeo (`tipo_video`: `fisioterapia`, `leito`, `cirurgia`), cada um com
 | --- | --- |
 | `fisioterapia_geral` | tronco até 30°, joelho não abaixo de 45°, assimetria até 20° (os critérios do feedback da US06) |
 | `fisioterapia_abducao_ombro_frontal` | as 3 primeiras repetições (supervisionadas) definem amplitude do ombro e extensão do cotovelo; as seguintes ficam a ±10° delas; tronco até 20°; série de 5 a 10 repetições |
-| `fisioterapia_agachamento_frontal` | joelhos flexionam juntos (assimetria até 25°); 5 a 10 repetições |
-| `fisioterapia_agachamento_meio_perfil` | tronco até 20° de inclinação |
+| `fisioterapia_agachamento` | as 3 primeiras repetições definem a flexão dos dois joelhos e a inclinação do tronco; as seguintes ficam a ±15° (joelhos) e ±20° (tronco) delas; 5 a 10 repetições, de frente ou a 45° |
 | `internacao_leito` | sem queda, sem giro brusco do tronco, ninguém na borda do leito por mais de 3 s |
 | `cirurgia` | ninguém na área restrita, nenhum celular/garrafa/copo no campo estéril |
 
 - **Leitura e validação:** `video/desvios/config.py` recusa chave desconhecida,
   coluna de ângulo inexistente, severidade fora do catálogo e combinação
   incoerente (alvo aquém do repouso), na carga.
-- **Por exercício e por vista:** os ângulos da US06 são projeções 2D, então o
-  mesmo exercício tem padrões diferentes de frente e a 45° (no agachamento a 45°
-  a "assimetria" dos joelhos é efeito da projeção; o desvio visível é o tronco).
+- **Ângulos 2D:** os ângulos da US06 são projeções, então um limiar absoluto
+  muda com a pessoa e com a posição da câmera. Os perfis de exercício comparam
+  com a série de referência da própria sessão, o que absorve as duas coisas;
+  limiares absolutos ficam para critérios gerais (`fisioterapia_geral`) e de
+  segurança.
 - **Repetições:** `video/desvios/regras.py::repeticoes` separa as repetições
   pelo ângulo principal (trecho fora do `repouso`), conta e compara com
   `esperadas`. Repetição cortada no início ou no fim do vídeo não conta.
@@ -66,6 +67,13 @@ perfil passou a usar `referencia`: as 3 primeiras repetições da sessão, feita
 com o fisioterapeuta, viram o padrão daquele paciente, e cada repetição
 seguinte é comparada a ele na fase de pico (`fase_pico_graus`). O alvo absoluto
 continua disponível (`alvo`) para exercícios em que ele generaliza.
+
+**Decisão — o agachamento seguiu o mesmo caminho (v1.2.0).** Na v1.1.0 o
+agachamento tinha dois perfis por vista com limiares absolutos calibrados em
+PM_029 (assimetria ≤ 25° de frente, tronco ≤ 20° a 45°). No teste com PM_038 e
+PM_043 eles marcaram todas as 12 repetições corretas a 45°. A v1.2.0 troca os
+dois por um perfil com `referencia` nos joelhos e no tronco, calibrado em
+PM_029, PM_038 e PM_043, e foi medida em vídeos novos (PM_105, PM_126).
 
 ### 2. Detecta: postura fora da faixa, assimetria, mudança brusca/queda, pessoa/objeto em área crítica
 
@@ -98,8 +106,9 @@ modalidade `video` (`contratos/catalogo.py`), nenhum schema mudou.
 **Status:** ✔ implementado.
 
 - `geral.janela_minima_s: 1.0` é o padrão; cada regra pode ter `janela_s`
-  própria (0,5 s na queda e no tronco do agachamento a 45°, 0,8 s na assimetria
-  do agachamento, 3 s na borda do leito).
+  própria (0,5 s na queda e na mudança brusca, 3 s na borda do leito). Nas
+  regras por repetição, a persistência é a duração mínima da repetição
+  (`duracao_min_s: 1.0`): o desvio é o movimento inteiro.
 - `sinais.py::trechos` junta trechos separados por até `geral.lacuna_max_s`
   (0,3 s, um ou dois quadros perdidos) e descarta os mais curtos que a janela.
 - Queda e mudança brusca exigem que a posição nova se mantenha por `janela_s`
@@ -109,7 +118,9 @@ modalidade `video` (`contratos/catalogo.py`), nenhum schema mudou.
 
 ### 4. Avaliação em vídeos rotulados: Recall ≥ 0,80 e Precision ≥ 0,70 por evento
 
-**Status:** ✘ meta **não atingida** no teste (precisão 0,58, recall 0,65). Medida, protocolo e causas abaixo.
+**Status:** ✘ meta **não atingida** no teste. Na versão atual (limiares v1.2.0)
+a precisão cumpre a meta (**0,71**) e o recall não (**0,52**, puxado pela queda).
+Medida, protocolo e causas abaixo.
 
 **Dados rotulados (normal × desvio):**
 
@@ -125,48 +136,65 @@ modalidade `video` (`contratos/catalogo.py`), nenhum schema mudou.
   atribuído à unidade com que mais se sobrepõe; evento em unidade com desvio é
   acerto, em unidade normal ou entre repetições é falso positivo.
   `precisão = eventos certos / eventos`, `recall = unidades com desvio detectadas / unidades com desvio`.
-- Cada vista do REHAB24-6 é uma sessão (o vídeo é recortado no trecho dela).
-  Com perfil de referência, as 3 primeiras repetições da sessão não entram na
-  conta (são a série supervisionada).
-- **Calibração × teste.** Limiares ajustados só em PM_001, PM_012 (abdução),
-  PM_029 (agachamento) e nos 18 clipes do FallVision com MD5 do id par. A meta é
-  medida no resto: pessoas e clipes que não foram vistos ao calibrar. PM_012
-  começou no teste e foi movido para a calibração porque foi ele que revelou o
-  problema do alvo absoluto.
+- Cada bloco contínuo de repetições na mesma vista é uma sessão (o vídeo é
+  recortado no trecho dele; PM_105 tem dois blocos de frente separados por um a
+  45°). Com perfil de referência, as 3 primeiras repetições da sessão não entram
+  na conta (são a série supervisionada).
+- **Calibração × teste.** Os limiares de cada versão foram fixados antes de
+  rodar o teste daquela versão, ajustando só na calibração. Teste visto não
+  volta a ser teste: ele passa para a calibração da versão seguinte.
+
+  | Versão | Calibração | Teste |
+  | --- | --- | --- |
+  | 1.1.0 | PM_001, PM_012¹, PM_029; 18 clipes FallVision | PM_023, PM_038, PM_043; 24 clipes |
+  | 1.2.0 | + PM_038, PM_043 | PM_023, PM_032, PM_039, PM_105, PM_126; os mesmos 24 clipes² |
+
+  ¹ PM_012 começou no teste e foi movido porque revelou o problema do alvo
+  absoluto. ² A regra de queda não mudou da 1.1.0 para a 1.2.0, nem a da
+  abdução, então PM_023 e os clipes continuam válidos como teste.
 - Extração de pose a ~1,4 s/quadro em CPU limitou o conjunto de teste; a ordem
   dos vídeos foi fixada antes de qualquer resultado.
 
-**Resultados** (limiares v1.1.0):
+**Resultados da versão atual** (limiares v1.2.0):
 
 | Partição | Grupo | Precisão | Recall | Eventos | Desvios detectados |
 | --- | --- | ---: | ---: | ---: | ---: |
 | calibração | abdução frontal (PM_001, PM_012) | 1,00 | 1,00 | 10 | 10/10 |
-| calibração | agachamento frontal (PM_029) | 1,00 | 1,00 | 5 | 5/5 |
-| calibração | agachamento 45° (PM_029) | 1,00 | 0,80 | 5 | 4/5 |
+| calibração | agachamento (PM_029, PM_038, PM_043) | 0,80 | 0,96 | 41 | 22/23 |
 | calibração | queda FallVision (18 clipes) | 0,83 | 0,63 | 6 | 5/8 |
-| calibração | **total** | **0,96** | **0,86** | 26 | 24/28 |
-| teste | abdução frontal (PM_023) | **1,00** | **0,80** | 4 | 4/5 |
+| calibração | **total** | **0,84** | **0,90** | 57 | 37/41 |
+| teste | abdução frontal (PM_023, PM_032, PM_039) | 0,64 | 0,60 | 14 | 9/15 |
+| teste | agachamento (PM_105, PM_126) | **0,81** | 0,67 | 16 | 12/18 |
+| teste | queda FallVision (24 clipes) | 0,60 | 0,23 | 5 | 3/13 |
+| teste | **total** | **0,71** | **0,52** | 35 | 24/46 |
+
+**Rodada anterior** (limiares v1.1.0, agachamento com limiares absolutos):
+
+| Partição | Grupo | Precisão | Recall | Eventos | Desvios detectados |
+| --- | --- | ---: | ---: | ---: | ---: |
+| calibração | **total** (abdução, agachamento PM_029, queda) | 0,96 | 0,86 | 26 | 24/28 |
+| teste | abdução frontal (PM_023) | 1,00 | 0,80 | 4 | 4/5 |
 | teste | agachamento frontal (PM_038, PM_043) | 0,63 | 1,00 | 8 | 5/5 |
 | teste | agachamento 45° (PM_038, PM_043) | 0,50 | 1,00 | 28 | 8/8 |
 | teste | queda FallVision (24 clipes) | 0,60 | 0,23 | 5 | 3/13 |
-| teste | **total** | **0,58** | **0,65** | 45 | 20/31 |
+| teste | **total** | 0,58 | 0,65 | 45 | 20/31 |
 
 Detalhe por vídeo e por unidade (perdidas e alarmes falsos):
 `saida/video/avaliacao_us08.json`, gerado por `scripts/avaliar_us08.py`.
 
 **Leitura dos resultados:**
 
-- **Abdução com série de referência: generaliza.** Em uma pessoa não vista
-  (PM_023), precisão 1,00 e recall 0,80, dentro da meta. É o resultado que valida
-  a decisão do item 1: comparar com o padrão do próprio paciente.
-- **Agachamento com limiar absoluto: não generaliza.** Recall 1,00 nas duas
-  vistas, mas com alarmes falsos em repetições corretas: a 45° as corretas de
-  PM_038 e PM_043 já inclinam o tronco mais que 20° (todas as 12 repetições
-  corretas receberam evento), e de frente 3 das 15 corretas (PM_038 #8–#10)
-  também receberam. É o mesmo problema que a abdução teve com o alvo absoluto, agora
-  visto no teste. O próximo passo é dar ao agachamento uma `referencia` (joelhos,
-  quadril e tronco na fase de pico) e validar nos vídeos de Ex6 ainda não vistos
-  (PM_105, PM_126). Ajustar o limiar olhando PM_038/PM_043 contaminaria o teste.
+- **A série de referência resolve o falso positivo do agachamento.** Com limiar
+  absoluto, 12 de 12 repetições corretas a 45° de pessoas novas recebiam evento
+  (precisão 0,50). Com referência, a precisão no agachamento de pessoas novas
+  vai a 0,81. O recall cai de 1,00 para 0,67: em PM_126 de frente 4 das 5
+  incorretas ficam a menos de 15° da referência nos joelhos.
+- **O ponto fraco da referência é uma referência ruim.** PM_039 começa a sessão
+  frontal com uma repetição incorreta (rótulo 0); com ela na média, as 5
+  incorretas seguintes passam e 3 corretas viram alarme (0/5, precisão 0). Sem
+  PM_039 a abdução de teste fica em precisão 0,82 (9/11) e recall 0,90 (9/10).
+  Na prática, a série de referência precisa ser confirmada pelo fisioterapeuta
+  antes de valer, o que o sistema ainda não pede.
 - **Queda só por pose: fraca no FallVision.** Recall 0,23 (3 de 13). Em 4 das 10
   quedas perdidas a pessoa aparece em menos de 50% dos quadros (o relatório marca
   esses vídeos como pouco confiáveis); nos demais, os clipes de 2–3 s terminam
@@ -174,8 +202,8 @@ Detalhe por vídeo e por unidade (perdidas e alarmes falsos):
   em 11 clipes normais (deitar/sentar rápido). Os clipes curtos e redimensionados
   do FallVision são mais difíceis que uma câmera de leito contínua, mas o número
   mostra que queda precisa de um segundo sinal (a caixa `person` da US07).
-- **Sem o agachamento a 45°** (o grupo com mais alarmes falsos), o total de
-  teste seria precisão 0,71 (12/17) e recall 0,52 (12/23): a queda segura o recall.
+- **Só a fisioterapia** (abdução + agachamento) no teste da v1.2.0: precisão
+  0,73 (22/30) e recall 0,64 (21/33).
 
 ### 5. Ao menos 1 desvio real detectado documentado com timestamp e quadro de evidência
 
@@ -218,6 +246,9 @@ parou em 122° de abdução com o cotovelo travado em 174°, contra 135° e 160�
  "model_version": "video-desvios@0.1.0"}
 ```
 
+Os dois eventos foram gerados com os limiares 1.1.0; as regras de queda e de
+abdução não mudaram na 1.2.0.
+
 Para reproduzir:
 
 ```bash
@@ -236,13 +267,14 @@ braço da evidência, por isso não é usado quando há keypoints.
 **Status:** ✔ implementado.
 
 - Todos os limiares, janelas, severidades e o score estão em
-  `config/us08_padroes.yaml`, com `versao` (hoje `1.1.0`) e o motivo de cada
+  `config/us08_padroes.yaml`, com `versao` (hoje `1.2.0`) e o motivo de cada
   número calibrado em comentário. O código só tem os nomes das regras.
 - Cada evento carrega `versao_limiares`, `perfil`, `limiar`, `janela_minima_s` e
   `lacuna_max_s` em `evidence.thresholds`: dá para saber com que limiares um
   achado antigo foi gerado.
 - Histórico: 1.0.0 (alvo absoluto na abdução, queda com descida 0,8) → 1.1.0
-  (referência do paciente na abdução, queda 0,7 com oclusão tolerada).
+  (referência do paciente na abdução, queda 0,7 com oclusão tolerada) → 1.2.0
+  (agachamento com referência do paciente, um perfil para as duas vistas).
 
 ## Relatório automático
 
@@ -254,8 +286,14 @@ português e caminho do quadro de evidência. É a base da US09.
 
 ## Limitações
 
-- **Ângulos 2D.** Dependem da posição da câmera; por isso os perfis são por
-  vista e a abdução usa o padrão do próprio paciente.
+- **Ângulos 2D.** Dependem da pessoa e da posição da câmera; por isso os perfis
+  de exercício comparam com a série de referência da própria sessão.
+- **A referência só é boa se as primeiras repetições forem corretas.** Uma
+  repetição incorreta entre as 3 primeiras (PM_039) contamina o padrão. O
+  sistema ainda não pede ao fisioterapeuta que confirme a série de referência.
+- **Repetição pelo joelho direito.** No agachamento, a repetição é separada pelo
+  joelho direito; um paciente que não dobra esse joelho não tem a repetição
+  contada.
 - **Queda depende do OpenPose ver a pessoa durante a descida.** Nos clipes em
   que a pose se perde (cobertura de 45–75%), a descida não aparece e a queda
   escapa. Uma saída é combinar com a caixa `person` da US07 (proporção e

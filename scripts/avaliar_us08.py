@@ -8,16 +8,16 @@ de cada vídeo:
 - REHAB24-6 (``data/rehab24/Segmentation.csv``): cada repetição é uma unidade;
   ``correctness = 0`` é desvio. O perfil depende do exercício e da vista da
   câmera17 (tabela ``PROTOCOLO_REHAB``); combinações sem perfil ficam de fora.
-  Cada vista é uma sessão: o vídeo é recortado no trecho dela (câmera fixa por
-  sessão). Com perfil de referência, as primeiras repetições da sessão são a
-  série supervisionada e não entram na conta.
+  Cada bloco contínuo de repetições na mesma vista é uma sessão: o vídeo é
+  recortado no trecho dele (câmera fixa por sessão). Com perfil de referência,
+  as primeiras repetições da sessão são a série supervisionada e não entram na
+  conta.
 - FallVision (vídeos com ``Fall``/``No_Fall`` no id): cada clipe é uma unidade,
   perfil ``internacao_leito``, só eventos ``mudanca_brusca_ou_queda``.
 
-Os limiares foram ajustados só na partição de calibração (``PM_001``,
-``PM_012``, ``PM_029`` e metade dos clipes do FallVision, pela paridade do MD5
-do id); a meta da US08 é medida na partição de teste, com pessoas e clipes não
-vistos.
+Os limiares foram ajustados só na partição de calibração (``CALIBRACAO_REHAB``
+e metade dos clipes do FallVision, pela paridade do MD5 do id); a meta da US08
+é medida na partição de teste, com pessoas e clipes não vistos.
 """
 
 from __future__ import annotations
@@ -32,10 +32,12 @@ from pathlib import Path
 
 PROTOCOLO_REHAB: dict[tuple[int, str], str] = {
     (1, "front"): "fisioterapia_abducao_ombro_frontal",
-    (6, "front"): "fisioterapia_agachamento_frontal",
-    (6, "half-profile"): "fisioterapia_agachamento_meio_perfil",
+    (6, "front"): "fisioterapia_agachamento",
+    (6, "half-profile"): "fisioterapia_agachamento",
 }
-CALIBRACAO_REHAB = frozenset({"PM_001", "PM_012", "PM_029"})
+# PM_012 entrou na calibração ao revelar que o alvo absoluto da abdução não
+# generalizava; PM_038 e PM_043 foram o teste da v1.1.0 e calibram a v1.2.0.
+CALIBRACAO_REHAB = frozenset({"PM_001", "PM_012", "PM_029", "PM_038", "PM_043"})
 MARGEM_SESSAO_S = 2.0
 PERFIL_QUEDA = "internacao_leito"
 META = {"recall": 0.80, "precisao": 0.70}
@@ -97,13 +99,17 @@ def main(argv: list[str] | None = None) -> int:
             pm = rehab.group(1)
             particao = "calibracao" if pm in CALIBRACAO_REHAB else "teste"
             fps = float(seq.metadata["source_fps"])
-            linhas = segmentacao[segmentacao.video_id == pm]
-            for (exercicio, vista), reps in linhas.groupby(["exercise_id", "cam17_orientation"]):
+            linhas = segmentacao[segmentacao.video_id == pm].sort_values("repetition_number")
+            # Sessão = bloco contínuo de repetições na mesma vista. Um vídeo pode
+            # voltar a uma vista depois de outra (PM_105: frente, 45°, frente).
+            bloco = (linhas.cam17_orientation != linhas.cam17_orientation.shift()).cumsum()
+            for (_, exercicio, vista), reps in linhas.groupby(
+                [bloco, "exercise_id", "cam17_orientation"]
+            ):
                 perfil_id = PROTOCOLO_REHAB.get((int(exercicio), str(vista)))
                 if perfil_id is None:
                     continue
                 perfil = cfg.perfil(perfil_id)
-                reps = reps.sort_values("repetition_number")
                 sessao = recortar(
                     seq,
                     reps.first_frame.min() / fps - MARGEM_SESSAO_S,

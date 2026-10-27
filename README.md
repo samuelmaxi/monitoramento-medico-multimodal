@@ -342,8 +342,10 @@ nenhum número no código). Cada desvio que persiste pela janela mínima vira um
 | classe proibida em ROI da US07 por mais que o tolerado | `presenca_indevida_area_critica` |
 
 Perfis: `fisioterapia_geral`, `fisioterapia_abducao_ombro_frontal`,
-`fisioterapia_agachamento_frontal`, `fisioterapia_agachamento_meio_perfil`,
-`internacao_leito` e `cirurgia`.
+`fisioterapia_agachamento`, `internacao_leito` e `cirurgia`. Os perfis de
+exercício comparam cada repetição com as 3 primeiras da sessão (série de
+referência supervisionada), porque ângulos 2D absolutos mudam com a pessoa e a
+câmera.
 
 ```bash
 # 1. Pose da US06 (minutos por vídeo em CPU)

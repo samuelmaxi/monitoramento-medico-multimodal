@@ -20,7 +20,7 @@
 # Toda regra só vira evento se o desvio persistir por "janela_s" (padrão:
 # geral.janela_minima_s), o que corta o falso positivo de um quadro ruim.
 
-versao: "1.1.0"
+versao: "1.2.0"
 
 geral:
   # Persistência mínima de um desvio quando a regra não define a sua.
@@ -108,36 +108,37 @@ perfis:
       inclinacao_tronco: {max: 20, severidade: baixa}
     queda: *queda_padrao
 
-  fisioterapia_agachamento_frontal:
+  fisioterapia_agachamento:
     tipo_video: fisioterapia
     descricao: >-
-      Agachamento com câmera de frente (REHAB24-6, exercício 6). Padrão: os
-      dois joelhos flexionam juntos; série de 5 a 10 repetições.
+      Agachamento (REHAB24-6, exercício 6), câmera de frente ou a 45°. Padrão:
+      as 3 primeiras repetições, supervisionadas, definem a flexão dos dois
+      joelhos e a inclinação do tronco do paciente; as seguintes repetem esse
+      movimento dentro da tolerância. Série de 5 a 10 repetições.
     repeticoes:
       angulo: joelho_direito
       sentido: desce
       repouso: 160
-      alvo: 150
+      # Sem alvo nem faixa absoluta: na v1.1.0 o tronco ≤ 20° (vista a 45°) e a
+      # assimetria ≤ 25° (frente), calibrados em PM_029, marcaram as 12
+      # repetições corretas a 45° de PM_038/PM_043. Como na abdução, o padrão é
+      # o do paciente, e a mesma regra serve às duas vistas.
+      referencia:
+        repeticoes: 3
+        fase_pico_graus: 10
+        # Calibrado nas 6 sessões de PM_029, PM_038 e PM_043: as incorretas
+        # mudam a flexão de um ou dos dois joelhos em 17–56° (um joelho que não
+        # dobra, ou agachamento bem mais fundo); as corretas ficam a até 9°,
+        # com 3 exceções em PM_038 (18–27°). Quadril e tronco a ±15° só
+        # acrescentavam alarmes falsos; o tronco fica com folga para a
+        # inclinação exagerada.
+        tolerancias:
+          joelho_esquerdo: 15
+          joelho_direito: 15
+          inclinacao_tronco: 20
       esperadas: [5, 10]
       duracao_min_s: 1.0
       severidade: baixa
-    assimetrias:
-      # Calibrado em PM_029: nas corretas o p90 da assimetria fica em 17–21°;
-      # nas incorretas um joelho quase não dobra e passa de 30° por ~1 s.
-      assimetria_joelho: {max: 25, janela_s: 0.8, severidade: baixa}
-    queda: *queda_padrao
-
-  fisioterapia_agachamento_meio_perfil:
-    tipo_video: fisioterapia
-    descricao: >-
-      Agachamento com câmera a 45° (REHAB24-6, exercício 6). Nessa vista a
-      assimetria dos joelhos é efeito da projeção; o desvio que aparece é o
-      tronco inclinado para a frente.
-    faixas:
-      # Calibrado em PM_029: tronco acima de 20° por 0,5 s marca 4 das 5
-      # incorretas e nenhuma correta (a correta mais inclinada passa 0,3 s acima
-      # de 20°; a incorreta que escapa não se distingue das corretas).
-      inclinacao_tronco: {max: 20, janela_s: 0.5, severidade: baixa}
     queda: *queda_padrao
 
   internacao_leito:
