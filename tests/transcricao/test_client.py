@@ -162,3 +162,13 @@ def test_arquivo_de_origem_nao_e_alterado_em_falha(audio):
         transcrever_arquivo(audio, endpoint=ENDPOINT, chave="k", transporte=transporte.transporte)
 
     assert audio.read_bytes() == conteudo_original
+
+
+def test_locale_e_enviado_na_definicao(audio):
+    transporte = _Transporte([httpx.Response(200, json=RESPOSTA_OK)])
+
+    transcrever_arquivo(
+        audio, endpoint=ENDPOINT, chave="k", locale="en-IN", transporte=transporte.transporte
+    )
+
+    assert b'"locales": ["en-IN"]' in transporte.requisicoes[0].read()

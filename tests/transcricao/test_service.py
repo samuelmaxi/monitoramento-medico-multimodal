@@ -143,6 +143,15 @@ def test_frases_medicas_ignora_linhas_vazias_e_comentarios():
     assert all(frase and not frase.startswith("#") for frase in frases)
 
 
+def test_mudar_o_locale_invalida_o_cache(audio, tmp_path, api_falsa):
+    saida = tmp_path / "saida"
+
+    transcrever_e_salvar(audio, saida, endpoint="https://x", chave="k", locale="pt-BR")
+    resultado = transcrever_e_salvar(audio, saida, endpoint="https://x", chave="k", locale="en-IN")
+
+    assert len(api_falsa.chamadas) == 2
+    assert api_falsa.chamadas[1]["locale"] == "en-IN"
+    assert resultado["idioma"] == "en-IN"
 def test_metadados_da_consulta_vao_para_o_json(audio, tmp_path, api_falsa):
     documento = transcrever_e_salvar(
         audio, tmp_path / "saida", endpoint="https://x", chave="k",

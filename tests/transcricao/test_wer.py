@@ -57,3 +57,11 @@ def test_wer_agregado_pondera_pelas_palavras_de_referencia():
 )
 def test_classificacao_segue_faixas_do_dod(wer, trecho):
     assert trecho in classificar_wer(wer)
+
+
+def test_sem_interjeicoes_remove_hmm_dos_dois_lados():
+    bruto = calcular_wer("hmm, dor no peito", "dor no peito")
+    limpo = calcular_wer("hmm, dor no peito", "dor no peito", remover_interjeicoes=True)
+
+    assert bruto.wer == pytest.approx(1 / 4)
+    assert limpo.wer == 0.0
