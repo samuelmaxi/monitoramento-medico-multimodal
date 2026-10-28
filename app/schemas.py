@@ -158,3 +158,100 @@ class AudioAnalysisResponse(BaseModel):
     detalhes: dict[str, Any] | None = Field(
         default=None, description="Entidades, descartes e sentimento por sentença (com ?detalhes=true)"
     )
+
+
+# --------------------------------------------------------------------------- #
+# US16 · Anomalias na evolução de prescrições
+# --------------------------------------------------------------------------- #
+
+
+class PrescricaoEntrada(BaseModel):
+    """Uma ordem como a farmácia registrou (colunas do MIMIC ``prescriptions`` + ``pharmacy``)."""
+
+    ordem_id: str | None = Field(
+        default=None, max_length=64, examples=["41490219"],
+        description="ID da ordem (pharmacy_id); sem ele vira ordem-<n> na ordem do corpo",
+    )
+    medicamento: str = Field(min_length=1, max_length=200, examples=["Enoxaparin Sodium"])
+    dose: str | float | None = Field(
+        default=None, examples=["40", "2-4", "25,000"], description="Texto ou número; faixa usa o máximo"
+    )
+    unidade: str | None = Field(default=None, examples=["mg", "mcg", "UNIT", "mEq", "mL"])
+    via: str = Field(examples=["SC", "PO", "PO/NG", "IV", "IV DRIP"])
+    frequencia: str | None = Field(default=None, examples=["Q12H", "BID", "Q4H:PRN", "ONCE", "TITRATE TO"])
+    doses_24h: float | None = Field(default=None, ge=0, description="doses_per_24_hrs; dá a dose diária")
+    inicio: UtcDatetime
+    fim: UtcDatetime | None = None
+    apresentacao: str = Field(default="", examples=["2mEq/mL-20mL"], description="prod_strength (KCl concentrado)")
+    status: str | None = Field(default=None, examples=["Inactive (Due to a change order)"])
+    escala_movel: bool = Field(default=False, description="sliding_scale = Y (insulina por glicemia)")
+
+
+class AnalisePrescricoesRequest(BaseModel):
+    """Prescrições de uma internação, em qualquer ordem."""
+
+    patient_id: str = Field(description="ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair")
+    encounter_id: str | None = Field(default=None, description="ID da internação (hadm_id) ou pseudônimo enc_…")
+    admissao: UtcDatetime | None = Field(default=None, description="Padrão: início da primeira ordem")
+    alta: UtcDatetime | None = Field(
+        default=None, description="Sem a alta, a suspensão abrupta não é avaliada (não dá para separar da alta)"
+    )
+    obito: UtcDatetime | None = None
+    is_synthetic: bool = False
+    prescricoes: list[PrescricaoEntrada] = Field(min_length=1, max_length=5000)
+
+
+class PrescricaoNormalizada(BaseModel):
+    """Como a ordem ficou depois da normalização (com ``?detalhes=true``)."""
+
+    ordem_id: str
+    medicamento: str
+    principios_ativos: list[str]
+    dose: float | None
+    unidade: str | None
+    dose_diaria: float | None
+    via_grupo: str
+    tipo_frequencia: str
+
+
+class AnalisePrescricoesResponse(BaseModel):
+    """Eventos da US16 (contrato ``EventoAchado``, ``modality="prescricoes"``)."""
+
+    patient_id: str = Field(description="Pseudônimo usado nos eventos")
+    encounter_id: str | None = None
+    versao_limiares: str
+    model_version: str
+    prescricoes_analisadas: int
+    total_anomalias: int
+    por_tipo: dict[str, int]
+    eventos: list[EventoAchado] = Field(description="Uma anomalia por evento, ou um sem_achados")
+    normalizadas: list[PrescricaoNormalizada] | None = None
+
+
+class InternacaoAnalisada(BaseModel):
+    encounter_id: str
+    admissao: UtcDatetime
+    alta: UtcDatetime | None
+    prescricoes_analisadas: int
+    total_anomalias: int
+
+
+class AnaliseMimicResponse(BaseModel):
+    """Análise de um paciente do MIMIC-IV Demo, todas as internações."""
+
+    patient_id: str
+    internacoes: list[InternacaoAnalisada]
+    versao_limiares: str
+    model_version: str
+    total_anomalias: int
+    por_tipo: dict[str, int]
+    eventos: list[EventoAchado]
+
+
+class ConfigPrescricoesResponse(BaseModel):
+    versao_limiares: str
+    model_version: str
+    mudanca_abrupta_dose: dict[str, Any]
+    duplicidade_terapeutica: dict[str, Any]
+    suspensao_abrupta: dict[str, Any]
+    alta_vigilancia: dict[str, Any]
