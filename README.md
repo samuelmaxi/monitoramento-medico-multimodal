@@ -32,7 +32,8 @@ sistema.
 ├── scripts/
 │   ├── get_content_script.py  # Download dos conteúdos do Google Drive
 │   ├── rodar_us07_video.py   # Executa pipeline de detecção de vídeo
-│   └── avaliar_us07.py       # Avalia YOLO em dataset anotado
+│   ├── avaliar_us07.py       # Avalia YOLO em dataset anotado
+│   └── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
@@ -324,6 +325,53 @@ A rastreabilidade completa (itens 1–8 do DoD) está em
 [`docs/relatorio_us07_dod.md`](docs/relatorio_us07_dod.md). A arquitetura, ROIs,
 decisões e parâmetros estão em
 [`docs/arquitetura/us07_deteccao_areas_criticas.md`](docs/arquitetura/us07_deteccao_areas_criticas.md).
+
+### US08 — movimentos e eventos fora do padrão no vídeo
+
+Combina a postura da US06 (OpenPose) com as áreas críticas da US07 (YOLOv8) e
+compara com o **padrão esperado do tipo de vídeo**, definido em
+[`config/us08_padroes.yaml`](config/us08_padroes.yaml) (limiares versionados,
+nenhum número no código). Cada desvio que persiste pela janela mínima vira um
+`EventoAchado` (US04):
+
+| Regra do perfil | `event_type` |
+| --- | --- |
+| ângulo fora da faixa, ou repetição fora do padrão (alvo absoluto ou série de referência do paciente) | `postura_fora_da_faixa` |
+| assimetria esquerda × direita acima do limiar | `assimetria_movimento` |
+| queda (quadril desce rápido e não volta) ou giro brusco do tronco mantido | `mudanca_brusca_ou_queda` |
+| classe proibida em ROI da US07 por mais que o tolerado | `presenca_indevida_area_critica` |
+
+Perfis: `fisioterapia_geral`, `fisioterapia_abducao_ombro_frontal`,
+`fisioterapia_agachamento`, `internacao_leito` e `cirurgia`. Os perfis de
+exercício comparam cada repetição com as 3 primeiras da sessão (série de
+referência supervisionada), porque ângulos 2D absolutos mudam com a pessoa e a
+câmera.
+
+```bash
+# 1. Pose da US06 (minutos por vídeo em CPU)
+uv run python -m video.pose.run --config video/pose/config.yaml \
+  --input data/rehab24/videos/Ex1/PM_001-Camera17-30fps.mp4
+
+# 2. Desvios: eventos, relatório e quadro de evidência anonimizado
+uv run python -m video.desvios.run --perfil fisioterapia_abducao_ombro_frontal \
+  --pose outputs/pose/PM_001-Camera17-30fps.json --patient-id 1
+
+# Leito: pose + eventos de área crítica da US07 (só --eventos-areas também funciona)
+uv run python -m video.desvios.run --perfil internacao_leito \
+  --pose outputs/pose/<video>.json --eventos-areas saida/video/eventos_<video>.jsonl
+
+# 3. Avaliação em vídeos rotulados (REHAB24-6 e FallVision)
+uv run python scripts/avaliar_us08.py --pose-dir outputs/pose
+```
+
+Saídas em `saida/video/desvios/`: `<fonte>_eventos.jsonl`, `<fonte>_relatorio.json`
+(padrão aplicado, repetições, desvios com timestamp) e `<fonte>/*.jpg` (quadro do
+pico do desvio, com esqueleto e cabeça tarjada). Sem desvios e com análise
+confiável, o JSONL recebe um `sem_achados`.
+
+Rastreabilidade ao DoD, protocolo e resultados da avaliação:
+[`docs/relatorio_us08_dod.md`](docs/relatorio_us08_dod.md). Testes:
+`uv run pytest tests/video/test_desvios.py`.
 
 ## Transcrição de consultas com Azure AI Speech (US11)
 
