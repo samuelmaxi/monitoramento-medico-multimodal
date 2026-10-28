@@ -258,3 +258,8 @@ saida/video/*
 uv.lock
 terraform/.terraform.lock.hcl
 dataset_medico/
+
+# US16: tabelas do MIMIC-IV Demo (baixadas por `python -m prescricoes.run --baixar`)
+/dados/
+saida/prescricoes/*
+!saida/prescricoes/avaliacao_us16.json

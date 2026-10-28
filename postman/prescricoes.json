@@ -1,0 +1,784 @@
+{
+  "info": {
+    "_postman_id": "6e7efcbe-4d8f-59b8-a1eb-1ed4aa84d4fe",
+    "name": "Monitoramento Médico - Prescrições (US16)",
+    "description": "Anomalias na evolução de prescrições (US16): mudança abrupta de dose, duplicidade terapêutica, suspensão abrupta e introdução de medicamento de alta vigilância (ISMP). Suba a API com `uv run uvicorn app.main:app --reload` (PSEUDONYM_KEY no .env) e ajuste `baseUrl` se não for http://127.0.0.1:8000. A pasta MIMIC-IV Demo precisa das tabelas baixadas com `uv run python -m prescricoes.run --baixar`. `publicar=false` não grava no barramento local; troque para true para os eventos seguirem para fusão e alertas. Gerada por scripts/gerar_postman_us16.py; instruções em postman/README.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "publicar",
+      "value": "false"
+    },
+    {
+      "key": "subjectEnoxaparina",
+      "value": "10008454"
+    },
+    {
+      "key": "subjectParacetamol",
+      "value": "10002428"
+    },
+    {
+      "key": "hadmParacetamol",
+      "value": "28676446"
+    }
+  ],
+  "item": [
+    {
+      "id": "4463ddf3-9805-5dc9-b18a-691ffabc2bdd",
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Confere se a API está no ar."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "e28797e5-3465-58e4-94f0-e5f7c4f577be",
+      "name": "Limiares e lista ISMP em uso",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/prescricoes/config",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "prescricoes",
+            "config"
+          ]
+        },
+        "description": "Versão dos limiares, regras e as classes ISMP de config/us16_prescricoes.yaml."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "const cfg = pm.response.json();",
+              "pm.test(\"limiar de dose 50% em 24 h\", () => {",
+              "    pm.expect(cfg.mudanca_abrupta_dose.variacao_min_pct).to.eql(50);",
+              "    pm.expect(cfg.mudanca_abrupta_dose.janela_h).to.eql(24);",
+              "});",
+              "pm.test(\"lista ISMP com insulina, anticoagulante, opioide e KCl concentrado\", () => {",
+              "    pm.expect(cfg.alta_vigilancia.classes).to.include.keys(\"insulina\", \"anticoagulante\", \"opioide\", \"potassio_concentrado\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "US16 - Analisar prescrições",
+      "description": "POST /prescricoes/analise recebe as ordens de uma internação (medicamento, dose, unidade, via, frequência, início, fim) e devolve os eventos EventoAchado (modality=prescricoes) com a justificativa em evidence.summary e os valores antes × depois em evidence.features. Horários em UTC. Sem `alta`, a suspensão abrupta não é avaliada.",
+      "item": [
+        {
+          "id": "6f30a6e7-6388-5695-a546-595f891ed5eb",
+          "name": "Mudança abrupta de dose (enoxaparina)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "Enoxaparina 40 mg/dia (profilaxia) trocada por 100 mg a cada 12 h: +400% em 1 h. Esperado: mudanca_abrupta_dose media com antes_dose_diaria=40 e depois_dose_diaria=200. Mesmo caso real documentado no MIMIC-IV Demo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16a\",\n  \"encounter_id\": \"sim-paciente-16a-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"Enoxaparin Sodium\",\n      \"dose\": \"40\",\n      \"unidade\": \"mg\",\n      \"via\": \"SC\",\n      \"frequencia\": \"QPM\",\n      \"inicio\": \"2026-10-01T22:00:00Z\",\n      \"fim\": \"2026-10-03T11:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"enox-1\",\n      \"status\": \"Inactive (Due to a change order)\"\n    },\n    {\n      \"medicamento\": \"Enoxaparin Sodium\",\n      \"dose\": \"100\",\n      \"unidade\": \"mg\",\n      \"via\": \"SC\",\n      \"frequencia\": \"Q12H\",\n      \"inicio\": \"2026-10-03T12:00:00Z\",\n      \"fim\": \"2026-10-07T20:00:00Z\",\n      \"doses_24h\": 2,\n      \"ordem_id\": \"enox-2\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "const ev = corpo.eventos.find(e => e.event_type === \"mudanca_abrupta_dose\");",
+                  "pm.test(\"detecta mudanca_abrupta_dose\", () => pm.expect(ev, \"evento mudanca_abrupta_dose\").to.exist);",
+                  "pm.test(\"justificativa com antes × depois\", () => {",
+                  "    pm.expect(ev.evidence.summary).to.include(\"subiu 400%\");",
+                  "    pm.expect(ev.evidence.features.antes_dose_diaria).to.eql(40);",
+                  "    pm.expect(ev.evidence.features.depois_dose_diaria).to.eql(200);",
+                  "});",
+                  "pm.test(\"anticoagulante (ISMP) sobe a severidade para media\", () => pm.expect(ev.severity).to.eql(\"media\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "d2e325af-98e8-5c05-baa9-4b134bebc14b",
+          "name": "Duplicidade terapêutica (paracetamol)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "Oxicodona+paracetamol PRN e paracetamol 1 g TID em paralelo por 33 h: o paracetamol está escondido na combinação. Esperado: duplicidade_terapeutica com principio_ativo=acetaminophen.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16b\",\n  \"encounter_id\": \"sim-paciente-16b-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"Oxycodone-Acetaminophen (5mg-325mg)\",\n      \"dose\": \"1\",\n      \"unidade\": \"TAB\",\n      \"via\": \"PO/NG\",\n      \"frequencia\": \"Q4H:PRN\",\n      \"inicio\": \"2026-10-02T18:00:00Z\",\n      \"fim\": \"2026-10-04T21:00:00Z\",\n      \"ordem_id\": \"percocet\"\n    },\n    {\n      \"medicamento\": \"Acetaminophen\",\n      \"dose\": \"1000\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO/NG\",\n      \"frequencia\": \"TID\",\n      \"inicio\": \"2026-10-03T12:00:00Z\",\n      \"fim\": \"2026-10-04T21:00:00Z\",\n      \"doses_24h\": 3,\n      \"ordem_id\": \"paracetamol\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "const ev = corpo.eventos.find(e => e.event_type === \"duplicidade_terapeutica\");",
+                  "pm.test(\"detecta duplicidade_terapeutica\", () => pm.expect(ev, \"evento duplicidade_terapeutica\").to.exist);",
+                  "pm.test(\"paracetamol dentro da combinação\", () => {",
+                  "    pm.expect(ev.evidence.features.principio_ativo).to.eql(\"acetaminophen\");",
+                  "    pm.expect(ev.evidence.features.antes_medicamento).to.include(\"Oxycodone-Acetaminophen\");",
+                  "    pm.expect(ev.evidence.features.depois_medicamento).to.eql(\"Acetaminophen\");",
+                  "    pm.expect(ev.evidence.features.sobreposicao_h).to.be.at.least(6);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "2557c191-5c58-5abc-8fd0-d3975b098d2f",
+          "name": "Suspensão abrupta (metoprolol)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "Metoprolol 25 mg TID por 4 dias, parado 6 dias antes da alta, sem redução nem substituto. Esperado: suspensao_abrupta no fim da última ordem.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16c\",\n  \"encounter_id\": \"sim-paciente-16c-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"Metoprolol Tartrate\",\n      \"dose\": \"25\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"TID\",\n      \"inicio\": \"2026-10-02T08:00:00Z\",\n      \"fim\": \"2026-10-06T08:00:00Z\",\n      \"doses_24h\": 3,\n      \"ordem_id\": \"metoprolol\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "const ev = corpo.eventos.find(e => e.event_type === \"suspensao_abrupta\");",
+                  "pm.test(\"detecta suspensao_abrupta\", () => pm.expect(ev, \"evento suspensao_abrupta\").to.exist);",
+                  "pm.test(\"betabloqueador sem desmame, com o paciente internado\", () => {",
+                  "    pm.expect(ev.evidence.features.classe_terapeutica).to.eql(\"betabloqueador\");",
+                  "    pm.expect(ev.evidence.summary).to.include(\"nenhuma prescrição\");",
+                  "    pm.expect(ev.timestamp).to.eql(\"2026-10-06T08:00:00.000Z\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "8344be10-f117-5e2c-8223-53f9e8666298",
+          "name": "Alta vigilância (KCl concentrado)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "Pantoprazol (fora da lista) e KCl 2 mEq/mL IV. Esperado: um único medicamento_alta_vigilancia, classe potassio_concentrado, severidade alta.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16d\",\n  \"encounter_id\": \"sim-paciente-16d-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"Pantoprazole\",\n      \"dose\": \"40\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"Q24H\",\n      \"inicio\": \"2026-10-01T12:00:00Z\",\n      \"fim\": \"2026-10-05T12:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"ibp\"\n    },\n    {\n      \"medicamento\": \"Potassium Chloride\",\n      \"dose\": \"40\",\n      \"unidade\": \"mEq\",\n      \"via\": \"IV\",\n      \"frequencia\": \"ONCE\",\n      \"inicio\": \"2026-10-02T09:00:00Z\",\n      \"fim\": \"2026-10-02T13:00:00Z\",\n      \"ordem_id\": \"kcl\",\n      \"apresentacao\": \"2mEq/mL-20mL\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "const ev = corpo.eventos.find(e => e.event_type === \"medicamento_alta_vigilancia\");",
+                  "pm.test(\"detecta medicamento_alta_vigilancia\", () => pm.expect(ev, \"evento medicamento_alta_vigilancia\").to.exist);",
+                  "pm.test(\"KCl concentrado, severidade alta; pantoprazol não entra\", () => {",
+                  "    pm.expect(ev.evidence.features.classe_ismp).to.eql(\"potassio_concentrado\");",
+                  "    pm.expect(ev.severity).to.eql(\"alta\");",
+                  "    pm.expect(corpo.eventos.filter(e => e.event_type === \"medicamento_alta_vigilancia\")).to.have.length(1);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "ad35dcb1-3bb8-55cf-8205-e4218f9f8bb7",
+          "name": "Sem achados (desmame e ajuste pequeno)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "Prednisona 40 → 30 mg (−25%, desmame) e furosemida 40 → 50 mg (+25%). Esperado: só sem_achados (info).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16e\",\n  \"encounter_id\": \"sim-paciente-16e-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"PredniSONE\",\n      \"dose\": \"40\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"DAILY\",\n      \"inicio\": \"2026-10-01T12:00:00Z\",\n      \"fim\": \"2026-10-04T12:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"pred-40\"\n    },\n    {\n      \"medicamento\": \"PredniSONE\",\n      \"dose\": \"30\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"DAILY\",\n      \"inicio\": \"2026-10-04T12:00:00Z\",\n      \"fim\": \"2026-10-07T12:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"pred-30\"\n    },\n    {\n      \"medicamento\": \"Furosemide\",\n      \"dose\": \"40\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"DAILY\",\n      \"inicio\": \"2026-10-01T12:00:00Z\",\n      \"fim\": \"2026-10-03T12:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"furo-40\"\n    },\n    {\n      \"medicamento\": \"Furosemide\",\n      \"dose\": \"50\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"DAILY\",\n      \"inicio\": \"2026-10-03T12:00:00Z\",\n      \"fim\": \"2026-10-12T12:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"furo-50\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "pm.test(\"desmame de 25% e ajuste de 25% não são anomalia\", () => {",
+                  "    pm.expect(corpo.total_anomalias).to.eql(0);",
+                  "    pm.expect(corpo.eventos.map(e => e.event_type)).to.eql([\"sem_achados\"]);",
+                  "    pm.expect(corpo.eventos[0].severity).to.eql(\"info\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "21ba5df5-331f-5943-9b88-130a8cd81b37",
+          "name": "Unidades normalizadas (com detalhes)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}&detalhes=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                },
+                {
+                  "key": "detalhes",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Levotiroxina 100 mcg → 0,025 mg. Com ?detalhes=true, a resposta mostra as duas ordens em mg; a queda de 75% só aparece porque mcg virou mg antes de comparar.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16f\",\n  \"encounter_id\": \"sim-paciente-16f-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"Levothyroxine Sodium\",\n      \"dose\": \"100\",\n      \"unidade\": \"mcg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"DAILY\",\n      \"inicio\": \"2026-10-01T08:00:00Z\",\n      \"fim\": \"2026-10-03T08:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"levo-mcg\"\n    },\n    {\n      \"medicamento\": \"Levothyroxine Sodium\",\n      \"dose\": \"0.025\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"DAILY\",\n      \"inicio\": \"2026-10-03T08:00:00Z\",\n      \"fim\": \"2026-10-12T08:00:00Z\",\n      \"doses_24h\": 1,\n      \"ordem_id\": \"levo-mg\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "const ev = corpo.eventos.find(e => e.event_type === \"mudanca_abrupta_dose\");",
+                  "pm.test(\"detecta mudanca_abrupta_dose\", () => pm.expect(ev, \"evento mudanca_abrupta_dose\").to.exist);",
+                  "pm.test(\"mcg e mg normalizados antes da comparação\", () => {",
+                  "    pm.expect(corpo.normalizadas.map(o => o.unidade)).to.eql([\"mg\", \"mg\"]);",
+                  "    pm.expect(corpo.normalizadas.map(o => o.dose)).to.eql([0.1, 0.025]);",
+                  "    pm.expect(ev.evidence.summary).to.include(\"caiu 75%\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "5a5856c0-b8f7-520e-8de2-1c21be0478b9",
+          "name": "Erro 422 - horário fora de UTC",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "inicio com -03:00: o contrato exige UTC. Esperado: 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16g\",\n  \"encounter_id\": \"sim-paciente-16g-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"Pantoprazole\",\n      \"dose\": \"40\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"Q24H\",\n      \"inicio\": \"2026-10-01T09:00:00-03:00\",\n      \"fim\": null,\n      \"doses_24h\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"cita UTC\", () => pm.expect(JSON.stringify(pm.response.json())).to.include(\"UTC\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "8d8d8d90-d079-56bb-a2c5-ce511369cbee",
+          "name": "Erro 422 - fim antes do início",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/analise?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "analise"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "Ordem que termina antes de começar. Esperado: 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient_id\": \"sim-paciente-16h\",\n  \"encounter_id\": \"sim-paciente-16h-int1\",\n  \"admissao\": \"2026-10-01T10:00:00Z\",\n  \"alta\": \"2026-10-12T14:00:00Z\",\n  \"is_synthetic\": true,\n  \"prescricoes\": [\n    {\n      \"medicamento\": \"Pantoprazole\",\n      \"dose\": \"40\",\n      \"unidade\": \"mg\",\n      \"via\": \"PO\",\n      \"frequencia\": \"Q24H\",\n      \"inicio\": \"2026-10-03T09:00:00Z\",\n      \"fim\": \"2026-10-02T09:00:00Z\",\n      \"doses_24h\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"cita o fim antes do início\", () => pm.expect(pm.response.json().detail).to.include(\"antes do início\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "US16 - Pacientes do MIMIC-IV Demo",
+      "description": "GET /prescricoes/mimic/{subject_id} roda a análise nas prescrições reais de um paciente do MIMIC-IV Demo (dados/mimic-iv-demo, ou PRESCRICOES_DADOS_DIR). ?hadm_id= limita a uma internação. 503 se as tabelas não foram baixadas.",
+      "item": [
+        {
+          "id": "ab85b334-f25f-5bc7-b78d-d74ae41ea78d",
+          "name": "Paciente real: enoxaparina 40 → 200 mg/dia",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/mimic/{{subjectEnoxaparina}}?publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "mimic",
+                "{{subjectEnoxaparina}}"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "subject_id 10008454 do MIMIC-IV Demo, uma internação. Esperado: a mudança abrupta de enoxaparina (ordens 41490219 → 58986734) entre as anomalias."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "const dose = corpo.eventos.filter(e => e.event_type === \"mudanca_abrupta_dose\");",
+                  "pm.test(\"mudança de enoxaparina +400%\", () => {",
+                  "    const ev = dose.find(e => e.evidence.features.principio_ativo === \"enoxaparin\");",
+                  "    pm.expect(ev).to.exist;",
+                  "    pm.expect(ev.evidence.features.variacao_pct).to.eql(400);",
+                  "    pm.expect(ev.timestamp).to.eql(\"2110-12-06T12:00:00.000Z\");",
+                  "});",
+                  "pm.test(\"resumo por internação\", () => {",
+                  "    pm.expect(corpo.internacoes).to.have.length(1);",
+                  "    pm.expect(corpo.internacoes[0].encounter_id).to.match(/^enc_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.internacoes[0].total_anomalias).to.eql(corpo.total_anomalias);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "b5ea1bc7-2146-54e8-b5ca-ade35c84b512",
+          "name": "Paciente real: paracetamol duplicado (uma internação)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/mimic/{{subjectParacetamol}}?hadm_id={{hadmParacetamol}}&publicar={{publicar}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "mimic",
+                "{{subjectParacetamol}}"
+              ],
+              "query": [
+                {
+                  "key": "hadm_id",
+                  "value": "{{hadmParacetamol}}"
+                },
+                {
+                  "key": "publicar",
+                  "value": "{{publicar}}"
+                }
+              ]
+            },
+            "description": "subject_id 10002428, hadm_id 28676446. Esperado: duplicidade_terapeutica de acetaminophen (oxicodona+paracetamol PRN com paracetamol 1 g TID)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const corpo = pm.response.json();",
+                  "pm.test(\"eventos no contrato: modality prescricoes e paciente pseudonimizado\", () => {",
+                  "    pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/);",
+                  "    pm.expect(corpo.eventos.length).to.be.above(0);",
+                  "    corpo.eventos.forEach(e => {",
+                  "        pm.expect(e.modality).to.eql(\"prescricoes\");",
+                  "        pm.expect(e.patient_id).to.eql(corpo.patient_id);",
+                  "        pm.expect(e.evidence.thresholds).to.have.property(\"versao_limiares\");",
+                  "    });",
+                  "});",
+                  "pm.test(\"duplicidade de paracetamol\", () => {",
+                  "    const dup = corpo.eventos.filter(e => e.event_type === \"duplicidade_terapeutica\" && e.evidence.features.principio_ativo === \"acetaminophen\");",
+                  "    pm.expect(dup.length).to.be.above(0);",
+                  "});",
+                  "pm.test(\"só a internação pedida\", () => pm.expect(corpo.internacoes).to.have.length(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "76ca1348-7c54-5f10-a190-791eafa23bbf",
+          "name": "Erro 404 - paciente fora do demo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/prescricoes/mimic/99999999?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "prescricoes",
+                "mimic",
+                "99999999"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "subject_id que não existe no MIMIC-IV Demo. Esperado: 404."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

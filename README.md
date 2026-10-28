@@ -23,7 +23,8 @@ sistema.
 │       ├── audio_analysis.py      # POST /audio/analysis (áudio → US11 → US13)
 │       ├── sentiment.py            # POST /sentiment
 │       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
-│       └── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
+│       ├── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
+│       └── prescricoes.py          # POST /prescricoes/analise, GET /prescricoes/mimic/{subject_id}, /config (US16)
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
 │   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
@@ -32,7 +33,11 @@ sistema.
 ├── scripts/
 │   ├── get_content_script.py  # Download dos conteúdos do Google Drive
 │   ├── rodar_us07_video.py   # Executa pipeline de detecção de vídeo
-│   └── avaliar_us07.py       # Avalia YOLO em dataset anotado
+│   ├── avaliar_us07.py       # Avalia YOLO em dataset anotado
+│   └── avaliar_us16.py       # Recall da US16 em casos injetados no MIMIC-IV Demo
+├── prescricoes/               # US16: anomalias na evolução de prescrições
+├── config/us16_prescricoes.yaml  # Limiares e lista ISMP da US16 (versionados)
+├── dados/mimic-iv-demo/       # Tabelas do MIMIC-IV Demo (gitignored)
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
@@ -903,6 +908,55 @@ Formato de um evento `termo_critico` (resumido e com valores ilustrativos; o exe
 **API**: `POST /text/analysis` recebe a transcrição em qualquer dos dois formatos e devolve os eventos (com `?detalhes=true`, também entidades, descartes e sentimento). Rotas, códigos de erro e a coleção Postman estão em `postman/README.md`.
 
 **Avaliação**: `scripts/eval_us13.py` compara, por consulta, os termos anotados em `data/text_samples/annotations.csv` com os eventos `termo_critico`. Ele grava em `eval.md` a precision, o recall, o F1, os falsos positivos e os falsos negativos (com o motivo de cada um) e os descartes corretos, além de um exemplo de termo detectado e um de negação ignorada para o relatório.
+
+## Anomalias na evolução de prescrições (US16)
+
+Detecta "alterações inesperadas no tratamento" nas prescrições do
+[MIMIC-IV Clinical Database Demo 2.2](https://physionet.org/content/mimic-iv-demo/2.2/)
+(acesso aberto, ODbL): tabelas `prescriptions`, `pharmacy` e `admissions`, com
+100 pacientes e 250 internações.
+
+```bash
+# baixa as tabelas para dados/mimic-iv-demo/ (uma vez) e roda em todos os pacientes
+uv run python -m prescricoes.run --baixar
+# só alguns pacientes (subject_id do MIMIC)
+uv run python -m prescricoes.run --paciente 10002428 --paciente 10019777
+# avaliação com casos injetados (5 sementes × 100 casos por cenário, ~3 min)
+uv run python scripts/avaliar_us16.py
+```
+
+**API**: `POST /prescricoes/analise` recebe as ordens de uma internação e devolve
+os eventos; `GET /prescricoes/mimic/{subject_id}` roda nas prescrições reais de
+um paciente do demo; `GET /prescricoes/config` mostra os limiares e a lista ISMP.
+Os campos, os códigos de erro e a coleção `postman/prescricoes.json` (13
+requisições com testes) estão em `postman/README.md`:
+
+```bash
+uv run uvicorn app.main:app --reload
+postman collection run postman/prescricoes.json
+```
+
+Precisa de `PSEUDONYM_KEY` no `.env`. As saídas da CLI vão para `saida/prescricoes/`:
+`eventos.jsonl` (um `EventoAchado` por anomalia, mais um `sem_achados` por
+internação sem nenhuma) e `relatorio.json` (volume por tipo e severidade, e a
+justificativa de cada anomalia).
+
+| `event_type` | Regra (limiares em `config/us16_prescricoes.yaml`) |
+|---|---|
+| `mudanca_abrupta_dose` | Regime do produto muda ≥ 50% em relação ao que vigorava nas 24 h anteriores (dose diária, unidades normalizadas) |
+| `duplicidade_terapeutica` | Mesmo princípio ativo, também dentro de combinações, em duas ordens sistêmicas sobrepostas ≥ 6 h |
+| `suspensao_abrupta` | Medicamento que exige desmame, em uso contínuo ≥ 72 h, some sem desmame, sem troca na classe e sem alta em 24 h |
+| `medicamento_alta_vigilancia` | Primeira ordem na internação de um medicamento da lista ISMP / ISMP Brasil |
+
+Cada evento traz em `evidence.summary` a regra que disparou e os valores antes
+× depois, por exemplo: *"Dose de Enoxaparin Sodium (SC) subiu 400% (40 → 200
+mg/dia), 1 h depois do fim da anterior. Antes: 40 mg QPM (40 mg/dia); depois:
+100 mg Q12H (200 mg/dia). Limiar: ±50% em 24 h."*
+
+Recall nos casos injetados: 0,974 no modo realista e 1,00 no controlado (meta
+de 0,80). Protocolo, exceções que vieram dos dados, anomalias reais
+documentadas e limitações estão em
+[`docs/relatorio_us16_dod.md`](docs/relatorio_us16_dod.md).
 
 ## Demo ponta a ponta
 
