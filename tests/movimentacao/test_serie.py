@@ -136,3 +136,14 @@ def test_metricas_serie_vazia(cfg):
     m = metricas([], cfg)
     assert m["horas_observadas"] == 0
     assert m["reposicionamentos_por_hora"] == 0
+
+
+def test_mesma_troca_registrada_por_duas_fontes_conta_uma_vez(cfg):
+    # MIMIC: Position e Turn no mesmo charttime descrevem a mesma troca.
+    serie = [
+        obs("08:00", P.SUPINO, fonte="mimic_position"),
+        obs("10:00", P.LATERAL_ESQ, fonte="mimic_position"),
+        obs("10:00", P.DESCONHECIDA, fonte="mimic_turn", mudanca=True),
+    ]
+    assert _tipos(marcos(serie, cfg)) == ["mudanca_posicao"]
+    assert metricas(serie, cfg)["mudancas_de_posicao"] == 1

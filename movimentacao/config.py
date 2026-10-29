@@ -73,12 +73,29 @@ class QuedaCaixa:
 
 
 @dataclass(frozen=True)
+class QuedaDescida:
+    descida_min_frac: float
+    tempo_max_s: float
+    janela_s: float
+    suavizacao_s: float
+
+
+@dataclass(frozen=True)
+class DetectorVideo:
+    confianca: float
+    imgsz: int
+    fps_max: float
+
+
+@dataclass(frozen=True)
 class Video:
     janela_s: float
     inclinacao_sentado_max: float
     razao_lateral_max: float
     area_fora_do_leito: str
     queda_caixa: QuedaCaixa
+    queda_descida: QuedaDescida
+    detector: DetectorVideo
 
 
 @dataclass(frozen=True)
@@ -195,31 +212,59 @@ def _baseline(dados: Mapping[str, Any]) -> Baseline:
     return baseline
 
 
+def _sub(bloco: Mapping[str, Any], chave: str, permitidas: set[str]) -> Mapping[str, Any]:
+    caminho = f"video.{chave}"
+    sub = _mapa(_get(bloco, chave, "video"), caminho)
+    extras = set(sub) - permitidas
+    if extras:
+        raise ErroDeConfiguracao(f"chaves desconhecidas em '{caminho}': {sorted(extras)}")
+    return sub
+
+
+def _fracao(valor: float, caminho: str) -> float:
+    if valor >= 1:
+        raise ErroDeConfiguracao(f"'{caminho}' precisa ser < 1 (recebido: {valor})")
+    return valor
+
+
 def _video(dados: Mapping[str, Any]) -> Video:
     chaves = {"janela_s", "inclinacao_sentado_max", "razao_lateral_max", "area_fora_do_leito",
-              "queda_caixa"}
+              "queda_caixa", "queda_descida", "detector"}
     b = _bloco(dados, "video", chaves)
-    q = _mapa(_get(b, "queda_caixa", "video"), "video.queda_caixa")
-    extras = set(q) - {"queda_altura_frac", "tempo_max_s", "razao_deitado", "janela_s"}
-    if extras:
-        raise ErroDeConfiguracao(f"chaves desconhecidas em 'video.queda_caixa': {sorted(extras)}")
+    q = _sub(b, "queda_caixa", {"queda_altura_frac", "tempo_max_s", "razao_deitado", "janela_s"})
+    qd = _sub(b, "queda_descida", {"descida_min_frac", "tempo_max_s", "janela_s", "suavizacao_s"})
+    det = _sub(b, "detector", {"confianca", "imgsz", "fps_max"})
 
     def num(bloco: Mapping[str, Any], chave: str, caminho: str) -> float:
         return _numero(_get(bloco, chave, caminho), f"{caminho}.{chave}")
 
-    frac = num(q, "queda_altura_frac", "video.queda_caixa")
-    if frac >= 1:
-        raise ErroDeConfiguracao(f"'video.queda_caixa.queda_altura_frac' precisa ser < 1 ({frac})")
     return Video(
         janela_s=num(b, "janela_s", "video"),
         inclinacao_sentado_max=num(b, "inclinacao_sentado_max", "video"),
         razao_lateral_max=num(b, "razao_lateral_max", "video"),
         area_fora_do_leito=str(_get(b, "area_fora_do_leito", "video")),
         queda_caixa=QuedaCaixa(
-            queda_altura_frac=frac,
+            queda_altura_frac=_fracao(
+                num(q, "queda_altura_frac", "video.queda_caixa"),
+                "video.queda_caixa.queda_altura_frac",
+            ),
             tempo_max_s=num(q, "tempo_max_s", "video.queda_caixa"),
             razao_deitado=num(q, "razao_deitado", "video.queda_caixa"),
             janela_s=num(q, "janela_s", "video.queda_caixa"),
+        ),
+        queda_descida=QuedaDescida(
+            descida_min_frac=_fracao(
+                num(qd, "descida_min_frac", "video.queda_descida"),
+                "video.queda_descida.descida_min_frac",
+            ),
+            tempo_max_s=num(qd, "tempo_max_s", "video.queda_descida"),
+            janela_s=num(qd, "janela_s", "video.queda_descida"),
+            suavizacao_s=num(qd, "suavizacao_s", "video.queda_descida"),
+        ),
+        detector=DetectorVideo(
+            confianca=_fracao(num(det, "confianca", "video.detector"), "video.detector.confianca"),
+            imgsz=int(num(det, "imgsz", "video.detector")),
+            fps_max=num(det, "fps_max", "video.detector"),
         ),
     )
 
@@ -286,11 +331,13 @@ __all__ = [
     "CAMINHO_PADRAO",
     "Baseline",
     "ConfigMovimentacao",
+    "DetectorVideo",
     "ErroDeConfiguracao",
     "Imobilidade",
     "Noite",
     "Queda",
     "QuedaCaixa",
+    "QuedaDescida",
     "SaidaLeito",
     "Video",
     "carregar_config",

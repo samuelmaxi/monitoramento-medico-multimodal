@@ -78,14 +78,25 @@ def _proximo_estado(atual: Posicao | None, o: Observacao) -> Posicao | None:
 def _percorrer(observacoes: Sequence[Observacao], cfg: ConfigMovimentacao):
     """Gera ``(observacao, estado_anterior, marco | None)`` em ordem de tempo."""
     atual: Posicao | None = None
+    anterior: Marco | None = None
     for o in ordenar(observacoes):
         achado = _marco_de(atual, o)
         marco = None
+        # Duas fontes no mesmo instante (Position + Turn no MIMIC) são a mesma troca. Queda
+        # não: cada fonte que a viu entra na evidência (a regra de queda funde as duas).
+        if (
+            achado
+            and achado[0] != "queda"
+            and anterior is not None
+            and (anterior.instante, anterior.tipo) == (o.instante, achado[0])
+        ):
+            achado = None
         if achado:
             tipo, para = achado
             de = atual if atual is not None else Posicao.DESCONHECIDA
             marco = Marco(tipo, o.instante, periodo(o.instante, cfg), de, para, o.fonte)
             atual = para if tipo == "queda" else _proximo_estado(atual, o)
+            anterior = marco
         else:
             atual = _proximo_estado(atual, o)
         yield o, atual, marco

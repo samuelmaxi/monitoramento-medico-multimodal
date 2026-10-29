@@ -183,3 +183,13 @@ def test_reducao_nao_dispara_sem_observacao(cfg):
 
 def test_serie_vazia(cfg):
     assert detectar([], cfg) == []
+
+
+def test_queda_de_duas_fontes_no_mesmo_instante_guarda_as_duas(cfg):
+    serie = [
+        obs("02:59", P.SUPINO),
+        obs("03:00", P.CHAO, fonte="video_pose", queda=True),
+        obs("03:00", P.CHAO, fonte="video_descida", queda=True),
+    ]
+    [a] = _tipo(detectar(serie, cfg), "queda")
+    assert a.fontes == ("video_descida", "video_pose")

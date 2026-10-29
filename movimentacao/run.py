@@ -116,11 +116,10 @@ def executar_video(
     if desvios is not None:
         serie += fonte.observacoes_de_quedas_us08(ler_eventos_jsonl(desvios))
     if video is not None:
-        from video.detector import DetectorYolo
-
-        caixas = fonte.caixas_do_video(video, DetectorYolo())
-        quedas = fonte.quedas_por_caixa(caixas, cfg.video)
-        serie += fonte.observacoes_de_quedas_caixa(quedas, inicio_utc)
+        caixas = fonte.caixas_do_video(
+            video, fonte.detector_padrao(cfg.video), fps_max=cfg.video.detector.fps_max
+        )
+        serie += fonte.observacoes_de_caixas(caixas, inicio_utc, cfg.video)
         nome = nome or video.stem
     if not serie:
         raise SystemExit("nenhuma observação: informe --pose, --areas, --desvios e/ou --video")

@@ -78,3 +78,9 @@ def test_recusa_fracao_de_queda_fora_de_0_1(bruto):
     dados["video"]["queda_caixa"]["queda_altura_frac"] = 1.5
     with pytest.raises(ErroDeConfiguracao, match="queda_altura_frac"):
         config_de_dict(dados)
+
+
+def test_bloco_queda_descida(bruto):
+    cfg = config_de_dict(bruto)
+    assert 0 < cfg.video.queda_descida.descida_min_frac < 1
+    assert cfg.video.detector.imgsz >= 640

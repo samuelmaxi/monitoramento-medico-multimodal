@@ -14,6 +14,7 @@ from movimentacao.video import (
     observacoes_de_quedas_us08,
     posicao_de_keypoints,
     quedas_por_caixa,
+    quedas_por_descida,
 )
 from video.leitor_video import criar_video_teste
 from video.modelos import Caixa, Deteccao
@@ -165,10 +166,73 @@ class _DetectorFalso:
 
 
 def test_caixas_do_video(tmp_path):
-    video = criar_video_teste(tmp_path / "v.mp4", quadros=5, fps=10.0)
-    caixas = caixas_do_video(video, _DetectorFalso())
-    assert len(caixas) == 5
-    assert caixas[1][0] == pytest.approx(0.1)
+    video = criar_video_teste(tmp_path / "v.mp4", quadros=5, fps=10.0, altura=240)
+    r = caixas_do_video(video, _DetectorFalso())
+    assert len(r.caixas) == 5
+    assert r.caixas[1][0] == pytest.approx(0.1)
+    assert r.altura == 240
+
+
+def test_caixas_do_video_limita_fps(tmp_path):
+    video = criar_video_teste(tmp_path / "v.mp4", quadros=12, fps=60.0)
+    r = caixas_do_video(video, _DetectorFalso(), fps_max=30)
+    assert len(r.caixas) == 6
+
+
+# --- queda pela descida da caixa (cair do leito) -----------------------------------
+
+
+def _deitado_que_cai(descida_px: float, duracao_s: float, *, volta: bool = False, ate_s: float = 3.0):
+    """Caixa deitada no leito (centro y=200) que desce ``descida_px`` em ``duracao_s`` a partir de 1 s."""
+    caixas, t = [], 0.0
+    while t <= ate_s + 1e-9:
+        if t <= 1.0:
+            dy = 0.0
+        elif t <= 1.0 + duracao_s:
+            dy = descida_px * (t - 1.0) / duracao_s
+        else:
+            dy = descida_px
+        if volta and t >= 1.0 + duracao_s + 0.2:
+            dy = 0.0
+        caixas.append((round(t, 2), 100.0, 150.0 + dy, 400.0, 250.0 + dy))
+        t += 0.1
+    return caixas
+
+
+def test_descida_do_leito_e_queda(cfg):
+    # 1000 px de quadro: descer 120 px (0,12) em 0,5 s e ficar.
+    quedas = quedas_por_descida(_deitado_que_cai(120, 0.5), 1000, cfg.video)
+    assert len(quedas) == 1
+    assert 1.0 < quedas[0] <= 1.6
+
+
+def test_descida_pequena_nao_e_queda(cfg):
+    assert quedas_por_descida(_deitado_que_cai(30, 0.5), 1000, cfg.video) == []
+
+
+def test_descida_lenta_nao_e_queda(cfg):
+    assert quedas_por_descida(_deitado_que_cai(120, 4.0, ate_s=6.0), 1000, cfg.video) == []
+
+
+def test_descida_que_volta_nao_e_queda(cfg):
+    assert quedas_por_descida(_deitado_que_cai(120, 0.3, volta=True), 1000, cfg.video) == []
+
+
+def test_quadro_isolado_nao_e_queda(cfg):
+    # Uma caixa espúria embaixo por um quadro some na mediana móvel.
+    caixas = [(round(i * 0.1, 2), 100.0, 150.0, 400.0, 250.0) for i in range(30)]
+    caixas[15] = (1.5, 100.0, 650.0, 400.0, 750.0)
+    assert quedas_por_descida(caixas, 1000, cfg.video) == []
+
+
+def test_descida_no_fim_do_clipe_conta(cfg):
+    # Clipes curtos terminam logo depois do impacto: o que há depois precisa ficar embaixo.
+    quedas = quedas_por_descida(_deitado_que_cai(150, 0.4, ate_s=1.6), 1000, cfg.video)
+    assert len(quedas) == 1
+
+
+def test_uma_queda_nao_conta_duas_vezes(cfg):
+    assert len(quedas_por_descida(_deitado_que_cai(300, 0.5, ate_s=6.0), 1000, cfg.video)) == 1
 
 
 def test_quedas_da_caixa_viram_observacoes():
@@ -177,3 +241,30 @@ def test_quedas_da_caixa_viram_observacoes():
     [o] = observacoes_de_quedas_caixa([1.5], instante("03:00"))
     assert o.instante == instante("03:00:01") + timedelta(milliseconds=500)
     assert (o.posicao, o.queda, o.fonte) == (P.CHAO, True, "video_caixa")
+
+
+def test_deitado_que_tremula_nao_e_queda(cfg):
+    # Pessoa já deitada (caixa larga) cuja altura oscila: não havia ninguém em pé para cair.
+    caixas = [(round(i * 0.1, 2), 0.0, 0.0, 400.0, 200.0 if i < 10 else 110.0) for i in range(30)]
+    assert quedas_por_caixa(caixas, cfg.video) == []
+
+
+def test_observacoes_de_caixas_por_regra(cfg):
+    from movimentacao.video import CaixasDoVideo, observacoes_de_caixas
+
+    caixas = CaixasDoVideo(_deitado_que_cai(150, 0.4), altura=1000, largura=1000, fps=10.0)
+    so_descida = observacoes_de_caixas(caixas, instante("03:00"), cfg.video)
+    assert [o.fonte for o in so_descida] == ["video_descida"]
+    assert so_descida[0].queda and so_descida[0].posicao is P.CHAO
+    assert observacoes_de_caixas(caixas, instante("03:00"), cfg.video, regras=()) == []
+
+
+def test_regras_de_caixa_escalam_para_video_longo(cfg):
+    # Câmera de leito contínua: 1 h a 10 fps não pode ser quadrática.
+    import time
+
+    caixas = [(i / 10, 100.0, 150.0, 400.0, 250.0) for i in range(36_000)]
+    inicio = time.perf_counter()
+    assert quedas_por_descida(caixas, 1000, cfg.video) == []
+    assert quedas_por_caixa(caixas, cfg.video) == []
+    assert time.perf_counter() - inicio < 5

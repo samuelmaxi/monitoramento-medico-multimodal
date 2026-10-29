@@ -1,0 +1,572 @@
+{
+  "versao_limiares": "1.2.0",
+  "video": {
+    "clipes": 40,
+    "regras_padrao": "descida",
+    "detector": {
+      "confianca": 0.1,
+      "imgsz": 960,
+      "fps_max": 30.0
+    },
+    "queda_descida": {
+      "descida_min_frac": 0.065,
+      "tempo_max_s": 1.5,
+      "janela_s": 0.5,
+      "suavizacao_s": 0.3
+    },
+    "queda_caixa": {
+      "queda_altura_frac": 0.4,
+      "tempo_max_s": 1.0,
+      "razao_deitado": 1.0,
+      "janela_s": 0.5
+    },
+    "combinacoes": {
+      "descida": {
+        "total": {
+          "precisao": 0.897,
+          "recall": 0.929,
+          "f1": 0.912,
+          "eventos": 29,
+          "eventos_corretos": 26,
+          "unidades_desvio": 28,
+          "unidades_desvio_detectadas": 26,
+          "unidades_normais": 12,
+          "unidades_normais_com_evento": 3,
+          "perdidas": [
+            "B_D_0007_resized",
+            "B_D_0009_resized"
+          ],
+          "alarmes_falsos": [
+            "B_N_105",
+            "B_N_87_resized",
+            "B_N_96"
+          ],
+          "recall_ic95": [
+            0.774,
+            0.98
+          ],
+          "taxa_alarme_falso": 0.25
+        },
+        "calibracao": {
+          "precisao": 0.857,
+          "recall": 1.0,
+          "f1": 0.923,
+          "eventos": 14,
+          "eventos_corretos": 12,
+          "unidades_desvio": 12,
+          "unidades_desvio_detectadas": 12,
+          "unidades_normais": 7,
+          "unidades_normais_com_evento": 2,
+          "perdidas": [],
+          "alarmes_falsos": [
+            "B_N_87_resized",
+            "B_N_96"
+          ],
+          "recall_ic95": [
+            0.757,
+            1.0
+          ],
+          "taxa_alarme_falso": 0.286
+        },
+        "teste": {
+          "precisao": 0.933,
+          "recall": 0.875,
+          "f1": 0.903,
+          "eventos": 15,
+          "eventos_corretos": 14,
+          "unidades_desvio": 16,
+          "unidades_desvio_detectadas": 14,
+          "unidades_normais": 5,
+          "unidades_normais_com_evento": 1,
+          "perdidas": [
+            "B_D_0007_resized",
+            "B_D_0009_resized"
+          ],
+          "alarmes_falsos": [
+            "B_N_105"
+          ],
+          "recall_ic95": [
+            0.64,
+            0.965
+          ],
+          "taxa_alarme_falso": 0.2
+        }
+      },
+      "caixa": {
+        "total": {
+          "precisao": 0.6,
+          "recall": 0.107,
+          "f1": 0.182,
+          "eventos": 5,
+          "eventos_corretos": 3,
+          "unidades_desvio": 28,
+          "unidades_desvio_detectadas": 3,
+          "unidades_normais": 12,
+          "unidades_normais_com_evento": 2,
+          "perdidas": [
+            "B_D_0001",
+            "B_D_0002",
+            "B_D_0003",
+            "B_D_0004",
+            "B_D_0005",
+            "B_D_0007_resized",
+            "B_D_0010_resized",
+            "B_D_0011",
+            "B_D_0012",
+            "B_D_0013",
+            "B_D_0014",
+            "B_D_0015",
+            "B_D_0016",
+            "B_D_0017",
+            "B_D_0018",
+            "... +10"
+          ],
+          "alarmes_falsos": [
+            "B_N_105",
+            "B_N_106"
+          ],
+          "recall_ic95": [
+            0.037,
+            0.272
+          ],
+          "taxa_alarme_falso": 0.167
+        },
+        "calibracao": {
+          "precisao": 0.5,
+          "recall": 0.083,
+          "f1": 0.143,
+          "eventos": 2,
+          "eventos_corretos": 1,
+          "unidades_desvio": 12,
+          "unidades_desvio_detectadas": 1,
+          "unidades_normais": 7,
+          "unidades_normais_com_evento": 1,
+          "perdidas": [
+            "B_D_0001",
+            "B_D_0010_resized",
+            "B_D_0016",
+            "B_D_0017",
+            "B_D_0018",
+            "B_D_0019",
+            "B_D_0020",
+            "B_D_0024",
+            "B_D_0025",
+            "B_D_0026",
+            "B_D_0027"
+          ],
+          "alarmes_falsos": [
+            "B_N_106"
+          ],
+          "recall_ic95": [
+            0.015,
+            0.354
+          ],
+          "taxa_alarme_falso": 0.143
+        },
+        "teste": {
+          "precisao": 0.667,
+          "recall": 0.125,
+          "f1": 0.211,
+          "eventos": 3,
+          "eventos_corretos": 2,
+          "unidades_desvio": 16,
+          "unidades_desvio_detectadas": 2,
+          "unidades_normais": 5,
+          "unidades_normais_com_evento": 1,
+          "perdidas": [
+            "B_D_0002",
+            "B_D_0003",
+            "B_D_0004",
+            "B_D_0005",
+            "B_D_0007_resized",
+            "B_D_0011",
+            "B_D_0012",
+            "B_D_0013",
+            "B_D_0014",
+            "B_D_0015",
+            "B_D_0021",
+            "B_D_0022",
+            "B_D_0023",
+            "B_D_0028"
+          ],
+          "alarmes_falsos": [
+            "B_N_105"
+          ],
+          "recall_ic95": [
+            0.035,
+            0.36
+          ],
+          "taxa_alarme_falso": 0.2
+        }
+      },
+      "descida+caixa": {
+        "total": {
+          "precisao": 0.871,
+          "recall": 0.964,
+          "f1": 0.915,
+          "eventos": 31,
+          "eventos_corretos": 27,
+          "unidades_desvio": 28,
+          "unidades_desvio_detectadas": 27,
+          "unidades_normais": 12,
+          "unidades_normais_com_evento": 4,
+          "perdidas": [
+            "B_D_0007_resized"
+          ],
+          "alarmes_falsos": [
+            "B_N_105",
+            "B_N_106",
+            "B_N_87_resized",
+            "B_N_96"
+          ],
+          "recall_ic95": [
+            0.823,
+            0.994
+          ],
+          "taxa_alarme_falso": 0.333
+        },
+        "calibracao": {
+          "precisao": 0.8,
+          "recall": 1.0,
+          "f1": 0.889,
+          "eventos": 15,
+          "eventos_corretos": 12,
+          "unidades_desvio": 12,
+          "unidades_desvio_detectadas": 12,
+          "unidades_normais": 7,
+          "unidades_normais_com_evento": 3,
+          "perdidas": [],
+          "alarmes_falsos": [
+            "B_N_106",
+            "B_N_87_resized",
+            "B_N_96"
+          ],
+          "recall_ic95": [
+            0.757,
+            1.0
+          ],
+          "taxa_alarme_falso": 0.429
+        },
+        "teste": {
+          "precisao": 0.938,
+          "recall": 0.938,
+          "f1": 0.938,
+          "eventos": 16,
+          "eventos_corretos": 15,
+          "unidades_desvio": 16,
+          "unidades_desvio_detectadas": 15,
+          "unidades_normais": 5,
+          "unidades_normais_com_evento": 1,
+          "perdidas": [
+            "B_D_0007_resized"
+          ],
+          "alarmes_falsos": [
+            "B_N_105"
+          ],
+          "recall_ic95": [
+            0.717,
+            0.989
+          ],
+          "taxa_alarme_falso": 0.2
+        }
+      }
+    }
+  },
+  "injecao": {
+    "seeds": 5,
+    "casos_por_cenario_e_seed": 100,
+    "por_tipo": {
+      "agitacao_subita": {
+        "total": {
+          "precisao": null,
+          "recall": 0.988,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 494,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [
+            "agitacao-7-37507305: 3.0 trocas/h contra 0.23/h, a partir de 00:01",
+            "agitacao-41-36496303: 3.0 trocas/h contra 0.12/h, a partir de 16:01",
+            "agitacao-25-32587226: 3.0 trocas/h contra 0.12/h, a partir de 04:01",
+            "agitacao-0-30585761: 3.0 trocas/h contra 0.13/h, a partir de 08:01",
+            "agitacao-28-30585761: 3.0 trocas/h contra 0.13/h, a partir de 08:01",
+            "agitacao-60-30585761: 3.0 trocas/h contra 0.13/h, a partir de 08:01"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.974,
+            0.994
+          ]
+        },
+        "agitacao": {
+          "precisao": null,
+          "recall": 0.988,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 494,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [
+            "agitacao-7-37507305: 3.0 trocas/h contra 0.23/h, a partir de 00:01",
+            "agitacao-41-36496303: 3.0 trocas/h contra 0.12/h, a partir de 16:01",
+            "agitacao-25-32587226: 3.0 trocas/h contra 0.12/h, a partir de 04:01",
+            "agitacao-0-30585761: 3.0 trocas/h contra 0.13/h, a partir de 08:01",
+            "agitacao-28-30585761: 3.0 trocas/h contra 0.13/h, a partir de 08:01",
+            "agitacao-60-30585761: 3.0 trocas/h contra 0.13/h, a partir de 08:01"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.974,
+            0.994
+          ]
+        }
+      },
+      "imobilidade_prolongada": {
+        "total": {
+          "precisao": null,
+          "recall": 1.0,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 500,
+          "unidades_normais": 500,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ],
+          "taxa_alarme_falso": 0.0
+        },
+        "imobilidade": {
+          "precisao": null,
+          "recall": 1.0,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 500,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "imobilidade_controle": {
+          "precisao": null,
+          "recall": null,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 0,
+          "unidades_desvio_detectadas": 0,
+          "unidades_normais": 500,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "taxa_alarme_falso": 0.0
+        }
+      },
+      "queda": {
+        "total": {
+          "precisao": null,
+          "recall": 1.0,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 1000,
+          "unidades_desvio_detectadas": 1000,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.996,
+            1.0
+          ]
+        },
+        "queda_dia": {
+          "precisao": null,
+          "recall": 1.0,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 500,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "queda_noite": {
+          "precisao": null,
+          "recall": 1.0,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 500,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        }
+      },
+      "reducao_mobilidade": {
+        "total": {
+          "precisao": null,
+          "recall": 0.822,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 411,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [
+            "reducao-9-39492446: 6 h sem troca contra 0.21/h, a partir de 05:01",
+            "reducao-10-32604416: 6 h sem troca contra 0.54/h, a partir de 18:01",
+            "reducao-14-39623478: 6 h sem troca contra 0.29/h, a partir de 20:01",
+            "reducao-16-34592300: 6 h sem troca contra 0.49/h, a partir de 08:01",
+            "reducao-28-39544395: 6 h sem troca contra 0.34/h, a partir de 11:01",
+            "reducao-33-31205490: 6 h sem troca contra 0.29/h, a partir de 20:01",
+            "reducao-46-35146796: 6 h sem troca contra 0.29/h, a partir de 02:01",
+            "reducao-51-37067082: 6 h sem troca contra 0.34/h, a partir de 10:36",
+            "reducao-54-37067082: 6 h sem troca contra 0.33/h, a partir de 08:07",
+            "reducao-56-35544374: 6 h sem troca contra 0.34/h, a partir de 12:15",
+            "reducao-67-36427705: 6 h sem troca contra 0.23/h, a partir de 02:01",
+            "reducao-86-36427705: 6 h sem troca contra 0.25/h, a partir de 06:01",
+            "reducao-94-31205490: 6 h sem troca contra 0.25/h, a partir de 16:09",
+            "reducao-1-32587226: 6 h sem troca contra 0.21/h, a partir de 09:01",
+            "reducao-6-39492446: 6 h sem troca contra 0.21/h, a partir de 08:01",
+            "... +74"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.786,
+            0.853
+          ]
+        },
+        "reducao": {
+          "precisao": null,
+          "recall": 0.822,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 411,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [
+            "reducao-9-39492446: 6 h sem troca contra 0.21/h, a partir de 05:01",
+            "reducao-10-32604416: 6 h sem troca contra 0.54/h, a partir de 18:01",
+            "reducao-14-39623478: 6 h sem troca contra 0.29/h, a partir de 20:01",
+            "reducao-16-34592300: 6 h sem troca contra 0.49/h, a partir de 08:01",
+            "reducao-28-39544395: 6 h sem troca contra 0.34/h, a partir de 11:01",
+            "reducao-33-31205490: 6 h sem troca contra 0.29/h, a partir de 20:01",
+            "reducao-46-35146796: 6 h sem troca contra 0.29/h, a partir de 02:01",
+            "reducao-51-37067082: 6 h sem troca contra 0.34/h, a partir de 10:36",
+            "reducao-54-37067082: 6 h sem troca contra 0.33/h, a partir de 08:07",
+            "reducao-56-35544374: 6 h sem troca contra 0.34/h, a partir de 12:15",
+            "reducao-67-36427705: 6 h sem troca contra 0.23/h, a partir de 02:01",
+            "reducao-86-36427705: 6 h sem troca contra 0.25/h, a partir de 06:01",
+            "reducao-94-31205490: 6 h sem troca contra 0.25/h, a partir de 16:09",
+            "reducao-1-32587226: 6 h sem troca contra 0.21/h, a partir de 09:01",
+            "reducao-6-39492446: 6 h sem troca contra 0.21/h, a partir de 08:01",
+            "... +74"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.786,
+            0.853
+          ]
+        }
+      },
+      "saida_do_leito": {
+        "total": {
+          "precisao": null,
+          "recall": 1.0,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 500,
+          "unidades_normais": 500,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ],
+          "taxa_alarme_falso": 0.0
+        },
+        "saida_noite": {
+          "precisao": null,
+          "recall": 1.0,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 500,
+          "unidades_desvio_detectadas": 500,
+          "unidades_normais": 0,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "saida_dia_controle": {
+          "precisao": null,
+          "recall": null,
+          "f1": null,
+          "eventos": 0,
+          "eventos_corretos": 0,
+          "unidades_desvio": 0,
+          "unidades_desvio_detectadas": 0,
+          "unidades_normais": 500,
+          "unidades_normais_com_evento": 0,
+          "perdidas": [],
+          "alarmes_falsos": [],
+          "taxa_alarme_falso": 0.0
+        }
+      }
+    }
+  },
+  "mimic_real": {
+    "estadias": 139,
+    "paciente_dias": 488.2,
+    "achados": {
+      "agitacao_subita": 129,
+      "imobilidade_prolongada": 453,
+      "saida_do_leito": 179,
+      "reducao_mobilidade": 79
+    },
+    "achados_por_paciente_dia": {
+      "agitacao_subita": 0.26,
+      "imobilidade_prolongada": 0.93,
+      "reducao_mobilidade": 0.16,
+      "saida_do_leito": 0.37
+    }
+  }
+}

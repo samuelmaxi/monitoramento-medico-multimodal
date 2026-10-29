@@ -3,7 +3,7 @@
 # Lido por movimentacao/config.py. Nenhum limiar fica no código: mudou um
 # número aqui, suba "versao" (vai em evidence.thresholds de cada evento).
 
-versao: "1.1.0"
+versao: "1.2.0"
 
 # Fuso para separar dia de noite. O MIMIC-IV já vem com datas deslocadas e em
 # UTC; numa câmera real use o fuso do hospital (ex.: America/Sao_Paulo).
@@ -63,10 +63,32 @@ video:
   razao_lateral_max: 0.35
   # ROI da US07 (config/leito_uti_07.json) que significa paciente fora do leito.
   area_fora_do_leito: lateral_leito
-  # Segundo sinal de queda (o relatório da US08 mostra recall 0,23 só com pose):
-  # a caixa "person" do YOLOv8 perde altura e fica mais larga que alta, rápido.
+  # Queda pela caixa "person" do YOLOv8, segundo sinal além da pose (o relatório
+  # da US08 mediu recall 0,23 só com pose). Duas regras, uma para cada queda:
+  #
+  # queda_descida: cair DO LEITO. Quem cai do leito já estava deitado (a caixa
+  # já é larga), então o que muda é a posição: o centro da caixa desce na
+  # imagem e fica embaixo. Calibrado na partição de calibração dos clipes de
+  # leito do FallVision (data/eval/us17/quedas.csv): 0,065 é o maior limiar que
+  # mantém recall 1,0 na calibração (recall tem prioridade, como na US08).
+  queda_descida:
+    descida_min_frac: 0.065  # descida do centro, em fração da altura do quadro
+    tempo_max_s: 1.5         # dentro deste tempo
+    janela_s: 0.5            # e fica embaixo por este tempo (ou até o fim do clipe)
+    suavizacao_s: 0.3        # mediana móvel: um quadro espúrio não vira queda
+  # queda_caixa: cair DE PÉ (indo ao banheiro). A caixa mais alta do último
+  # tempo_max_s estava em pé, perde altura e fica mais larga que alta, rápido.
   queda_caixa:
     queda_altura_frac: 0.4   # altura cai pelo menos 40% da maior altura recente
     tempo_max_s: 1.0         # dentro deste tempo
     razao_deitado: 1.0       # e a caixa fica com largura/altura >= isto
     janela_s: 0.5            # mantido por este tempo
+  # Detector da US07 (video/detector.py) para estas regras. Sem rastreamento: o
+  # ByteTrack descarta caixas de baixa confiança, e pessoa deitada ou meio
+  # coberta é exatamente o caso de baixa confiança. Medido nos 40 clipes de leito
+  # (quadros com alguma pessoa): padrão da US07 (0,25, 640 px, ByteTrack) 40%,
+  # estes valores 68%; só nos clipes de queda, 27% -> 58%.
+  detector:
+    confianca: 0.1
+    imgsz: 960
+    fps_max: 30              # clipes de 60/120 fps são amostrados a ~30 fps

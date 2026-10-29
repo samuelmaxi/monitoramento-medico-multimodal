@@ -261,3 +261,5 @@ dataset_medico/
 
 # Dados brutos baixados (MIMIC-IV Demo etc.), fora do git
 dados/
+# Saída bruta da US17 sobre o MIMIC (regenerável com python -m movimentacao.run mimic)
+saida/movimentacao/mimic_*
