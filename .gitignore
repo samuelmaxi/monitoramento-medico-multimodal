@@ -258,3 +258,6 @@ saida/video/*
 uv.lock
 terraform/.terraform.lock.hcl
 dataset_medico/
+
+# Dados brutos baixados (MIMIC-IV Demo etc.), fora do git
+dados/
