@@ -70,8 +70,11 @@ def _seq(quadros):
 
 
 def test_pose_vira_uma_observacao_por_janela(cfg):
+    import dataclasses
+
+    sem_filtro = dataclasses.replace(cfg, video=dataclasses.replace(cfg.video, persistencia_s=1))
     seq = _seq([(0, SUPINO), (300, SUPINO), (600, SENTADO), (900, SUPINO), (1000, LATERAL_ESQ), (1500, LATERAL_ESQ)])
-    obs = observacoes_de_pose(seq, instante("10:00"), cfg)
+    obs = observacoes_de_pose(seq, instante("10:00"), sem_filtro)
     assert [(o.instante, o.posicao) for o in obs] == [
         (instante("10:00"), P.SUPINO),
         (instante("10:00") + timedelta(seconds=1), P.LATERAL_ESQ),
@@ -268,3 +271,29 @@ def test_regras_de_caixa_escalam_para_video_longo(cfg):
     assert quedas_por_descida(caixas, 1000, cfg.video) == []
     assert quedas_por_caixa(caixas, cfg.video) == []
     assert time.perf_counter() - inicio < 5
+
+
+def _janelas(*trechos):
+    """[(kp, segundos), ...] -> quadros a cada 500 ms."""
+    quadros, ms = [], 0
+    for kp, segundos in trechos:
+        for _ in range(int(segundos * 2)):
+            quadros.append((ms, kp))
+            ms += 500
+    return _seq(quadros)
+
+
+def test_oscilacao_curta_da_pose_nao_e_reposicionamento(cfg):
+    from movimentacao.serie import marcos
+
+    seq = _janelas((SUPINO, 20), (LATERAL_ESQ, 2), (SUPINO, 20))
+    assert marcos(observacoes_de_pose(seq, instante("10:00"), cfg), cfg) == []
+
+
+def test_troca_que_persiste_e_reposicionamento(cfg):
+    from movimentacao.serie import marcos
+
+    seq = _janelas((SUPINO, 20), (LATERAL_ESQ, 20))
+    [m] = marcos(observacoes_de_pose(seq, instante("10:00"), cfg), cfg)
+    assert m.tipo == "mudanca_posicao"
+    assert m.instante == instante("10:00:20")  # o início da posição nova, não o fim da espera

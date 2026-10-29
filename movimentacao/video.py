@@ -90,14 +90,45 @@ def observacoes_de_pose(
     for frame in seq.frames:
         janela = int(frame.timestamp_ms / 1000 // cfg.video.janela_s)
         janelas[janela][posicao_de_keypoints(frame.keypoints, cfg.video)] += 1
-    observacoes = []
+    por_janela = []
     for janela, contagem in sorted(janelas.items()):
         conhecidas = Counter({p: n for p, n in contagem.items() if p is not Posicao.DESCONHECIDA})
         posicao = conhecidas.most_common(1)[0][0] if conhecidas else Posicao.DESCONHECIDA
-        instante = inicio_utc + timedelta(seconds=janela * cfg.video.janela_s)
-        evidencia = {"video_id": seq.video_id, "quadros": sum(contagem.values())}
-        observacoes.append(Observacao(instante, posicao, "video_pose", evidencia=evidencia))
-    return observacoes
+        por_janela.append((janela, posicao, sum(contagem.values())))
+    posicoes = _sem_oscilacao([p for _, p, _ in por_janela], cfg.video)
+    return [
+        Observacao(
+            inicio_utc + timedelta(seconds=janela * cfg.video.janela_s), posicao, "video_pose",
+            evidencia={"video_id": seq.video_id, "quadros": quadros},
+        )
+        for (janela, _, quadros), posicao in zip(por_janela, posicoes, strict=True)
+    ]
+
+
+def _sem_oscilacao(posicoes: Sequence[Posicao], cfg: Video) -> list[Posicao]:
+    """Uma posição nova só vale se durar ``persistencia_s``; antes disso é ruído do esqueleto.
+
+    O trecho curto volta a ser a posição aceita anterior. ``DESCONHECIDA`` fica como está
+    (não muda a posição aceita) e não interrompe a contagem.
+    """
+    minimo = max(1, math.ceil(cfg.persistencia_s / cfg.janela_s))
+    saida = list(posicoes)
+    aceita: Posicao | None = None
+    i = 0
+    while i < len(saida):
+        if saida[i] is Posicao.DESCONHECIDA:
+            i += 1
+            continue
+        fim, conhecidas = i, 0
+        while fim < len(saida) and saida[fim] in (saida[i], Posicao.DESCONHECIDA):
+            conhecidas += saida[fim] is saida[i]
+            fim += 1
+        if aceita is not None and saida[i] is not aceita and conhecidas < minimo:
+            saida[i:fim] = [aceita if p is not Posicao.DESCONHECIDA else p for p in saida[i:fim]]
+        else:
+            aceita = saida[i]
+        i = fim
+    return saida
 
 
 def observacoes_de_areas(

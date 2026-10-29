@@ -3,7 +3,7 @@
 # Lido por movimentacao/config.py. Nenhum limiar fica no código: mudou um
 # número aqui, suba "versao" (vai em evidence.thresholds de cada evento).
 
-versao: "1.2.0"
+versao: "1.3.0"
 
 # Fuso para separar dia de noite. O MIMIC-IV já vem com datas deslocadas e em
 # UTC; numa câmera real use o fuso do hospital (ex.: America/Sao_Paulo).
@@ -54,6 +54,9 @@ video:
   # Uma observação de posição por janela (a posição mais frequente nela), para
   # o esqueleto não oscilar quadro a quadro.
   janela_s: 1.0
+  # Uma posição nova só conta como reposicionamento se durar isto. Esqueleto que
+  # oscila entre supino e lateral por alguns quadros é ruído, não troca de posição.
+  persistencia_s: 10
   # Inclinação do tronco (pescoço-quadril) em relação à vertical, convenção da
   # US06: abaixo disto o paciente está sentado/em pé; acima, deitado ou reclinado
   # (cabeceira elevada a 30-45 graus conta como deitado).

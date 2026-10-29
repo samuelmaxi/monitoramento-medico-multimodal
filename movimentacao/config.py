@@ -90,6 +90,7 @@ class DetectorVideo:
 @dataclass(frozen=True)
 class Video:
     janela_s: float
+    persistencia_s: float
     inclinacao_sentado_max: float
     razao_lateral_max: float
     area_fora_do_leito: str
@@ -228,8 +229,10 @@ def _fracao(valor: float, caminho: str) -> float:
 
 
 def _video(dados: Mapping[str, Any]) -> Video:
-    chaves = {"janela_s", "inclinacao_sentado_max", "razao_lateral_max", "area_fora_do_leito",
-              "queda_caixa", "queda_descida", "detector"}
+    chaves = {
+        "janela_s", "persistencia_s", "inclinacao_sentado_max", "razao_lateral_max",
+        "area_fora_do_leito", "queda_caixa", "queda_descida", "detector",
+    }
     b = _bloco(dados, "video", chaves)
     q = _sub(b, "queda_caixa", {"queda_altura_frac", "tempo_max_s", "razao_deitado", "janela_s"})
     qd = _sub(b, "queda_descida", {"descida_min_frac", "tempo_max_s", "janela_s", "suavizacao_s"})
@@ -240,6 +243,7 @@ def _video(dados: Mapping[str, Any]) -> Video:
 
     return Video(
         janela_s=num(b, "janela_s", "video"),
+        persistencia_s=num(b, "persistencia_s", "video"),
         inclinacao_sentado_max=num(b, "inclinacao_sentado_max", "video"),
         razao_lateral_max=num(b, "razao_lateral_max", "video"),
         area_fora_do_leito=str(_get(b, "area_fora_do_leito", "video")),
