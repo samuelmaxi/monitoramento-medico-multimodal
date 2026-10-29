@@ -7,11 +7,17 @@ from app.routers import sentiment, sinais_vitais, transcription, video_pose  # n
 
 app = FastAPI(
     title="Monitoramento Médico Multimodal - API",
-    description="Endpoints locais para testar os fluxos Azure Speech e Language e a análise de pose em vídeo.",
+    description=(
+        "Endpoints locais para testar os fluxos Azure Speech e Language, a transcrição de "
+        "consultas (US11), os termos críticos e o sentimento na fala do paciente (US13) e a "
+        "análise de pose em vídeo."
+    ),
 )
 
 app.include_router(transcription.router)
 app.include_router(sentiment.router)
+app.include_router(text_analysis.router)
+app.include_router(audio_analysis.router)
 app.include_router(video_pose.router)
 app.include_router(sinais_vitais.router)
 

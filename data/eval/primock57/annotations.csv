@@ -1,0 +1,139 @@
+audio_id,termo,caso,observacao,revisar
+primock57-d1c01,,negacao,no blood in stool / vomit,
+primock57-d1c01,,terceiro,wife and children vomiting,
+primock57-d1c01,febre,afirmado,"""fever on first day, nil since""",
+primock57-d1c01,vômito,afirmado,,
+primock57-d1c02,,negacao,"no fevers, no vomiting, no SOB, no bleeding",
+primock57-d1c03,,negacao,no fever,
+primock57-d1c03,cefaleia,afirmado,,
+primock57-d1c03,vômito,afirmado,vomited twice,
+primock57-d1c04,,negacao,"no chest pain, no vomiting",
+primock57-d1c04,cefaleia,afirmado,,
+primock57-d1c04,falta de ar,afirmado,SOB on exertion,
+primock57-d1c04,febre,afirmado,"initially fever, settling",
+primock57-d1c05,,negacao,no chest pain/SOB/palpitations/headache/vomiting,
+primock57-d1c05,sangramento,afirmado,"""pink urine, no frank haematuria""",sim
+primock57-d1c06,,negacao,no chest pain/palpitations/fevers,
+primock57-d1c06,,terceiro,father MI,
+primock57-d1c06,edema,afirmado,ankle oedema,
+primock57-d1c06,falta de ar,afirmado,,
+primock57-d1c06,dor torácica,passado,"corrigido pela transcrição: ""I had like some chest pain and they took me into hospital""",sim
+primock57-d1c06,infarto,passado,"corrigido pela transcrição: ""they called it ... a small heart attack""",sim
+primock57-d1c07,,negacao,"no chest pain, no fevers, no vomiting",
+primock57-d1c07,falta de ar,afirmado,more SOB,
+primock57-d1c08,,negacao,"no fevers, no vomiting, no bleeding",
+primock57-d1c09,,negacao,"no vomiting, no fever",
+primock57-d1c09,sangramento,afirmado,"brief haematuria, resolved",
+primock57-d1c09,edema,afirmado,"corrigido pela transcrição: ""I get some like a swelling""",sim
+primock57-d1c10,,negacao,"no vomiting, no fevers",
+primock57-d1c10,sangramento,afirmado,"""urine pink, nil frank haematuria""",sim
+primock57-d1c11,,terceiro,brother similar sx,
+primock57-d1c11,febre,afirmado,feeling feverish (subjetivo),
+primock57-d1c11,vômito,afirmado,,
+primock57-d1c12,,negacao,"no fever, no headaches, no blood",
+primock57-d1c12,vômito,afirmado,,
+primock57-d1c13,,negacao,"no vomiting, no fevers",
+primock57-d1c13,cefaleia,afirmado,,
+primock57-d1c14,,negacao,"no SOB/chest pain, no vomiting; ""?fever"" incerto",sim
+primock57-d1c15,sangramento,afirmado,bleeding on scratching (pele),sim
+primock57-d2c01,tontura,afirmado,slight dizziness,
+primock57-d2c02,edema,afirmado,elbow swelling,
+primock57-d2c03,,negacao,no fever,
+primock57-d2c03,tontura,afirmado,"corrigido pela transcrição: ""I can feel a bit dizzy""",sim
+primock57-d2c04,dor torácica,afirmado,"""slight pleuritic pain (right side)""",sim
+primock57-d2c04,falta de ar,afirmado,,
+primock57-d2c04,palpitação,afirmado,,
+primock57-d2c04,sangramento,afirmado,haemoptysis,
+primock57-d2c04,febre,afirmado,"corrigido pela transcrição: ""I've got a bit of slight fever""",sim
+primock57-d2c05,,terceiro,father CVA,
+primock57-d2c06,edema,afirmado,lip swelling,
+primock57-d2c06,falta de ar,afirmado,difficulty breathing,
+primock57-d2c07,,terceiro,FH IHD,
+primock57-d2c07,dor torácica,afirmado,,
+primock57-d2c07,palpitação,afirmado,,
+primock57-d2c07,falta de ar,afirmado,"corrigido pela transcrição: ""I'm pretty sweaty, short of breath""",sim
+primock57-d2c08,,terceiro,father MI,
+primock57-d2c08,febre,afirmado,,
+primock57-d2c08,cefaleia,afirmado,"corrigido pela transcrição: ""general headaches ... from staring at the screen""",sim
+primock57-d2c09,,sem_termo,"AVC é impressão do médico, não relato do paciente",sim
+primock57-d2c10,,negacao,no thoughts of self harm,
+primock57-d2c10,cefaleia,afirmado,,
+primock57-d2c10,tontura,afirmado,felt dizzy this morning,
+primock57-d3c01,,sem_termo,"""chest is tight"" (aperto, não dor) não contado",sim
+primock57-d3c01,edema,afirmado,lip swelling,
+primock57-d3c01,falta de ar,afirmado,difficulty breathing,
+primock57-d3c01,tontura,afirmado,"corrigido pela transcrição: ""I feel a little dizzy right now""",sim
+primock57-d3c02,,terceiro,friend also unwell,
+primock57-d3c02,cefaleia,afirmado,,
+primock57-d3c02,febre,afirmado,"""feeling hot"" (PC); nota não diz febre",sim
+primock57-d3c03,,negacao,"no chest pain, no vomiting",
+primock57-d3c03,falta de ar,afirmado,breathlessness,
+primock57-d3c03,palpitação,afirmado,,
+primock57-d3c03,cefaleia,afirmado,"corrigido pela transcrição: ""having headaches, feeling nauseous""",sim
+primock57-d3c04,falta de ar,afirmado,,
+primock57-d3c04,febre,afirmado,"corrigido pela transcrição: ""I have a fever""",sim
+primock57-d3c05,,negacao,not been sick,
+primock57-d3c05,tontura,afirmado,,
+primock57-d3c06,falta de ar,afirmado,,
+primock57-d3c07,,negacao,no fever,
+primock57-d3c08,,negacao,"no breathlessness, no blood",
+primock57-d3c08,cefaleia,afirmado,"corrigido pela transcrição: ""occasional feeling like headache""",sim
+primock57-d3c09,,negacao,no fits,
+primock57-d3c09,vômito,passado,vomiting a month ago for 2 weeks,
+primock57-d3c09,cefaleia,afirmado,"corrigido pela transcrição: ""sometimes I get headaches""",sim
+primock57-d3c10,,negacao,"no blood, no fever",
+primock57-d3c10,vômito,afirmado,vomiting once,
+primock57-d4c01,dor torácica,afirmado,chest discomfort/pressure,
+primock57-d4c01,falta de ar,afirmado,SOBAR / SOBOE,
+primock57-d4c01,edema,afirmado,"corrigido pela transcrição: ""calf pain and leg swellings""",sim
+primock57-d4c02,cefaleia,afirmado,,
+primock57-d4c02,falta de ar,afirmado,mild SOBOE/SOBAR,
+primock57-d4c02,febre,afirmado,fevers with headaches,
+primock57-d4c02,palpitação,afirmado,,
+primock57-d4c03,,negacao,"no chest pain, no fever",
+primock57-d4c03,,terceiro,mother clots,
+primock57-d4c03,falta de ar,afirmado,,
+primock57-d4c04,,negacao,"no chest pain, no vomiting",
+primock57-d4c04,falta de ar,afirmado,,
+primock57-d4c05,,negacao,"no fevers, no blood, no chest pain, no headache",
+primock57-d4c05,vômito,afirmado,,
+primock57-d4c06,,hipotetico,worried re: stroke,
+primock57-d4c06,cefaleia,afirmado,,
+primock57-d4c06,tontura,afirmado,,
+primock57-d4c06,vômito,afirmado,vomited x2,
+primock57-d4c07,,negacao,"no chest pain, no blood",
+primock57-d4c07,falta de ar,afirmado,mild SOB,
+primock57-d4c07,febre,afirmado,slight fever symptoms,
+primock57-d4c07,cefaleia,afirmado,"corrigido pela transcrição: ""also had a bit of a headache""",sim
+primock57-d4c08,,negacao,no suicidal ideation,
+primock57-d4c08,,terceiro,father suicide,
+primock57-d4c08,falta de ar,afirmado,"corrigido pela transcrição: ""quite difficult to breathe"" ao fazer esporte",sim
+primock57-d4c09,,sem_termo,"""tight chest"" não contado como dor torácica",sim
+primock57-d4c09,falta de ar,afirmado,slight SOB,
+primock57-d4c10,,negacao,no vomiting,
+primock57-d4c10,sangramento,afirmado,spotting,sim
+primock57-d5c01,,negacao,"not feverish, no N&V",
+primock57-d5c01,cefaleia,afirmado,,
+primock57-d5c02,,negacao,"not feverish, no blood in stool",
+primock57-d5c03,,negacao,denies suicidal ideation,
+primock57-d5c03,dor torácica,afirmado,chest discomfort,
+primock57-d5c03,palpitação,afirmado,,
+primock57-d5c04,,negacao,"not feeling faint, no vomiting",
+primock57-d5c04,sangramento,afirmado,light PV bleeding,
+primock57-d5c05,,negacao,"no blood in stool, no N&V",
+primock57-d5c05,sangramento,afirmado,blood in urine,
+primock57-d5c06,,sem_termo,"""feels hot, hasn't checked"" não contado como febre",sim
+primock57-d5c06,vômito,afirmado,,
+primock57-d5c07,,negacao,"no SOB, no haemoptysis, no vomiting; feels hot (sem febre medida)",
+primock57-d5c08,,sem_termo,"wheeze; ""no SOB at rest"" — falta de ar ao esforço não contada",sim
+primock57-d5c08,falta de ar,afirmado,"corrigido pela transcrição: ""I have feel like kind of short of breath""",sim
+primock57-d5c08,febre,afirmado,"corrigido pela transcrição: ""I have a fever"" (a nota registra 37 °C medido)",sim
+primock57-d5c09,,negacao,"no SOB, no blood in stool",
+primock57-d5c09,cefaleia,afirmado,"""General headache"" ambíguo na nota",sim
+primock57-d5c09,febre,passado,fever in Feb with rash,
+primock57-d5c10,,negacao,"no vomiting, no fever",
+primock57-d5c10,cefaleia,afirmado,,
+primock57-d5c11,,negacao,no fever,
+primock57-d5c11,edema,afirmado,"knee puffiness, ankle swelling",
+primock57-d5c12,,negacao,"no vomiting, no fever",
+primock57-d5c12,cefaleia,afirmado,,

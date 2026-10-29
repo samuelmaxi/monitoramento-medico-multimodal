@@ -1,0 +1,36 @@
+{
+  "video": "config/../conteudos/videos/B_D_0016.mp4",
+  "quadros_lidos": 360,
+  "deteccoes_total": 922,
+  "transicoes": 10,
+  "eventos": 10,
+  "entradas": 5,
+  "saidas": 5,
+  "fps": 120.0,
+  "resolucao": "1920x1080",
+  "classes_detectadas": {
+    "bed": 326,
+    "chair": 357,
+    "person": 239
+  },
+  "duracao_s": 31.739,
+  "video_anotado": null,
+  "avaliacao": {
+    "metodo": "baseline_coco",
+    "metricas": {
+      "mAP@0.5": 0.5283,
+      "mAP@0.5:0.95": 0.3657,
+      "precision": 0.6366,
+      "recall": 0.4874,
+      "pesos": "yolov8n.pt",
+      "origem": "coco_val2017_medido",
+      "referencia": "saida/video/metricas_coco_val2017.json — scripts/avaliar_us07.py <coco_val2017>/data.yaml --weights yolov8n.pt --split val (conf 0.001, iou 0.5)"
+    },
+    "quantitativa_em_ground_truth": null,
+    "qualitativa": {
+      "videos_anotados": [
+        "config/../saida/video/video_anotado_leito_uti_07.mp4"
+      ]
+    }
+  }
+}

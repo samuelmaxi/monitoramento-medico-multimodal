@@ -1,0 +1,50 @@
+{
+  "audio_id": "consulta-03",
+  "patient_id": "sim-paciente-03",
+  "recorded_at": "2026-10-03T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "Olá. Vamos fazer o check-up anual. Tem histórico de doenças na família?",
+      "offset_ms": 500,
+      "duration_ms": 4615,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Tenho sim. Meu pai teve infarto com cinquenta anos e minha mãe teve AVC no ano passado.",
+      "offset_ms": 5565,
+      "duration_ms": 5655,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "E a sua irmã?",
+      "offset_ms": 11670,
+      "duration_ms": 1200,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "Minha irmã tem convulsões desde pequena, faz tratamento com neurologista.",
+      "offset_ms": 13320,
+      "duration_ms": 4745,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "E o senhor, sente alguma coisa?",
+      "offset_ms": 18515,
+      "duration_ms": 2015,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Eu estou bem, doutor. Durmo bem, me alimento direito e faço caminhada três vezes por semana.",
+      "offset_ms": 20980,
+      "duration_ms": 5980,
+      "confidence": 0.86
+    }
+  ]
+}

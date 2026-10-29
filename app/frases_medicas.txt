@@ -1,0 +1,81 @@
+# Phrase list de termos clínicos para a transcrição (US11).
+# Usada só com --frases-medicas, quando o WER sem ela passa de 20%.
+# Uma expressão por linha; linhas com # são ignoradas.
+dispneia
+falta de ar
+dor torácica
+dor no peito
+dor abdominal
+cefaleia
+náusea
+vômito
+tontura
+síncope
+palpitação
+taquicardia
+bradicardia
+hipertensão
+hipotensão
+pressão arterial
+frequência cardíaca
+frequência respiratória
+saturação
+oxigênio
+oxigenoterapia
+cateter nasal
+febre
+calafrio
+sudorese
+edema
+tosse
+expectoração
+hemoptise
+diabetes
+glicemia
+insulina
+hipoglicemia
+hiperglicemia
+anticoagulante
+antibiótico
+analgésico
+anti-inflamatório
+dipirona
+paracetamol
+dexametasona
+furosemida
+captopril
+losartana
+metformina
+omeprazol
+heparina
+enoxaparina
+miligramas
+comprimido
+ampola
+via oral
+endovenosa
+intramuscular
+posologia
+dose
+prescrição
+alergia
+diagnóstico
+prognóstico
+internação
+alta hospitalar
+acamado
+mobilidade
+fisioterapia
+fraqueza muscular
+disartria
+afasia
+confusão mental
+sonolência
+desorientação
+incontinência
+queda
+úlcera de pressão
+cicatrização
+curativo
+drenagem
+sonda

@@ -1,0 +1,50 @@
+{
+  "audio_id": "consulta-04",
+  "patient_id": "sim-paciente-04",
+  "recorded_at": "2026-10-04T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "Os exames da sua asma estão estáveis. Alguma dúvida?",
+      "offset_ms": 500,
+      "duration_ms": 3380,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Tenho sim. Se a falta de ar piorar durante a noite, eu devo vir direto para o pronto-socorro?",
+      "offset_ms": 4330,
+      "duration_ms": 6045,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "Sim, e use a bombinha antes de sair de casa.",
+      "offset_ms": 10825,
+      "duration_ms": 2860,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "E caso eu tenha febre, posso tomar dipirona 500 mg?",
+      "offset_ms": 14135,
+      "duration_ms": 3315,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "Pode, até de seis em seis horas.",
+      "offset_ms": 17900,
+      "duration_ms": 2080,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Certo. Hoje estou respirando bem, sem nenhuma queixa.",
+      "offset_ms": 20430,
+      "duration_ms": 3445,
+      "confidence": 0.86
+    }
+  ]
+}

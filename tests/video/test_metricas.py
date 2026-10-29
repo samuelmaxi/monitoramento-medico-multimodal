@@ -1,0 +1,135 @@
+"""Métricas apenas vêm de avaliação Ultralytics em dataset anotado real."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from video import ConfiguracaoDetector, DetectorYolo, avaliar_detector
+from video.metricas import (
+    MetricasDeteccao,
+    avaliar_pesos,
+    metricas_coco_baseline,
+)
+
+
+class ModeloValidadorFalso:
+    def __init__(self):
+        self.names = {0: "person"}
+
+    def val(self, *, data, verbose, **argumentos):
+        self.chamada = {"data": data, "verbose": verbose, **argumentos}
+        box = SimpleNamespace(
+            map50=0.71,
+            map=0.42,
+            mp=0.8,
+            mr=0.6,
+            ap_class_index=[0],
+            ap=[0.71],
+        )
+        return SimpleNamespace(box=box, names={0: "person"})
+
+
+def test_metricas_lidas_da_validacao_ultralytics_e_salvas(tmp_path: Path):
+    yaml = tmp_path / "data.yaml"
+    yaml.write_text("path: .\ntrain: images/train\nval: images/val\nnames: {0: person}\n")
+    modelo = ModeloValidadorFalso()
+    detector = DetectorYolo(
+        ConfiguracaoDetector(classes=("person",), rastrear=False),
+        rastrear=False,
+        modelo=modelo,
+    )
+    metricas = avaliar_detector(detector, yaml)
+    assert metricas == MetricasDeteccao(
+        mapa_50=0.71,
+        mapa_50_95=0.42,
+        precisao=0.8,
+        recall=0.6,
+        pesos="yolov8n.pt",
+        versao_ultralytics=detector.versao,
+        conjunto=str(yaml.resolve()),
+        classes=("person",),
+        mapa_50_por_classe=(("person", 0.71),),
+    )
+    assert modelo.chamada["split"] == "val"
+    assert modelo.chamada["conf"] == 0.001
+    assert modelo.chamada["iou"] == 0.5
+    destino = metricas.salvar_json(tmp_path / "report" / "metrics.json")
+    assert '"mAP@0.5": 0.71' in destino.read_text(encoding="utf-8")
+
+
+def test_avaliar_pesos_usa_taxonomia_do_dataset_medico(monkeypatch, tmp_path: Path):
+    yaml = tmp_path / "data.yaml"
+    yaml.write_text(
+        "path: .\ntrain: images/train\nval: images/val\n"
+        "names: {0: instrumento_cirurgico, 1: monitor_multiparametro}\n",
+        encoding="utf-8",
+    )
+    modelo = SimpleNamespace(
+        names={0: "instrumento_cirurgico", 1: "monitor_multiparametro"}
+    )
+    detector_criado = {}
+
+    def construir_detector(config, *, rastrear):
+        detector_criado["config"] = config
+        return DetectorYolo(config, rastrear=rastrear, modelo=modelo)
+
+    monkeypatch.setattr("video.metricas.DetectorYolo", construir_detector)
+    monkeypatch.setattr(
+        "video.metricas.avaliar_detector",
+        lambda detector, data_yaml, *, split: MetricasDeteccao(
+            mapa_50=0.7,
+            mapa_50_95=0.4,
+            precisao=0.8,
+            recall=0.6,
+            pesos=detector.config.pesos,
+            versao_ultralytics="8.x",
+            conjunto=str(data_yaml),
+            classes=tuple(detector.config.classes),
+        ),
+    )
+
+    metricas = avaliar_pesos(
+        "best.pt",
+        yaml,
+        split="val",
+        dispositivo="cpu",
+        classes=("instrumento_cirurgico", "monitor_multiparametro"),
+    )
+
+    assert detector_criado["config"].classes == (
+        "instrumento_cirurgico",
+        "monitor_multiparametro",
+    )
+    assert metricas.classes == detector_criado["config"].classes
+
+
+def test_dataset_ausente_nao_finge_metricas(tmp_path: Path):
+    detector = DetectorYolo(
+        ConfiguracaoDetector(classes=("person",), rastrear=False),
+        rastrear=False,
+        modelo=ModeloValidadorFalso(),
+    )
+    with pytest.raises(FileNotFoundError, match="conjunto anotado"):
+        avaliar_detector(detector, tmp_path / "ausente.yaml")
+
+
+def test_baseline_coco_tem_as_quatro_metricas_medidas_no_val2017():
+    m = metricas_coco_baseline()
+    assert (m.mapa_50, m.mapa_50_95, m.precisao, m.recall) == (0.5283, 0.3657, 0.6366, 0.4874)
+    assert m.pesos == "yolov8n.pt"
+    assert m.origem == "coco_val2017_medido"
+    assert "metricas_coco_val2017.json" in m.referencia
+    # Coerente com o model card (0,373), sem copiar dele.
+    assert abs(m.mapa_50_95 - 0.373) < 0.01
+
+
+def test_baseline_coco_salvar_json(tmp_path: Path):
+    destino = metricas_coco_baseline().salvar_json(tmp_path / "baseline.json")
+    texto = destino.read_text(encoding="utf-8")
+    assert '"mAP@0.5:0.95": 0.3657' in texto
+    assert '"mAP@0.5": 0.5283' in texto
+    assert '"origem": "coco_val2017_medido"' in texto
+    assert '"referencia"' in texto

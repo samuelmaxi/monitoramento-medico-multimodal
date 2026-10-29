@@ -1,1 +1,267 @@
-"""Módulos de análise de vídeo do monitoramento multimodal."""
+"""US07 · Detecção de objetos e áreas críticas com YOLOv8.
+
+Fluxo: vídeo → OpenCV → YOLOv8 → detecções → ROI poligonal → estado →
+``entrada_area_critica``/``saida_area_critica`` no contrato da US04.
+
+Uso mínimo::
+
+    from contratos import EmissorJsonl
+    from video import Configuracao, PipelineAreaCritica
+
+    config = Configuracao.de_arquivo("config/exemplo_us07.json")
+    pipeline = PipelineAreaCritica(config, emissor=EmissorJsonl("saida/eventos.jsonl"))
+    resultado = pipeline.executar()
+
+Cada camada é importável isoladamente (:mod:`video.geometria`,
+:mod:`video.areas`, :mod:`video.monitor`, :mod:`video.detector`), o que mantém a
+lógica testável sem pesos baixados e sem GPU.
+"""
+
+from .anotacoes import (
+    Anotacao,
+    ErroAnotacao,
+    ProblemaAnotacao,
+    escrever_label,
+    exportar_para_anotacao,
+    importar_anotacoes,
+    ler_label,
+    manifesto_anotacoes,
+    validar_arquivo_label,
+)
+from .areas import (
+    AREA_MINIMA_PADRAO,
+    AreaCritica,
+    AvaliacaoContencao,
+    ConjuntoAreas,
+    areas_de_dados,
+    carregar_areas,
+)
+from .avaliacao_deteccao import (
+    LIMIAR_IOU_PADRAO,
+    CasamentoDeteccao,
+    MetricasClasse,
+    Predicao,
+    ResultadoAvaliacaoDeteccao,
+    Verdade,
+    anotacao_para_caixa,
+    ap_50,
+    avaliar_deteccao,
+    carregar_verdades,
+    casar_deteccoes,
+    ler_predicoes_jsonl,
+    predicoes_de_detector,
+)
+from .config import (
+    SEVERIDADE_PADRAO,
+    VERSAO_MODULO,
+    Configuracao,
+    ConfiguracaoDetector,
+    ConfiguracaoEvento,
+    ConfiguracaoFonte,
+    ConfiguracaoMonitor,
+    ConfiguracaoVisualizacao,
+    ErroDeConfiguracao,
+)
+from .dataset import (
+    CLASSES_PADRAO,
+    PROPORCOES_PADRAO,
+    SPLITS_PADRAO,
+    AvaliacaoAptidao,
+    GrupoVideo,
+    RegistroFrame,
+    ResultadoGate,
+    agrupar_por_origem,
+    avaliar_gate,
+    criar_estrutura,
+    gerar_data_yaml,
+    materializar_divisao,
+    planejar_divisao,
+    verificar_aptidao,
+)
+from .detector import (
+    CLASSES_EXIGEM_FINETUNING,
+    CLASSES_INTERESSE_COCO,
+    CONFIDENCIA_PADRAO,
+    IOU_NMS_PADRAO,
+    MODELOS_YOLO_V8,
+    Detector,
+    DetectorFalso,
+    DetectorYolo,
+    ErroDeClasse,
+    ErroDeDetector,
+)
+from .eventos import ContextoTraducao, TradutorEventos
+from .extracao_frames import (
+    ConfiguracaoExtracao,
+    FrameExtraido,
+    ManifestoFrames,
+    RelatorioExtracao,
+    extrair_frames,
+    extrair_lote,
+)
+from .fine_tuning import (
+    CLASSES_MEDICAS,
+    LIMIAR_MAP_PADRAO,
+    NOME_RELATORIO_FINE_TUNING,
+    SPLIT_GATE_PADRAO,
+    ConfiguracaoDataset,
+    ResultadoFineTuning,
+    classes_medicas_presentes,
+    ler_configuracao_dataset,
+    tem_classes_medicas,
+    validar_fine_tuning,
+)
+from .geometria import (
+    PoligonoInvalido,
+    area_interseccao_caixa_poligono,
+    fracao_da_caixa_dentro,
+    iou,
+    ponto_esta_dentro,
+    validar_poligono,
+)
+from .inventario import (
+    InventarioVideo,
+    inventariar,
+    inventariar_video,
+    resumo_inventario,
+    salvar_inventario,
+)
+from .leitor_video import (
+    ErroDeVideo,
+    LeitorVideo,
+    VideoNaoAberto,
+    VideoNaoEncontrado,
+    VideoSemQuadros,
+    criar_video_teste,
+)
+from .metricas import MetricasDeteccao, avaliar_detector, avaliar_pesos
+from .modelos import Caixa, Deteccao, MetadadosVideo, Poligono, Ponto, Quadro
+from .monitor import (
+    EventoAreaCritica,
+    MonitorAreas,
+    Transicao,
+    transicoes_de,
+)
+from .nomes_video import NomeVideo, parsear_nome
+from .pipeline import PipelineAreaCritica, ResultadoPipeline, ResumoExecucao
+from .validacao_dataset import RelatorioValidacao, salvar_relatorio, validar_dataset
+
+__all__ = [
+    "AREA_MINIMA_PADRAO",
+    "CLASSES_EXIGEM_FINETUNING",
+    "CLASSES_INTERESSE_COCO",
+    "CLASSES_MEDICAS",
+    "CLASSES_PADRAO",
+    "CONFIDENCIA_PADRAO",
+    "IOU_NMS_PADRAO",
+    "LIMIAR_IOU_PADRAO",
+    "LIMIAR_MAP_PADRAO",
+    "MODELOS_YOLO_V8",
+    "NOME_RELATORIO_FINE_TUNING",
+    "PROPORCOES_PADRAO",
+    "SEVERIDADE_PADRAO",
+    "SPLITS_PADRAO",
+    "SPLIT_GATE_PADRAO",
+    "VERSAO_MODULO",
+    "Anotacao",
+    "AreaCritica",
+    "AvaliacaoAptidao",
+    "AvaliacaoContencao",
+    "Caixa",
+    "CasamentoDeteccao",
+    "Configuracao",
+    "ConfiguracaoDataset",
+    "ConfiguracaoDetector",
+    "ConfiguracaoEvento",
+    "ConfiguracaoExtracao",
+    "ConfiguracaoFonte",
+    "ConfiguracaoMonitor",
+    "ConfiguracaoVisualizacao",
+    "ConjuntoAreas",
+    "ContextoTraducao",
+    "Deteccao",
+    "Detector",
+    "DetectorFalso",
+    "DetectorYolo",
+    "ErroAnotacao",
+    "ErroDeClasse",
+    "ErroDeConfiguracao",
+    "ErroDeDetector",
+    "ErroDeVideo",
+    "EventoAreaCritica",
+    "FrameExtraido",
+    "GrupoVideo",
+    "InventarioVideo",
+    "LeitorVideo",
+    "ManifestoFrames",
+    "MetadadosVideo",
+    "MetricasClasse",
+    "MetricasDeteccao",
+    "MonitorAreas",
+    "NomeVideo",
+    "PipelineAreaCritica",
+    "Poligono",
+    "PoligonoInvalido",
+    "Ponto",
+    "Predicao",
+    "ProblemaAnotacao",
+    "Quadro",
+    "RegistroFrame",
+    "RelatorioExtracao",
+    "RelatorioValidacao",
+    "ResultadoAvaliacaoDeteccao",
+    "ResultadoFineTuning",
+    "ResultadoGate",
+    "ResultadoPipeline",
+    "ResumoExecucao",
+    "TradutorEventos",
+    "Transicao",
+    "Verdade",
+    "VideoNaoAberto",
+    "VideoNaoEncontrado",
+    "VideoSemQuadros",
+    "agrupar_por_origem",
+    "anotacao_para_caixa",
+    "ap_50",
+    "area_interseccao_caixa_poligono",
+    "areas_de_dados",
+    "avaliar_deteccao",
+    "avaliar_detector",
+    "avaliar_gate",
+    "avaliar_pesos",
+    "carregar_areas",
+    "carregar_verdades",
+    "casar_deteccoes",
+    "classes_medicas_presentes",
+    "criar_estrutura",
+    "criar_video_teste",
+    "escrever_label",
+    "exportar_para_anotacao",
+    "extrair_frames",
+    "extrair_lote",
+    "fracao_da_caixa_dentro",
+    "gerar_data_yaml",
+    "importar_anotacoes",
+    "inventariar",
+    "inventariar_video",
+    "iou",
+    "ler_configuracao_dataset",
+    "ler_label",
+    "ler_predicoes_jsonl",
+    "manifesto_anotacoes",
+    "materializar_divisao",
+    "parsear_nome",
+    "planejar_divisao",
+    "ponto_esta_dentro",
+    "predicoes_de_detector",
+    "resumo_inventario",
+    "salvar_inventario",
+    "salvar_relatorio",
+    "tem_classes_medicas",
+    "transicoes_de",
+    "validar_arquivo_label",
+    "validar_dataset",
+    "validar_fine_tuning",
+    "validar_poligono",
+    "verificar_aptidao",
+]

@@ -1,0 +1,57 @@
+{
+  "audio_id": "consulta-01",
+  "patient_id": "sim-paciente-01",
+  "recorded_at": "2026-10-01T13:00:00Z",
+  "is_synthetic": true,
+  "segments": [
+    {
+      "speaker": "medico",
+      "text": "Bom dia. O que trouxe o senhor aqui hoje?",
+      "offset_ms": 500,
+      "duration_ms": 2665,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "paciente",
+      "text": "Bom dia, doutor. Desde ontem à noite estou com uma dor no peito muito forte, parece um aperto que vai para o braço esquerdo.",
+      "offset_ms": 3615,
+      "duration_ms": 8060,
+      "confidence": 0.885
+    },
+    {
+      "speaker": "medico",
+      "text": "Você sente falta de ar?",
+      "offset_ms": 12125,
+      "duration_ms": 1495,
+      "confidence": 0.91
+    },
+    {
+      "speaker": "paciente",
+      "text": "Sinto, sim. Estou com falta de ar até para falar e piora quando subo escada.",
+      "offset_ms": 14070,
+      "duration_ms": 4940,
+      "confidence": 0.935
+    },
+    {
+      "speaker": "medico",
+      "text": "Teve febre ou tosse?",
+      "offset_ms": 19460,
+      "duration_ms": 1300,
+      "confidence": 0.96
+    },
+    {
+      "speaker": "paciente",
+      "text": "Não tive febre. Estou com muito medo de ser algo grave.",
+      "offset_ms": 21210,
+      "duration_ms": 3575,
+      "confidence": 0.86
+    },
+    {
+      "speaker": "medico",
+      "text": "Vamos fazer um eletrocardiograma agora mesmo.",
+      "offset_ms": 25235,
+      "duration_ms": 2925,
+      "confidence": 0.885
+    }
+  ]
+}
