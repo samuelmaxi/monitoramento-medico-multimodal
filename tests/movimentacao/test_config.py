@@ -65,3 +65,16 @@ def test_recusa_fator_de_agitacao_menor_que_1(bruto):
     dados["baseline"]["agitacao_fator"] = 0.8
     with pytest.raises(ErroDeConfiguracao, match="agitacao_fator"):
         config_de_dict(dados)
+
+
+def test_bloco_video(bruto):
+    cfg = config_de_dict(bruto)
+    assert cfg.video.area_fora_do_leito == "lateral_leito"
+    assert cfg.video.queda_caixa.tempo_max_s > 0
+
+
+def test_recusa_fracao_de_queda_fora_de_0_1(bruto):
+    dados = copy.deepcopy(bruto)
+    dados["video"]["queda_caixa"]["queda_altura_frac"] = 1.5
+    with pytest.raises(ErroDeConfiguracao, match="queda_altura_frac"):
+        config_de_dict(dados)

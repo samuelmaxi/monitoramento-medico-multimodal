@@ -3,7 +3,7 @@
 # Lido por movimentacao/config.py. Nenhum limiar fica no código: mudou um
 # número aqui, suba "versao" (vai em evidence.thresholds de cada evento).
 
-versao: "1.0.0"
+versao: "1.1.0"
 
 # Fuso para separar dia de noite. O MIMIC-IV já vem com datas deslocadas e em
 # UTC; numa câmera real use o fuso do hospital (ex.: America/Sao_Paulo).
@@ -48,3 +48,25 @@ baseline:
 score:
   # Score 0,5 no limiar de imobilidade, 1,0 quando o trecho chega a isto.
   saturacao_imobilidade_min: 240
+
+# Vídeo de leito (US06 pose + US07 áreas + US08 quedas): movimentacao/video.py.
+video:
+  # Uma observação de posição por janela (a posição mais frequente nela), para
+  # o esqueleto não oscilar quadro a quadro.
+  janela_s: 1.0
+  # Inclinação do tronco (pescoço-quadril) em relação à vertical, convenção da
+  # US06: abaixo disto o paciente está sentado/em pé; acima, deitado ou reclinado
+  # (cabeceira elevada a 30-45 graus conta como deitado).
+  inclinacao_sentado_max: 40
+  # Deitado: largura dos ombros / comprimento do tronco abaixo disto = decúbito
+  # lateral (os ombros se sobrepõem na imagem); acima = supino.
+  razao_lateral_max: 0.35
+  # ROI da US07 (config/leito_uti_07.json) que significa paciente fora do leito.
+  area_fora_do_leito: lateral_leito
+  # Segundo sinal de queda (o relatório da US08 mostra recall 0,23 só com pose):
+  # a caixa "person" do YOLOv8 perde altura e fica mais larga que alta, rápido.
+  queda_caixa:
+    queda_altura_frac: 0.4   # altura cai pelo menos 40% da maior altura recente
+    tempo_max_s: 1.0         # dentro deste tempo
+    razao_deitado: 1.0       # e a caixa fica com largura/altura >= isto
+    janela_s: 0.5            # mantido por este tempo

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import time
 from pathlib import Path
 from typing import Any
@@ -65,6 +65,23 @@ class Baseline:
 
 
 @dataclass(frozen=True)
+class QuedaCaixa:
+    queda_altura_frac: float
+    tempo_max_s: float
+    razao_deitado: float
+    janela_s: float
+
+
+@dataclass(frozen=True)
+class Video:
+    janela_s: float
+    inclinacao_sentado_max: float
+    razao_lateral_max: float
+    area_fora_do_leito: str
+    queda_caixa: QuedaCaixa
+
+
+@dataclass(frozen=True)
 class ConfigMovimentacao:
     versao: str
     fuso: ZoneInfo
@@ -75,7 +92,7 @@ class ConfigMovimentacao:
     queda: Queda
     baseline: Baseline
     saturacao_imobilidade_min: float
-    video: Mapping[str, Any] = field(default_factory=dict)
+    video: Video
     fonte: Path | None = None
 
 
@@ -178,6 +195,35 @@ def _baseline(dados: Mapping[str, Any]) -> Baseline:
     return baseline
 
 
+def _video(dados: Mapping[str, Any]) -> Video:
+    chaves = {"janela_s", "inclinacao_sentado_max", "razao_lateral_max", "area_fora_do_leito",
+              "queda_caixa"}
+    b = _bloco(dados, "video", chaves)
+    q = _mapa(_get(b, "queda_caixa", "video"), "video.queda_caixa")
+    extras = set(q) - {"queda_altura_frac", "tempo_max_s", "razao_deitado", "janela_s"}
+    if extras:
+        raise ErroDeConfiguracao(f"chaves desconhecidas em 'video.queda_caixa': {sorted(extras)}")
+
+    def num(bloco: Mapping[str, Any], chave: str, caminho: str) -> float:
+        return _numero(_get(bloco, chave, caminho), f"{caminho}.{chave}")
+
+    frac = num(q, "queda_altura_frac", "video.queda_caixa")
+    if frac >= 1:
+        raise ErroDeConfiguracao(f"'video.queda_caixa.queda_altura_frac' precisa ser < 1 ({frac})")
+    return Video(
+        janela_s=num(b, "janela_s", "video"),
+        inclinacao_sentado_max=num(b, "inclinacao_sentado_max", "video"),
+        razao_lateral_max=num(b, "razao_lateral_max", "video"),
+        area_fora_do_leito=str(_get(b, "area_fora_do_leito", "video")),
+        queda_caixa=QuedaCaixa(
+            queda_altura_frac=frac,
+            tempo_max_s=num(q, "tempo_max_s", "video.queda_caixa"),
+            razao_deitado=num(q, "razao_deitado", "video.queda_caixa"),
+            janela_s=num(q, "janela_s", "video.queda_caixa"),
+        ),
+    )
+
+
 def config_de_dict(dados: Mapping[str, Any], fonte: Path | None = None) -> ConfigMovimentacao:
     dados = _mapa(dados, "raiz")
     permitidas = {
@@ -220,7 +266,7 @@ def config_de_dict(dados: Mapping[str, Any], fonte: Path | None = None) -> Confi
             "score.saturacao_imobilidade_min",
             minimo=imobilidade.limiar_min,
         ),
-        video=_mapa(dados.get("video", {}), "video"),
+        video=_video(dados),
         fonte=fonte,
     )
 
@@ -244,7 +290,9 @@ __all__ = [
     "Imobilidade",
     "Noite",
     "Queda",
+    "QuedaCaixa",
     "SaidaLeito",
+    "Video",
     "carregar_config",
     "config_de_dict",
 ]
