@@ -1,0 +1,50 @@
+# US17 · Limiares das anomalias de movimentação durante a internação.
+#
+# Lido por movimentacao/config.py. Nenhum limiar fica no código: mudou um
+# número aqui, suba "versao" (vai em evidence.thresholds de cada evento).
+
+versao: "1.0.0"
+
+# Fuso para separar dia de noite. O MIMIC-IV já vem com datas deslocadas e em
+# UTC; numa câmera real use o fuso do hospital (ex.: America/Sao_Paulo).
+fuso: "UTC"
+noite: {inicio: "22:00", fim: "06:00"}
+
+# Sem nenhuma observação por mais que isto, o trecho vira "desconhecido": não
+# saber a posição não é o mesmo que o paciente estar imóvel.
+lacuna_max_min: 150
+
+imobilidade:
+  # NPIAP/EPUAP/PPPIA (2019): reposicionar a cada ~2 h para prevenir lesão por
+  # pressão. Dispara quando o trecho sem mudança passa estritamente do limiar.
+  limiar_min: 120
+  severidade: media
+  # Escalonamento: a partir de N minutos, a severidade passa a ser esta.
+  severidade_acima_de_min: {240: alta}
+
+saida_leito:
+  severidade_dia: media
+  severidade_noite: alta
+
+queda:
+  severidade: alta
+  # Quedas de fontes diferentes (pose, caixa da pessoa) a até este intervalo
+  # são a mesma queda: um evento só, com as duas evidências.
+  fusao_janela_s: 5
+
+baseline:
+  # Taxa de movimentação (mudanças de posição + saídas do leito por hora) das
+  # últimas janela_atual_h comparada à mediana das taxas horárias das janela_h
+  # anteriores, do próprio paciente.
+  janela_h: 24
+  janela_atual_h: 6
+  # Com menos histórico observado que isto, não há baseline: nada é emitido.
+  baseline_min_h: 12
+  minimo_eventos_baseline: 3
+  agitacao_fator: 2.0
+  reducao_fator: 0.5
+  severidade: media
+
+score:
+  # Score 0,5 no limiar de imobilidade, 1,0 quando o trecho chega a isto.
+  saturacao_imobilidade_min: 240
