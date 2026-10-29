@@ -45,6 +45,7 @@ Quando a etapa diz "nenhum", o código roda localmente, sem serviço de nuvem.
 | **2 · Sentimento** | Azure | **Azure AI Language**: análise de sentimento | Sentimento por documento e por sentença, em português, na mesma chamada | US13 |
 | **2 · Sinais vitais** | Local | nenhum | Limpeza de artefatos (SpO2 = 0, FC > 300) e janela deslizante por paciente | US15 |
 | **2 · Prescrições** | Local | nenhum | Ordenação por paciente e normalização de unidades | US16 |
+| **2 · Movimentação** | Local | nenhum | Série de movimentação por paciente (posição, saídas do leito, quedas, dia/noite) a partir da pose (US06), das áreas (US07) e do registro de enfermagem do MIMIC-IV Demo (`Position`/`Turn`/`Activity`) | US17 |
 | **3 · Detecção** | Local | nenhum | Regras e ML em Python: NEWS2 + Isolation Forest, regras ISMP/dose, postura/área crítica, imobilidade, classes vocais, termos críticos | US08, US13–US17 |
 | **Barramento** | Local | nenhum | `BarramentoLocal`: valida cada evento, grava em `saida/eventos.jsonl` e entrega em ordem a quem assinou | US04 |
 | **4 · Fusão** | Local | nenhum | *Late fusion* ponderada por paciente e janela; assina `modality ≠ fusao` | US18 |

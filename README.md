@@ -33,7 +33,8 @@ sistema.
 │   ├── get_content_script.py  # Download dos conteúdos do Google Drive
 │   ├── rodar_us07_video.py   # Executa pipeline de detecção de vídeo
 │   ├── avaliar_us07.py       # Avalia YOLO em dataset anotado
-│   └── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
+│   ├── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
+│   └── avaliar_us17.py       # Recall de quedas (vídeo) e casos injetados de movimentação (US17)
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
@@ -372,6 +373,48 @@ confiável, o JSONL recebe um `sem_achados`.
 Rastreabilidade ao DoD, protocolo e resultados da avaliação:
 [`docs/relatorio_us08_dod.md`](docs/relatorio_us08_dod.md). Testes:
 `uv run pytest tests/video/test_desvios.py`.
+
+### US17 — anomalias nos padrões de movimentação durante a internação
+
+Pacote [`movimentacao/`](movimentacao/). Monta uma **série de movimentação por
+paciente** (posição no leito, saídas do leito, quedas, período dia/noite) a
+partir de duas fontes:
+
+- **vídeo de leito**: lê a pose da US06, os eventos de área crítica da US07 e as
+  quedas da US08, e roda o YOLOv8 da US07 para a queda pela caixa da pessoa;
+- **registro de enfermagem do MIMIC-IV Demo** (`Position`, `Turn` e `Activity`
+  do `chartevents`), com séries de dias.
+
+Sobre a série, calcula tempo sem mudança de posição, reposicionamentos por hora
+e saídas do leito, e aplica os limiares de
+[`config/us17_movimentacao.yaml`](config/us17_movimentacao.yaml):
+
+| Regra | `event_type` | Severidade |
+| --- | --- | --- |
+| sem mudança de posição por > 2 h (NPIAP/EPUAP), limiar configurável | `imobilidade_prolongada` | média (alta a partir de 4 h) |
+| saída do leito | `saida_do_leito` | alta à noite (22h-6h), média de dia |
+| queda | `queda` | alta |
+| movimentação ≥ 2x a baseline do próprio paciente | `agitacao_subita` | média |
+| movimentação ≤ 0,5x a baseline do próprio paciente | `reducao_mobilidade` | média |
+
+```bash
+# MIMIC-IV Demo (precisa de PSEUDONYM_KEY no ambiente: uv run --env-file .env ...)
+uv run python -m movimentacao.run baixar
+uv run --env-file .env python -m movimentacao.run mimic
+uv run --env-file .env python -m movimentacao.run mimic --stay-id 32604416
+
+# Vídeo de leito (qualquer combinação de --pose, --areas, --desvios e --video)
+uv run --env-file .env python -m movimentacao.run video --paciente 1 \
+  --inicio-utc 2026-10-05T23:00:00Z --video conteudos/videos/B_D_0002.mp4
+
+# Avaliação: quedas em vídeo rotulado + casos injetados em séries reais
+uv run python scripts/avaliar_us17.py
+```
+
+Saídas em `saida/movimentacao/`: `<nome>_eventos.jsonl` (contrato da US04) e
+`<nome>_relatorio.json` (métricas da série e achados por tipo). Rastreabilidade
+ao DoD e resultados: [`docs/relatorio_us17_dod.md`](docs/relatorio_us17_dod.md).
+Testes: `uv run pytest tests/movimentacao`.
 
 ## Transcrição de consultas com Azure AI Speech (US11)
 
