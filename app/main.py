@@ -3,14 +3,7 @@ from fastapi import FastAPI
 
 load_dotenv()
 
-from app.routers import (  # noqa: E402
-    audio_analysis,
-    sentiment,
-    text_analysis,
-    transcription,
-    video_areas,
-    video_pose,
-)
+from app.routers import sentiment, sinais_vitais, transcription, video_pose  # noqa: E402
 
 app = FastAPI(
     title="Monitoramento Médico Multimodal - API",
@@ -26,7 +19,7 @@ app.include_router(sentiment.router)
 app.include_router(text_analysis.router)
 app.include_router(audio_analysis.router)
 app.include_router(video_pose.router)
-app.include_router(video_areas.router)
+app.include_router(sinais_vitais.router)
 
 
 @app.get("/health")

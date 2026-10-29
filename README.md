@@ -22,8 +22,10 @@ sistema.
 │       ├── text_analysis.py       # POST /text/analysis (US13)
 │       ├── audio_analysis.py      # POST /audio/analysis (áudio → US11 → US13)
 │       ├── sentiment.py            # POST /sentiment
-│       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
-│       └── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
+│       ├── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+│       └── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
+├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
+├── dados/                     # MIMIC-IV Demo baixado por script (gitignored)
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
 │   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
@@ -31,9 +33,13 @@ sistema.
 ├── conteudos/                 # Conteúdos baixados do Google Drive (gitignored)
 ├── scripts/
 │   ├── get_content_script.py  # Download dos conteúdos do Google Drive
-│   ├── rodar_us07_video.py   # Executa pipeline de detecção de vídeo
-│   ├── avaliar_us07.py       # Avalia YOLO em dataset anotado
-│   └── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
+│   ├── download_openpose_models.sh  # Pesos do OpenPose com checksum (US06)
+│   ├── baixar_sinais.py       # Download do MIMIC-IV Demo (US15)
+│   ├── demo_us15.py           # Roda e confere cada item da DoD da US15
+│   ├── rodar_us15.py          # Replay em tempo real dos sinais vitais (US15)
+│   └── avaliar_us15.py        # Avaliação com anomalias injetadas (US15)
+├── video/
+│   └── pose/                  # Análise postural com OpenPose (US06)
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
@@ -96,7 +102,7 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `TRANSCRIPTION_OUTPUT_DIR`        | Não                              | Pasta das transcrições (JSON e áudio de origem). Padrão: `saida/transcricao`.                                                | `saida/transcricao`                                                                    |
 | `AZURE_STORAGE_CONNECTION_STRING` | Não (não usada pela transcrição) | Connection string do Azure Blob Storage. Não é mais usada pela transcrição (US11), que envia o áudio direto na requisição.  | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
 | `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
-| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e `POST /video/areas-criticas` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e `POST /sinais-vitais/medicoes` quando `patient_id`/`encounter_id` não chegam já pseudonimizados, e pelos scripts da US15. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
 | `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose` e `POST /video/areas-criticas`. Padrão: `500`.                         | `500`                                                                                  |
 | `US07_CONFIG_PATH`                | Não                              | Config da US07 usada pela API quando o `POST` não informa `camera_id`. Padrão: `config/exemplo_us07.json`.                   | `config/exemplo_us07.json`                                                             |
@@ -564,9 +570,8 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/pose/{job_id}/feedback`  | Resultado em linguagem natural: resumo, pontos positivos, negativos e de alerta.                                                            |
 | `GET`  | `/video/pose/{job_id}/keypoints` | Baixa o JSON de pose por quadro (mesmo formato de `outputs/pose/<video_id>.json`).                                                          |
 | `GET`  | `/video/pose/{job_id}/angles`    | Baixa o CSV de ângulos por quadro.                                                                                                          |
-| `POST` | `/video/areas-criticas`          | Recebe um vídeo (`video_file`) e enfileira a detecção YOLOv8 + ROIs (US07). Responde `202` com o `job_id`.                                  |
-| `GET`  | `/video/areas-criticas/{job_id}` | Status do job, parâmetros usados (conf, IoU, classes, ROIs) e resumo (quadros, detecções, entradas, saídas).                                |
-| `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
+| `POST` | `/sinais-vitais/news2`           | Recebe um conjunto de sinais vitais e devolve os pontos NEWS2 por parâmetro, o total e o gatilho (US15).                                   |
+| `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados. A baseline de cada paciente é mantida entre chamadas (US15).          |
 
 Exemplos com `curl`:
 
@@ -591,12 +596,13 @@ curl http://127.0.0.1:8000/video/pose/<job_id>
 curl http://127.0.0.1:8000/video/pose/<job_id>/feedback
 curl -O http://127.0.0.1:8000/video/pose/<job_id>/angles
 
-curl -X POST http://127.0.0.1:8000/video/areas-criticas \
-  -F "video_file=@conteudos/videos/B_D_0016.mp4" \
-  -F "camera_id=leito_uti_07" -F "recorded_at=2026-10-05T19:00:00Z"
+curl -X POST http://127.0.0.1:8000/sinais-vitais/news2 \
+  -H "Content-Type: application/json" \
+  -d '{"fc": 115, "spo2": 93, "fr": 22, "temp": 38.5, "pas": 120}'
 
-curl http://127.0.0.1:8000/video/areas-criticas/<job_id>
-curl http://127.0.0.1:8000/video/areas-criticas/<job_id>/eventos
+curl -X POST http://127.0.0.1:8000/sinais-vitais/medicoes \
+  -H "Content-Type: application/json" \
+  -d '{"medicoes": [{"patient_id": "10000032", "timestamp": "2026-10-24T08:00:00Z", "sinal": "fc", "valor": 135}]}'
 ```
 
 ### Análise de pose pela API (`/video/pose`)
@@ -834,123 +840,120 @@ Os vídeos clínicos de treino vêm do dataset **REHAB24-6** (fisioterapia), que
 
 Para uso comercial, entre em contato com a VisionCraft pelo e-mail info@visioncraft.ai.
 
-## Termos críticos e sentimento nas transcrições (US13)
+## Anomalias em sinais vitais (US15)
 
-Lê as transcrições diarizadas da US11, envia **só as falas do paciente** ao Azure AI Language e emite eventos no contrato da US04 (`modality="texto"`):
+Módulo em `sinais/` que detecta anomalias nas séries de frequência cardíaca,
+pressão arterial (sistólica e diastólica), SpO2, frequência respiratória e
+temperatura de cada paciente. Roda local, só com numpy e pandas. Não usa o
+Azure AI Anomaly Detector, que foi aposentado em 01/10/2026.
 
-- **Text Analytics for health** extrai sintomas, medicamentos, dosagens e diagnósticos, com categoria, confiança, nome normalizado e asserções.
-- Um **filtro de asserção** descarta negações, sintomas de terceiros e hipóteses, e rebaixa o histórico passado.
-- As entidades que restam são comparadas com a lista versionada de termos críticos.
-- O **sentimento** é calculado por sentença e resumido por consulta.
+Cada medição passa por três etapas, uma de cada vez, como num stream:
 
-A fala do médico ("você sente falta de ar?") não é enviada à Azure e nunca gera achado. Ela só entra como contexto, em `pergunta_medico` na evidência.
+1. **Limpeza.** Valores fisiologicamente impossíveis (SpO2 = 0, FC > 300 etc.)
+   são descartados e contados. Um valor ausente não é interpolado: o último
+   válido continua valendo por um prazo (2 h para FC, PA, SpO2 e FR; 6 h para
+   temperatura; 8 h para O2 e consciência). Depois disso o parâmetro fica de
+   fora e o evento sai marcado como `news2_parcial`.
+2. **Regras clínicas (NEWS2, RCP 2017).** Pontos por parâmetro e total.
+   Total 5–6 ou 3 pontos em um parâmetro gera `news2_resposta_urgente`;
+   total ≥ 7 gera `news2_emergencia`.
+3. **ML não supervisionado.** Compara cada sinal com a baseline do próprio
+   paciente. A mudança súbita (`desvio_baseline`) usa um z-score robusto
+   (mediana/MAD das últimas 12 h). A tendência (`tendencia_deterioracao`) usa
+   a inclinação de uma reta nas últimas 6 h.
 
-**Do áudio aos eventos**: a entrada é o JSON da US11, transcrito com `--medico-falante` (é ele que separa a fala do paciente), `--patient-id` e `--recorded-at`. Pela API, `POST /audio/analysis` faz as duas etapas numa chamada.
+Os achados seguem o contrato `EventoAchado` (`contratos/`), com `modality`
+`sinais_vitais` e o paciente pseudonimizado.
+
+```
+sinais/
+├── limpeza.py      # Faixas fisiológicas e validade do último valor
+├── news2.py        # Tabela NEWS2, pontos por parâmetro, total e gatilhos
+├── detector.py     # DetectorSinais.processar(medicao): estado por paciente e janelas deslizantes
+├── mimic.py        # Leitura do chartevents do MIMIC-IV Demo
+└── avaliacao.py    # Injeção de anomalias rotuladas e matriz de confusão
+```
+
+As regras de limpeza e as decisões de projeto estão em
+[`docs/arquitetura/us15_sinais_vitais.md`](docs/arquitetura/us15_sinais_vitais.md).
+A rastreabilidade de cada item da DoD está em
+[`docs/relatorio_us15_dod.md`](docs/relatorio_us15_dod.md).
+
+### Dados
+
+São 100 pacientes de UTI do **MIMIC-IV Clinical Database Demo 2.2** (PhysioNet,
+acesso aberto, cerca de 77 mil medições). Os dados ficam fora do Git, em
+`dados/mimic-iv-demo/`:
 
 ```bash
-pip install -r audio/requirements.txt         # ou uv sync
-python scripts/transcrever.py consulta_01.wav --medico-falante 1 --patient-id 10000032 --recorded-at 2026-10-01T13:00:00Z
-python -m audio.text.run --input saida/transcricao/consulta_01.json --config audio/text/config.yaml
-python -m audio.text.run --input data/text_samples --config audio/text/config.yaml   # amostras simuladas
-python scripts/eval_us13.py                   # recall/precision/F1 → outputs/text_analysis/eval.md
-python -m contratos.validar outputs/text_analysis/consulta-*.json
-curl -X POST localhost:8000/text/analysis -H 'Content-Type: application/json' --data @data/text_samples/consulta-07.json   # pela API
-pytest audio/tests                            # API mockada, sem rede
+uv run python scripts/baixar_sinais.py
 ```
 
-| Arquivo | Conteúdo |
-| --- | --- |
-| `audio/text/config.yaml` | Idiomas, limites e lotes do serviço, retry, cache, rótulos de falante, marcadores de passado e limiar de sentimento |
-| `audio/text/critical_terms.yaml` | Lista versionada de 15 termos críticos: nome canônico, sinônimos em pt-BR, nomes normalizados (UMLS), categorias e severidade |
-| `audio/text/alerts.py` | **Stub** do motor de alertas: assina o barramento e só registra no log os eventos de severidade alta. Será trocado pela US19 |
-| `data/text_samples/` | 15 consultas simuladas, com negações, sintomas de terceiros, hipóteses e histórico passado de propósito, e o `annotations.csv` |
+### Como rodar
 
-**Variáveis de ambiente**
+`PSEUDONYM_KEY` precisa estar no `.env` (veja [Variáveis de ambiente](#variáveis-de-ambiente)).
 
-| Variável | Uso |
-| --- | --- |
-| `AZURE_LANGUAGE_ENDPOINT` | Endpoint do recurso Azure AI Language (`terraform output language_endpoint`) |
-| `AZURE_LANGUAGE_KEY` | Chave do recurso. Só por variável de ambiente; nunca no código ou no config |
-| `PSEUDONYM_KEY` | Pseudonimiza o `patient_id` da transcrição (contrato da US04) |
-| `EVENTOS_JSONL` | Barramento local onde os eventos são publicados. Padrão: `saida/eventos.jsonl` |
-| `TEXT_CONFIG_PATH` | Config usado pela rota `POST /text/analysis`. Padrão: `audio/text/config.yaml` |
+```bash
+# Confere todos os itens da DoD no terminal (ou só alguns: news2 gatilhos ml ...)
+uv run python scripts/demo_us15.py
 
-**Códigos de idioma**
+# Replay em "tempo real": 1 h de dados por segundo; Ctrl+C para parar
+uv run python scripts/rodar_us15.py --pacientes 3 --velocidade 3600
 
-| Serviço | Código | Por quê |
-| --- | --- | --- |
-| Text Analytics for health | `pt` | É o único código de português que o serviço aceita; não existe variante `pt-BR` |
-| Análise de sentimento | `pt-BR` | No sentimento, `pt` é interpretado como **pt-PT**. Para o português do Brasil é preciso pedir `pt-BR` explicitamente |
+# Replay completo sem espera; eventos em saida/sinais/eventos_us15.jsonl
+uv run python scripts/rodar_us15.py
 
-**Limites do serviço**: até 5.120 caracteres por documento. Falas mais longas são divididas por sentença; uma sentença maior que isso é cortada no último espaço. O sentimento aceita até 10 documentos por requisição e o health até 25. Os offsets devolvidos pelo serviço são remapeados para a posição na fala original.
+# Avaliação (cerca de 1,5 min): saida/sinais/relatorio_us15.json e rotulos_us15.csv
+uv run python scripts/avaliar_us15.py
 
-**Erros**: HTTP 429 (e 5xx transitório) tem retry exponencial (1 s, 2 s, 4 s…, até `azure.retry.max_delay_s`), e o `Retry-After` do serviço tem precedência. HTTP 401 e 403 interrompem o lote com uma mensagem que aponta a causa provável. O retry interno do SDK fica desligado, para haver uma política só, visível no log.
-
-**Cache**: cada resposta fica em `saida/cache_azure/language/`, com o hash de operação, idioma, versão do modelo e texto como chave. Rodar de novo, regravar o vídeo ou ajustar limiares não repete chamadas à Azure. Apague a pasta para forçar uma nova análise.
-
-**Filtro de asserção** (cada descarte é registrado no log e em `detalhes/<audio_id>.json` com o motivo):
-
-| Asserção | Exemplo | Decisão |
-| --- | --- | --- |
-| certeza `negative` ou `negative_possible` | "nego dor no peito" | descarta |
-| associação `other` | "meu pai teve infarto" | descarta |
-| condicionalidade `hypothetical` ou `conditional` | "se a falta de ar piorar" | descarta |
-| temporalidade `past` | "há cinco anos tive uma convulsão" | mantém, com a severidade um nível abaixo (alta → media → baixa → info) |
-
-> **Temporalidade:** a API GA (`2023-04-01`, usada pelo `azure-ai-textanalytics` 5.3.0) devolve certeza, condicionalidade e associação, mas **não** temporalidade. O cliente lê `temporality` da resposta crua, caso o serviço passe a devolvê-la. Enquanto isso não acontece, a sentença da entidade é comparada com os marcadores de passado de `assertions.past_markers` (ex.: "há N anos", "já tive", "ano passado"). A origem de cada decisão fica em `temporalidade_fonte` (`servico` ou `regra_local`).
-
-**Casamento com a lista**: a categoria da entidade precisa estar entre as do termo. Além disso, o nome normalizado precisa coincidir com um dos `normalized`, ou o texto da entidade precisa conter um dos sinônimos como palavra inteira. Caixa e acentos são ignorados. Um termo repetido na consulta gera um único evento, com `ocorrencias`.
-
-**Sentimento**: uma sentença é negativa quando o score negativo é ≥ `sentiment.negative_threshold` (0,7). A consulta é predominantemente negativa quando a fração de sentenças negativas do paciente é ≥ `sentiment.min_negative_ratio` (0,5). Nesse caso sai um evento `sentimento_negativo` (severidade `baixa`) com o score médio como `score`.
-
-**Saída**
-
-| Caminho | Conteúdo |
-| --- | --- |
-| `outputs/text_analysis/<audio_id>.json` | Lista de `EventoAchado`: `termo_critico`, `sentimento_negativo` ou `sem_achados` |
-| `outputs/text_analysis/detalhes/<audio_id>.json` | Todas as entidades com asserções e decisão, os descartes com motivo e o sentimento por sentença com os três scores e o resumo da consulta |
-| `outputs/text_analysis/run.log` | Log do lote, incluindo o motivo de cada descarte |
-| `saida/eventos.jsonl` | Barramento local; o stub de alertas recebe daqui os eventos de severidade alta |
-
-Formato de um evento `termo_critico` (resumido e com valores ilustrativos; o exemplo real da rodada fica no `eval.md`):
-
-```json
-{
-  "modality": "texto",
-  "event_type": "termo_critico",
-  "score": 0.97,
-  "severity": "alta",
-  "evidence": {
-    "summary": "Paciente relata dor torácica: “dor no peito” (afirmado, sem negação)",
-    "features": {
-      "termo": "dor torácica", "texto": "dor no peito", "categoria": "SymptomOrSign",
-      "nome_normalizado": "Chest Pain", "confianca": 0.97,
-      "certeza": "positive", "condicionalidade": null, "associacao": "subject",
-      "temporalidade": null, "rebaixada": false, "falante": "paciente", "offset_ms": 6512,
-      "trecho": "Desde ontem à noite estou com uma dor no peito muito forte, ...",
-      "pergunta_medico": "Bom dia. O que trouxe o senhor aqui hoje?"
-    },
-    "models": {"azure-text-analytics-for-health": "<modelVersion>", "idioma-health": "pt", "idioma-sentimento": "pt-BR"},
-    "artifacts": [{"kind": "transcricao", "uri": "data/text_samples/consulta-01.json", "start_ms": 3615, "end_ms": 11675}]
-  },
-  "model_version": "texto-nlp@0.1.0"
-}
+# Testes
+uv run pytest tests/sinais
 ```
 
-**Formatos de transcrição aceitos**. O principal é o JSON da US11 (seção acima): cada fala vira um segmento e o falante é o `papel`. Sem `medico_falante` não há papel, e a leitura falha em vez de mandar a fala do médico para a análise. Uma fala sem falante na diarização é registrada no log e ignorada. `audio_id`, `patient_id` e `recorded_at` são obrigatórios nos dois formatos; `recorded_at` + `offset_ms` dá o `timestamp` UTC que o contrato exige. O segundo é o formato compacto das amostras simuladas (`data/text_samples/`):
+Pelo código:
 
-```json
-{
-  "audio_id": "consulta-01",
-  "patient_id": "sim-paciente-01",
-  "recorded_at": "2026-10-01T13:00:00Z",
-  "segments": [{"speaker": "paciente", "text": "...", "offset_ms": 3615, "duration_ms": 8060, "confidence": 0.89}]
-}
+```python
+from datetime import UTC, datetime
+from sinais import DetectorSinais, Medicao, news2
+
+news2.calcular({"fc": 115, "spo2": 93, "fr": 22, "temp": 38.5}).gatilho   # 'news2_emergencia'
+
+detector = DetectorSinais()
+eventos = detector.processar(Medicao("pt_" + "0" * 24, datetime.now(UTC), "fc", 135))
 ```
 
-**API**: `POST /text/analysis` recebe a transcrição em qualquer dos dois formatos e devolve os eventos (com `?detalhes=true`, também entidades, descartes e sentimento). Rotas, códigos de erro e a coleção Postman estão em `postman/README.md`.
+A API expõe o mesmo detector em `POST /sinais-vitais/news2` e
+`POST /sinais-vitais/medicoes` (veja [Endpoints](#endpoints)). O estado das
+baselines fica na memória do processo: é perdido quando a API reinicia e não é
+compartilhado entre workers.
 
-**Avaliação**: `scripts/eval_us13.py` compara, por consulta, os termos anotados em `data/text_samples/annotations.csv` com os eventos `termo_critico`. Ele grava em `eval.md` a precision, o recall, o F1, os falsos positivos e os falsos negativos (com o motivo de cada um) e os descartes corretos, além de um exemplo de termo detectado e um de negação ignorada para o relatório.
+### Avaliação
+
+O MIMIC não tem anomalias rotuladas. Por isso a avaliação injeta degraus e
+rampas de piora (FC +30 bpm, PAS −30 mmHg, SpO2 −6 % etc.) em metade das janelas
+de 6 h de cada paciente e marca essas janelas. Os limiares foram ajustados nos
+pacientes de `subject_id` par. As métricas abaixo são as dos ímpares:
+
+|                       | Predito anomalia | Predito normal |
+| --------------------- | ---------------: | -------------: |
+| **Anomalia injetada** |             1264 |            244 |
+| **Normal**            |              574 |            842 |
+
+| Métrica  | Teste | Meta   |
+| -------- | ----: | ------ |
+| Recall   | 0,838 | ≥ 0,80 |
+| Precisão | 0,688 | —      |
+| F1       | 0,756 | ≥ 0,70 |
+
+Os falsos positivos incluem variações reais dos pacientes de UTI, que não têm
+rótulo. A precisão medida é, portanto, um limite inferior.
+
+### Licença dos dados
+
+O MIMIC-IV Clinical Database Demo é distribuído pelo PhysioNet sob a
+[Open Data Commons Open Database License v1.0](https://physionet.org/content/mimic-iv-demo/view-license/2.2/).
+Ao usar os dados, cite o dataset conforme a
+[página do PhysioNet](https://physionet.org/content/mimic-iv-demo/2.2/).
 
 ## Demo ponta a ponta
 

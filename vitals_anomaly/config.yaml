@@ -1,0 +1,58 @@
+# Configuração da US15 — detecção de anomalias em sinais vitais.
+# Caminhos relativos são resolvidos a partir do diretório onde o comando é
+# executado (a raiz do repositório). As decisões por trás de cada valor estão
+# em docs/US15_decisoes.md.
+
+sources:
+  eicu:
+    # eICU Collaborative Research Database Demo v2.0.1 (PhysioNet, ODbL 1.0).
+    # Baixado por scripts/download_data.py; não versionado.
+    base_url: https://physionet.org/files/eicu-crd-demo/2.0.1/
+    data_dir: data/eicu-crd-demo
+    files:
+      periodic: vitalPeriodic.csv.gz
+      aperiodic: vitalAperiodic.csv.gz
+      patient: patient.csv.gz
+    # O eICU só publica offsets em minutos desde a admissão na unidade (datas
+    # desidentificadas). O timestamp canônico é
+    #   anchor_date + hora de admissão na unidade (unitadmittime24) + offset,
+    # o que preserva a hora do dia (importante para o ritmo circadiano).
+    anchor_date: "2014-01-01"
+    # Prefixo do patient_id canônico (o id é o patientunitstayid, uma internação na UTI).
+    patient_id_prefix: eicu_
+    # Temperaturas dentro desta faixa são tratadas como °F e convertidas para °C.
+    # Fora dela o valor é mantido em °C (sem descarte: limpeza de artefatos é de
+    # outra etapa).
+    fahrenheit_range: [86.0, 113.0]
+
+  synthetic:
+    seed: 42
+    n_patients: 20
+    duration_hours: 48
+    freq_minutes: 5
+    # Início da série (UTC). Todos os pacientes começam no mesmo instante.
+    start: "2026-01-01T00:00:00Z"
+    # Fração de pacientes com O2 suplementar durante toda a série.
+    o2_supplemental_prob: 0.2
+    # Fração de amostras apagadas ao acaso (MCAR), por sinal, para exercitar
+    # o tratamento de faltantes. 0 desliga.
+    missing_rate: 0.02
+    # Hora do dia (0-24) do pico do componente circadiano (cos).
+    circadian_peak_hour: 16.0
+    # Por sinal:
+    #   baseline_mean/baseline_sd: distribuição entre pacientes do valor de repouso;
+    #   circadian_amplitude: amplitude do componente diário (mesma unidade do sinal);
+    #   ar_phi/ar_sd: ruído fisiológico autocorrelacionado AR(1) por amostra;
+    #   noise_sd: ruído de medição (branco);
+    #   min/max: limites físicos aplicados após a soma;
+    #   resolution: resolução de exibição do monitor (arredondamento).
+    vitals:
+      hr:   {baseline_mean: 78.0,  baseline_sd: 10.0, circadian_amplitude: 5.0,  ar_phi: 0.9,  ar_sd: 1.5,  noise_sd: 1.5,  min: 20.0, max: 250.0, resolution: 1.0}
+      sbp:  {baseline_mean: 122.0, baseline_sd: 12.0, circadian_amplitude: 6.0,  ar_phi: 0.9,  ar_sd: 2.0,  noise_sd: 3.0,  min: 40.0, max: 280.0, resolution: 1.0}
+      dbp:  {baseline_mean: 74.0,  baseline_sd: 8.0,  circadian_amplitude: 4.0,  ar_phi: 0.9,  ar_sd: 1.2,  noise_sd: 2.0,  min: 20.0, max: 180.0, resolution: 1.0}
+      spo2: {baseline_mean: 97.0,  baseline_sd: 1.2,  circadian_amplitude: 0.3,  ar_phi: 0.8,  ar_sd: 0.4,  noise_sd: 0.6,  min: 50.0, max: 100.0, resolution: 1.0}
+      rr:   {baseline_mean: 16.0,  baseline_sd: 2.5,  circadian_amplitude: 1.0,  ar_phi: 0.85, ar_sd: 0.6,  noise_sd: 0.8,  min: 4.0,  max: 60.0,  resolution: 1.0}
+      temp: {baseline_mean: 36.8,  baseline_sd: 0.25, circadian_amplitude: 0.3,  ar_phi: 0.97, ar_sd: 0.03, noise_sd: 0.05, min: 30.0, max: 43.0,  resolution: 0.1}
+    # Correlação do baseline e do ruído AR(1) entre sistólica e diastólica
+    # (as duas sobem e descem juntas).
+    bp_coupling: 0.6

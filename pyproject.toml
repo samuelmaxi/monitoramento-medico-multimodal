@@ -33,7 +33,7 @@ dev = [
     "httpx>=0.28.1",
     "jsonschema>=4.23.0",
     "pytest>=9.1.1",
-    "ruff>=0.14.10",
+    "rich>=15.0.0",
 ]
 
 [tool.pytest.ini_options]

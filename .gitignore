@@ -257,4 +257,17 @@ saida/video/*
 *.caffemodel
 uv.lock
 terraform/.terraform.lock.hcl
+uv.lock
+
+# Saídas do pipeline de vídeo
+/saida/
+/saida/relatorio_us15.json
 dataset_medico/
+
+# Dataset construído pela US07 (frames, labels e treinos gerados localmente)
+/dataset_us07/
+/anotavel/
+runs/
+.agents
+# Sinais vitais (US15): MIMIC-IV Demo baixado por script
+/dados/
