@@ -113,9 +113,10 @@ def _imobilidade(serie, cfg: ConfigMovimentacao, ate) -> list[Anomalia]:
                 thresholds={
                     "limiar_min": regra.limiar_min,
                     "lacuna_max_min": cfg.lacuna_max_min,
-                    "severidade_acima_de_min": {
-                        str(int(k)): v.value for k, v in regra.severidade_acima_de_min.items()
-                    },
+                    # O contrato só aceita escalares em thresholds: "240:alta; 360:..."
+                    "severidade_acima_de_min": "; ".join(
+                        f"{k:g}:{v.value}" for k, v in regra.severidade_acima_de_min.items()
+                    ),
                 },
             )
         )

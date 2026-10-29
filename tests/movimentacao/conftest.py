@@ -19,3 +19,12 @@ def obs(hhmm: str, posicao: Posicao, dia: int = 1, fonte: str = "teste", **kw) -
 @pytest.fixture(scope="session")
 def cfg():
     return carregar_config()
+
+
+CHAVE_TESTE = "chave-de-teste-com-mais-de-32-bytes-000000"
+
+
+@pytest.fixture
+def chave(monkeypatch):
+    monkeypatch.setenv("PSEUDONYM_KEY", CHAVE_TESTE)
+    return CHAVE_TESTE
