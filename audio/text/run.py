@@ -10,14 +10,15 @@ Para cada transcrição grava ``<output.dir>/<audio_id>.json`` (lista de
 ``EventoAchado``, valida com ``python -m contratos.validar``) e
 ``<output.details_dir>/<audio_id>.json`` (entidades, asserções, descartes e
 sentimento por sentença). Os eventos também são publicados no barramento local
-(``EVENTOS_JSONL``, padrão ``saida/eventos.jsonl``), onde o stub de alertas
-recebe os de severidade alta. Uma transcrição com erro é registrada no log e o
+(``EVENTOS_JSONL``, padrão ``saida/eventos.jsonl``). O motor de alertas (US19)
+recebe os de severidade baixa ou acima e envia os alertas ao fim do lote. Uma transcrição com erro é registrada no log e o
 lote segue; erro de credencial interrompe o lote.
 """
 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import sys
@@ -27,9 +28,9 @@ from typing import Iterable, Optional
 
 from dotenv import load_dotenv
 
+from alertas import ConfigAlertas, construir
 from contratos import BarramentoLocal
 
-from .alerts import assinar_alertas
 from .analyze import analyze_transcript
 from .config import OutputConfig, TextConfig, load_config
 from .language_client import LanguageAuthError, LanguageClient
@@ -101,7 +102,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     barramento = BarramentoLocal.do_ambiente()
-    assinar_alertas(barramento)
+    servico = construir(ConfigAlertas.from_env())
+    servico.assinar(barramento)
     matcher = TermMatcher(config.critical_terms)
     log.info("termos críticos v%s (%d termos); health=%s, sentimento=%s; eventos em %s",
              config.critical_terms.version, len(config.critical_terms.terms),
@@ -125,6 +127,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         _gravar_json(config.output.details_dir / f"{resultado.audio_id}.json", resultado.details)
         total_eventos += len(resultado.events)
 
+    asyncio.run(servico.processar_pendentes())
     for falha in barramento.falhas:
         log.error("assinante %s falhou no evento %s: %s", falha.assinante, falha.event_id, falha.erro)
     log.info("concluído: %d transcrição(ões), %d com erro, %d evento(s); requisições à Azure: %s",

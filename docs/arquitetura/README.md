@@ -48,7 +48,7 @@ Quando a etapa diz "nenhum", o código roda localmente, sem serviço de nuvem.
 | **3 · Detecção** | Local | nenhum | Regras e ML em Python: NEWS2 + Isolation Forest, regras ISMP/dose, postura/área crítica, imobilidade, classes vocais, termos críticos | US08, US13–US17 |
 | **Barramento** | Local | nenhum | `BarramentoLocal`: valida cada evento, grava em `saida/eventos.jsonl` e entrega em ordem a quem assinou | US04 |
 | **4 · Fusão** | Local | nenhum | *Late fusion* ponderada por paciente e janela; assina `modality ≠ fusao` | US18 |
-| **5 · Alerta** | Local + Azure | **Azure Communication Services Email** | Motor de alertas (prioridade IEC 60601-1-8, dedup, escalonamento) assina `severity ≥ media`, envia e-mail à lista `ALERTA_DESTINATARIOS` e grava o log em `saida/alertas.jsonl` | US19 |
+| **5 · Alerta** | Local (+ Azure na fase 7) | SMTP (Gmail/Brevo) e webhook Teams/Slack; Azure Communication Services Email como adaptador futuro | Motor de alertas agnóstico de modalidade: assina o barramento com `severity ≥ baixa` (`info` nunca alerta), prioridade alta/média/baixa (IEC 60601-1-8), dedup por janela, escalonamento por persistência, retentativa e reconhecimento. Grava `saida/alertas.jsonl` e a auditoria. Detalhes em [`docs/relatorio_us19_dod.md`](../relatorio_us19_dod.md) | US19 |
 
 ### Recursos a criar
 

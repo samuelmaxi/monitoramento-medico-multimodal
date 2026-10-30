@@ -2,8 +2,8 @@
 
 A análise é síncrona: uma consulta leva alguns segundos no Azure AI Language
 (o health é assíncrono do lado da Azure, mas o cliente espera o resultado). Os
-eventos também são publicados no barramento local (``EVENTOS_JSONL``), onde o
-stub de alertas recebe os de severidade alta, como em ``audio.text.run``.
+eventos também são publicados no barramento local compartilhado (``EVENTOS_JSONL``),
+onde o motor de alertas (US19) recebe os de severidade baixa ou acima, como em ``audio.text.run``.
 
 O corpo pode ser o JSON da US11 (o mesmo que ``POST /transcription`` devolve,
 transcrito com ``medico_falante``) ou o formato compacto com ``segments``.
@@ -15,14 +15,14 @@ from pathlib import Path
 from fastapi import APIRouter, Body, HTTPException, Query
 
 from app import config as app_config
+from app.barramento import get_barramento
 from app.schemas import TextAnalysisRequest, TextAnalysisResponse, TranscricaoResponse
-from audio.text.alerts import assinar_alertas
 from audio.text.analyze import analyze_transcript
 from audio.text.config import ConfigError, TextConfig, load_config
 from audio.text.language_client import LanguageAuthError, LanguageClient, LanguageServiceError
 from audio.text.terms import TermMatcher
 from audio.text.transcript import Transcript, TranscriptError, transcript_from_dict
-from contratos import BarramentoLocal, ChavePseudonimizacaoAusente
+from contratos import ChavePseudonimizacaoAusente
 
 router = APIRouter(prefix="/text/analysis")
 
@@ -40,13 +40,6 @@ def get_matcher() -> TermMatcher:
 @lru_cache
 def get_language_client() -> LanguageClient:
     return LanguageClient.from_env(get_text_config().azure)
-
-
-@lru_cache
-def get_barramento() -> BarramentoLocal:
-    barramento = BarramentoLocal.do_ambiente()
-    assinar_alertas(barramento)
-    return barramento
 
 
 @router.post("", response_model=TextAnalysisResponse, response_model_exclude_none=True)
