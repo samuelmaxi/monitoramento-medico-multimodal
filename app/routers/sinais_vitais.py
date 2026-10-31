@@ -1,6 +1,7 @@
 """US15: NEWS2 sob demanda e detecção de anomalias em streaming de sinais vitais."""
 
 from datetime import datetime
+from threading import Lock
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -26,6 +27,7 @@ Sinal = Literal["fc", "pas", "pad", "spo2", "fr", "temp", "o2_suplementar", "ale
 # shortcut: some ao reiniciar a API e não é compartilhado entre workers;
 # trocar por Redis/Event Hubs se escalar.
 _detector = DetectorSinais()
+_lock = Lock()
 
 
 class News2Request(BaseModel):
@@ -64,6 +66,9 @@ class MedicoesRequest(BaseModel):
 class MedicoesResponse(BaseModel):
     eventos: list[EventoAchado]
     artefatos_descartados: int
+    fora_de_ordem_descartadas: int = Field(
+        description="Medições anteriores à última já processada do mesmo paciente e sinal"
+    )
 
 
 @router.post("/news2", response_model=News2Response)
@@ -101,10 +106,15 @@ def ingest_measurements(body: MedicoesRequest) -> MedicoesResponse:
             detail=exc.errors(include_url=False, include_context=False, include_input=False),
         ) from exc
 
-    artefatos_antes = _detector.artefatos.total()
-    eventos = [
-        e for m in sorted(medicoes, key=lambda m: m.instante) for e in _detector.processar(m)
-    ]
-    return MedicoesResponse(
-        eventos=eventos, artefatos_descartados=_detector.artefatos.total() - artefatos_antes
-    )
+    # Rotas síncronas rodam em threads; o lock evita corromper as janelas e misturar as contagens.
+    with _lock:
+        artefatos_antes = _detector.artefatos.total()
+        atrasadas_antes = _detector.fora_de_ordem.total()
+        eventos = [
+            e for m in sorted(medicoes, key=lambda m: m.instante) for e in _detector.processar(m)
+        ]
+        return MedicoesResponse(
+            eventos=eventos,
+            artefatos_descartados=_detector.artefatos.total() - artefatos_antes,
+            fora_de_ordem_descartadas=_detector.fora_de_ordem.total() - atrasadas_antes,
+        )

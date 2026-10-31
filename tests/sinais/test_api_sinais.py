@@ -71,6 +71,10 @@ def test_medicoes_em_streaming(client):
     assert corpo["artefatos_descartados"] == 1
     assert all(e["patient_id"].startswith("pt_") for e in corpo["eventos"])
 
+    atrasada = [{**seguinte[0], "timestamp": "2026-09-26T07:30:00Z", "valor": 60}]
+    corpo = client.post("/sinais-vitais/medicoes", json={"medicoes": atrasada}).json()
+    assert corpo == {"eventos": [], "artefatos_descartados": 0, "fora_de_ordem_descartadas": 1}
+
 
 def test_sinal_desconhecido_422(client):
     corpo = {

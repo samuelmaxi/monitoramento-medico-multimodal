@@ -33,6 +33,14 @@ def test_artefato_e_descartado(paciente, sinal, valor):
     assert detector.artefatos[sinal] == 1
 
 
+def test_medicao_fora_de_ordem_e_descartada(paciente):
+    detector = DetectorSinais()
+    detector.processar(Medicao(paciente, T0, "fc", 80))
+    assert detector.processar(Medicao(paciente, T0 - timedelta(hours=1), "fc", 140)) == []
+    assert detector.fora_de_ordem["fc"] == 1
+    assert detector._pacientes[paciente].ultimos["fc"] == (T0, 80)
+
+
 def test_news2_emite_so_na_escalada(paciente):
     detector = DetectorSinais()
     eventos = rodar(

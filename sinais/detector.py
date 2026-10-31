@@ -74,6 +74,7 @@ class DetectorSinais:
         self.config = config or ConfigDetector()
         self.sintetico = sintetico
         self.artefatos: Counter[str] = Counter()
+        self.fora_de_ordem: Counter[str] = Counter()
         self._pacientes: dict[str, _EstadoPaciente] = {}
 
     def processar(self, medicao: Medicao) -> list[EventoAchado]:
@@ -83,6 +84,11 @@ class DetectorSinais:
             self.artefatos[medicao.sinal] += 1
             return []
         paciente = self._pacientes.setdefault(medicao.paciente, _EstadoPaciente())
+        anterior = paciente.ultimos.get(medicao.sinal)
+        # As janelas assumem ordem de tempo; uma medição atrasada sobrescreveria o último valor.
+        if anterior and medicao.instante < anterior[0]:
+            self.fora_de_ordem[medicao.sinal] += 1
+            return []
         paciente.ultimos[medicao.sinal] = (medicao.instante, medicao.valor)
         eventos = self._news2(medicao, paciente)
         if medicao.sinal in SINAIS_CONTINUOS:
