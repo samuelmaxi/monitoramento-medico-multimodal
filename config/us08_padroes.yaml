@@ -1,0 +1,165 @@
+# US08 · Padrão esperado por tipo de vídeo e limiares dos desvios.
+#
+# Lido por video/desvios/config.py. Nenhum limiar fica no código: mudou um
+# número aqui, suba "versao" (vai em evidence.thresholds de cada evento, então
+# todo achado diz com que limiares foi gerado).
+#
+# Ângulos seguem as convenções da US06 (video/pose/angles.py): ângulo interno
+# de 0° a 180° (membro esticado ≈ 180°), inclinação do tronco 0° = em pé,
+# assimetria = |esquerdo − direito|, tudo em projeção 2D. Por isso o padrão é
+# definido por exercício E por posição da câmera (vista).
+#
+# Tipos de regra de um perfil (todos opcionais):
+#   faixas       ângulo por quadro dentro de [min, max]       → postura_fora_da_faixa
+#   repeticoes   amplitude de cada repetição e nº esperado    → postura_fora_da_faixa
+#   assimetrias  |esq − dir| acima de max                     → assimetria_movimento
+#   queda        descida rápida do quadril que não se desfaz  → mudanca_brusca_ou_queda
+#   mudanca_brusca  giro rápido do tronco mantido             → mudanca_brusca_ou_queda
+#   areas        classe proibida em ROI da US07 por tempo     → presenca_indevida_area_critica
+#
+# Toda regra só vira evento se o desvio persistir por "janela_s" (padrão:
+# geral.janela_minima_s), o que corta o falso positivo de um quadro ruim.
+
+versao: "1.2.0"
+
+geral:
+  # Persistência mínima de um desvio quando a regra não define a sua.
+  janela_minima_s: 1.0
+  # Buraco tolerado dentro de um trecho (quadro sem medida ou de volta à faixa
+  # por um instante). Acima disso o trecho é quebrado em dois.
+  lacuna_max_s: 0.3
+  # Queda/mudança brusca: depois do salto, a posição nova precisa manter pelo
+  # menos esta fração do salto mínimo (senão é um movimento que voltou).
+  fracao_permanencia: 0.7
+  # O score de um evento é 0,5 quando o desvio só passou o limiar e satura em
+  # 1,0 quando o excesso chega a estes valores.
+  score:
+    saturacao_graus: 30
+    saturacao_torsos: 1.0
+  # % mínima de quadros com esqueleto para a análise postural ser confiável;
+  # abaixo disso o relatório marca a análise como pouco confiável.
+  cobertura_minima_pct: 50
+
+# Blocos reaproveitados por vários perfis (âncoras YAML).
+_comum:
+  queda: &queda_padrao
+    # Descida do centro do quadril, em comprimentos de tronco (pescoço→quadril),
+    # dentro de tempo_max_s: é o que separa cair de deitar/sentar devagar.
+    # Calibrado nos 18 clipes de calibração do FallVision: 0,7 pega 5 das 8
+    # quedas com 1 alarme falso em 10 clipes normais (1,0 zera o alarme, mas
+    # cai para 3–4 quedas; recall tem prioridade). As 3 quedas perdidas são
+    # clipes em que o OpenPose perde a pessoa durante a descida.
+    descida_min_torsos: 0.7
+    tempo_max_s: 1.0
+    # Tempo que a pessoa precisa ficar embaixo depois da descida.
+    janela_s: 0.5
+    severidade: alta
+  mudanca_brusca: &mudanca_brusca_padrao
+    # Giro do tronco (inclinação em relação à vertical) dentro de tempo_max_s.
+    variacao_min_graus: 60
+    tempo_max_s: 0.5
+    janela_s: 0.5
+    severidade: media
+
+perfis:
+  fisioterapia_geral:
+    tipo_video: fisioterapia
+    descricao: >-
+      Critérios gerais para qualquer exercício, os mesmos limiares do feedback
+      da US06. Use quando o exercício não tem perfil próprio.
+    faixas:
+      inclinacao_tronco: {max: 30, severidade: baixa}
+      joelho_esquerdo: {min: 45, severidade: baixa}
+      joelho_direito: {min: 45, severidade: baixa}
+    assimetrias:
+      assimetria_joelho: {max: 20, severidade: baixa}
+      assimetria_quadril: {max: 20, severidade: baixa}
+    queda: *queda_padrao
+
+  fisioterapia_abducao_ombro_frontal:
+    tipo_video: fisioterapia
+    descricao: >-
+      Abdução do braço direito com câmera de frente (REHAB24-6, exercício 1).
+      Padrão: as 3 primeiras repetições, supervisionadas, definem a amplitude
+      do ombro e a extensão do cotovelo do paciente; as seguintes precisam
+      repeti-las dentro da tolerância, com o tronco ereto. Série de 5 a 10.
+    repeticoes:
+      angulo: ombro_direito
+      # sobe: a repetição é o trecho em que o ângulo fica acima de "repouso".
+      sentido: sobe
+      repouso: 60
+      # Sem alvo absoluto: em PM_001 as corretas chegam a 132–138° e as
+      # incorretas a 122–129°, em PM_012 é o contrário (119–126° × 140–149°).
+      # O ângulo 2D certo depende da pessoa e da câmera; o padrão é o dela.
+      referencia:
+        repeticoes: 3
+        # Ângulos medidos na fase de pico: quadros a até 10° do pico do ombro.
+        fase_pico_graus: 10
+        # Calibrado em PM_001 e PM_012: corretas ficam a até 5° da referência
+        # nos dois ângulos; incorretas passam de 14° no cotovelo (PM_001) ou de
+        # 19° no ombro (PM_012), exceto uma que só difere 15° no cotovelo.
+        tolerancias:
+          ombro_direito: 10
+          cotovelo_direito: 10
+      esperadas: [5, 10]
+      duracao_min_s: 1.0
+      severidade: baixa
+    faixas:
+      inclinacao_tronco: {max: 20, severidade: baixa}
+    queda: *queda_padrao
+
+  fisioterapia_agachamento:
+    tipo_video: fisioterapia
+    descricao: >-
+      Agachamento (REHAB24-6, exercício 6), câmera de frente ou a 45°. Padrão:
+      as 3 primeiras repetições, supervisionadas, definem a flexão dos dois
+      joelhos e a inclinação do tronco do paciente; as seguintes repetem esse
+      movimento dentro da tolerância. Série de 5 a 10 repetições.
+    repeticoes:
+      angulo: joelho_direito
+      sentido: desce
+      repouso: 160
+      # Sem alvo nem faixa absoluta: na v1.1.0 o tronco ≤ 20° (vista a 45°) e a
+      # assimetria ≤ 25° (frente), calibrados em PM_029, marcaram as 12
+      # repetições corretas a 45° de PM_038/PM_043. Como na abdução, o padrão é
+      # o do paciente, e a mesma regra serve às duas vistas.
+      referencia:
+        repeticoes: 3
+        fase_pico_graus: 10
+        # Calibrado nas 6 sessões de PM_029, PM_038 e PM_043: as incorretas
+        # mudam a flexão de um ou dos dois joelhos em 17–56° (um joelho que não
+        # dobra, ou agachamento bem mais fundo); as corretas ficam a até 9°,
+        # com 3 exceções em PM_038 (18–27°). Quadril e tronco a ±15° só
+        # acrescentavam alarmes falsos; o tronco fica com folga para a
+        # inclinação exagerada.
+        tolerancias:
+          joelho_esquerdo: 15
+          joelho_direito: 15
+          inclinacao_tronco: 20
+      esperadas: [5, 10]
+      duracao_min_s: 1.0
+      severidade: baixa
+    queda: *queda_padrao
+
+  internacao_leito:
+    tipo_video: leito
+    descricao: >-
+      Paciente internado, câmera no leito. Padrão: paciente deitado ou sentado
+      no leito, sem quedas e sem permanecer na borda do colchão (risco de queda).
+    queda: *queda_padrao
+    mudanca_brusca: *mudanca_brusca_padrao
+    areas:
+      # ROIs de config/leito_uti_07.json (US07).
+      borda_leito: {classes_proibidas: [person], janela_s: 3.0, severidade: media}
+      lateral_leito: {classes_proibidas: [person], janela_s: 3.0, severidade: baixa}
+
+  cirurgia:
+    tipo_video: cirurgia
+    descricao: >-
+      Sala cirúrgica. Padrão: ninguém na área restrita e nenhum objeto estranho
+      ao procedimento no campo estéril. Instrumentos cirúrgicos exigem o modelo
+      com classes médicas (fine-tuning da US07); com pesos COCO só dá para
+      vigiar pessoas e objetos comuns.
+    areas:
+      area_restrita: {classes_proibidas: [person], janela_s: 1.0, severidade: alta}
+      campo_esteril: {classes_proibidas: [cell phone, bottle, cup], janela_s: 1.0, severidade: media}
