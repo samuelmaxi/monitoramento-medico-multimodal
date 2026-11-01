@@ -26,6 +26,7 @@ dependencies = [
     "pyyaml==6.0.3",
     "pydantic>=2.9",
     "lap>=0.5.12",
+    "azure-cosmos>=4.9",
 ]
 
 [dependency-groups]

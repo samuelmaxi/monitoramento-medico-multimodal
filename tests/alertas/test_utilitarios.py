@@ -93,9 +93,25 @@ def test_construir_com_memoria_monta_o_servico():
     assert servico.armazenamento.listar() == []
 
 
-def test_armazenamento_cosmos_ainda_nao_existe():
-    with pytest.raises(ValueError, match="cosmos"):
+def test_cosmos_sem_endpoint_ou_chave_falha_com_mensagem_clara():
+    with pytest.raises(ValueError, match="COSMOS_ENDPOINT"):
         construir(_config({"ALERTA_STORE": "cosmos"}))
+
+
+def test_cosmos_com_endpoint_e_chave_monta_o_store_do_cosmos(monkeypatch):
+    from unittest.mock import MagicMock
+    import azure.cosmos
+
+    monkeypatch.setattr(azure.cosmos, "CosmosClient", MagicMock())
+    from alertas.armazenamento.cosmos import CosmosStore
+
+    servico = construir(_config({
+        "ALERTA_STORE": "cosmos",
+        "COSMOS_ENDPOINT": "https://conta-falsa.documents.azure.com:443/",
+        "COSMOS_KEY": "Y2hhdmUtZmFsc2E=",
+    }))
+
+    assert isinstance(servico.armazenamento, CosmosStore)
 
 
 def test_regras_ausentes_falham_com_caminho_claro(tmp_path):

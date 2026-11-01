@@ -49,9 +49,14 @@ def _armazenamento(config: ConfigAlertas) -> AlertStore:
         return ArmazenamentoJsonl(config.saida_dir)
     if config.armazenamento == "memoria":
         return MemoriaStore()
+    if config.armazenamento == "cosmos":
+        if not (config.cosmos_endpoint and config.cosmos_chave):
+            raise ValueError("ALERTA_STORE=cosmos exige COSMOS_ENDPOINT e COSMOS_KEY no .env")
+        from .armazenamento.cosmos import CosmosStore  # import tardio: só se o Cosmos for usado
+
+        return CosmosStore(config.cosmos_endpoint, config.cosmos_chave, config.cosmos_banco)
     raise ValueError(
-        f"ALERTA_STORE={config.armazenamento!r} não suportado; use 'jsonl' ou 'memoria' "
-        "(Cosmos DB entra na fase 5 da US19)"
+        f"ALERTA_STORE={config.armazenamento!r} não suportado; use 'jsonl', 'memoria' ou 'cosmos'"
     )
 
 

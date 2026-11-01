@@ -43,7 +43,7 @@ class MemoriaStore:
 
     def pendentes_de_envio(self, agora: datetime, tentativas_max: int) -> list[Alerta]:
         with self._trava:
-            elegiveis = [a for a in self._alertas.values() if _elegivel(a, agora, tentativas_max)]
+            elegiveis = [a for a in self._alertas.values() if elegivel_para_envio(a, agora, tentativas_max)]
             return [a.model_copy(deep=True) for a in elegiveis]
 
     def listar(
@@ -73,7 +73,7 @@ class MemoriaStore:
             return [e.model_copy(deep=True) for e in self._eventos if e.alert_id == alerta_id]
 
 
-def _elegivel(alerta: Alerta, agora: datetime, tentativas_max: int) -> bool:
+def elegivel_para_envio(alerta: Alerta, agora: datetime, tentativas_max: int) -> bool:
     if alerta.status is StatusAlerta.PENDENTE:
         return True
     if alerta.status is not StatusAlerta.FALHOU or alerta.retries >= tentativas_max:

@@ -44,3 +44,14 @@ variable "subscription_id" {
   type        = string
   default     = "14f9a7ae-f7b8-4f3c-8cb9-6ddc80cc1f22"
 }
+variable "cosmos_throughput" {
+  description = "Throughput (RU/s) do banco de alertas no Cosmos DB. 400 fica dentro do free tier (1000 RU/s)."
+  type        = number
+  default     = 400
+}
+
+variable "cosmos_location" {
+  description = "Região do Cosmos DB de alertas. East US estava sem capacidade para o free tier na assinatura; Brazil South mantém os dados no Brasil."
+  type        = string
+  default     = "brazilsouth"
+}

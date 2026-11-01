@@ -23,12 +23,23 @@ from contratos import (
 
 MODEL_VERSION = "simulador-alertas@0.1.0"
 PACIENTE_SIMULADO = 10000001
+CHAVE_SIMULADA = "chave-padrao-simulacao-alertas-32bytes-00000"
 SCORE_POR_SEVERIDADE = {
     Severidade.INFO: 0.1,
     Severidade.BAIXA: 0.3,
     Severidade.MEDIA: 0.6,
     Severidade.ALTA: 0.9,
 }
+
+
+def _paciente_simulado(paciente_id: str | None) -> str:
+    if paciente_id:
+        return paciente_id
+    import os
+    chave = os.getenv("PSEUDONYM_KEY")
+    if not chave or len(chave.encode("utf-8")) < 32:
+        chave = CHAVE_SIMULADA
+    return pseudonimizar_paciente(PACIENTE_SIMULADO, chave=chave)
 
 
 def evento_sintetico(
@@ -48,7 +59,7 @@ def evento_sintetico(
     severidade = Severidade(severidade)
     instante = agora or agora_utc()
     campos: dict = {
-        "patient_id": paciente_id or pseudonimizar_paciente(PACIENTE_SIMULADO),
+        "patient_id": _paciente_simulado(paciente_id),
         "modality": modalidade,
         "event_type": tipo,
         "timestamp": instante,

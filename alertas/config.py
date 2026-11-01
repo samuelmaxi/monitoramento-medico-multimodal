@@ -15,7 +15,10 @@ VERDADEIROS = {"1", "true", "sim", "yes", "on"}
 @dataclass(frozen=True)
 class ConfigAlertas:
     regras_path: Path = CAMINHO_REGRAS
-    armazenamento: str = "jsonl"  # jsonl | memoria | cosmos (cosmos: fase 5)
+    armazenamento: str = "jsonl"  # jsonl | memoria | cosmos
+    cosmos_endpoint: str | None = None
+    cosmos_chave: str | None = None
+    cosmos_banco: str = "alertas"
     saida_dir: Path = Path("saida")
     timer_s: float = 30.0
     tentativas_max: int = 3
@@ -41,6 +44,9 @@ class ConfigAlertas:
         return cls(
             regras_path=Path(e.get("ALERTA_REGRAS_PATH") or CAMINHO_REGRAS),
             armazenamento=(e.get("ALERTA_STORE") or "jsonl").strip().lower(),
+            cosmos_endpoint=e.get("COSMOS_ENDPOINT") or None,
+            cosmos_chave=e.get("COSMOS_KEY") or None,
+            cosmos_banco=e.get("COSMOS_DATABASE") or "alertas",
             saida_dir=Path(e.get("ALERTA_SAIDA_DIR") or "saida"),
             timer_s=float(e.get("ALERTA_TIMER_S") or 30),
             tentativas_max=int(e.get("ALERTA_TENTATIVAS_MAX") or 3),
