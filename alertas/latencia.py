@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from pathlib import Path
 
 from .modelos import Alerta
+
+META_P95_S = 10.0  # meta do DoD da US19: p95 da ingestão ao envio
 
 
 def latencias_segundos(alertas: list[Alerta]) -> list[float]:
@@ -30,6 +33,25 @@ def percentil(valores: list[float], p: float) -> float:
     ordenados = sorted(valores)
     posicao = max(math.ceil(p / 100 * len(ordenados)) - 1, 0)
     return ordenados[posicao]
+
+
+def resumo_latencia(alertas: list[Alerta], meta_p95_s: float = META_P95_S) -> dict:
+    """Estatísticas da latência dos alertas já enviados. ``atendida`` é ``None`` sem amostras."""
+    medidas = latencias_segundos(alertas)
+    bases = dict(Counter(a.latency_base for a in alertas if a.sent_at is not None))
+    if not medidas:
+        return {"amostras": 0, "bases": bases, "meta_p95_s": meta_p95_s,
+                "p50_s": None, "p95_s": None, "max_s": None, "atendida": None}
+    p95 = percentil(medidas, 95)
+    return {
+        "amostras": len(medidas),
+        "bases": bases,
+        "meta_p95_s": meta_p95_s,
+        "p50_s": round(percentil(medidas, 50), 3),
+        "p95_s": round(p95, 3),
+        "max_s": round(max(medidas), 3),
+        "atendida": p95 <= meta_p95_s,
+    }
 
 
 def ler_alertas(caminho: str | Path) -> list[Alerta]:

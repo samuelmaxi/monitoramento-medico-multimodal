@@ -39,6 +39,8 @@ Detectores (qualquer modalidade) ─► BarramentoLocal ─► MotorAlertas.rece
         retentativa com espera exponencial · recuperação de pending/failed ao subir
   Timer (ALERTA_TIMER_S): escalonamento por tempo e retentativas
   alertas/armazenamento/jsonl.py ─► saida/alertas.jsonl (estado) + saida/alertas_eventos.jsonl (auditoria)
+  alertas/armazenamento/cosmos.py ─► Azure Cosmos DB (containers alerts e alert_events, partição /patient_id)
+  GET /alerts/dashboard (painel HTML) · GET /alerts/latencia (p50, p95, máx) · GET /alerts/{id} (trilha)
 ```
 
 ## Quadro DoD → código
@@ -108,30 +110,52 @@ servidor real depende de credenciais que não estão no repositório.
 - **Webhook** (`alertas/notificadores/webhook.py`): envia `{"text": ...}`, aceito
   por Teams e Slack. Testado com um servidor HTTP local, incluindo erro 500.
   **Não testado contra Teams ou Slack reais.**
-- **Azure Communication Services Email:** ✘ não implementado. Entra como novo
-  `Notifier` (fase 7 do plano), sem mudar o motor.
+- **Azure Communication Services Email:** ✘ não implementado, e não é necessário para o DoD,
+  que aceita e-mail por SMTP ou webhook. Entraria como novo `Notifier`, sem mudar o motor.
 
 ### 6. Registro em dashboard ou log
 
-**Status:** ◐ parcial.
+**Status:** ✔ implementado.
 
 - Log auditável em `saida/alertas.jsonl` (estado) e `saida/alertas_eventos.jsonl`
-  (auditoria, append-only).
-- Endpoint `GET /alerts` com filtros por status, prioridade e paciente, e
-  `GET /alerts/{id}` com a auditoria.
-- Página de dashboard: ✘ não implementada (o plano a deixa por último).
+  (auditoria, append-only). Com `ALERTA_STORE=cosmos`, o mesmo registro vai para o
+  Azure Cosmos DB (`alertas/armazenamento/cosmos.py`, infraestrutura em `terraform/cosmos.tf`).
+- **Dashboard:** `GET /alerts/dashboard` (`alertas/painel.py`). Página HTML que se atualiza a
+  cada 10 s, com contagem por prioridade, não reconhecidos, bloco de latência p50/p95 e
+  tabela com paciente pseudonimizado, leito, modalidade, anomalia, evidência, ação sugerida,
+  status, ocorrências, escalonamento e reconhecimento. Aceita `?status=`, `?prioridade=` e
+  `?limite=`. Não exibe o link de reconhecimento (o token só vai no e-mail ou no webhook).
+- API: `GET /alerts` (filtros por status, prioridade e paciente) e `GET /alerts/{id}` com a trilha.
+- Testes: `tests/alertas/test_painel_e_latencia.py`.
 
 ### 7. Latência da ingestão até o envio: p95 ≤ 10 s
 
-**Status:** ◐ medição pendente. O relatório existe; falta uma rodada com canal real.
+**Status:** ✔ medida e dentro da meta no canal local. ◐ Falta repetir com SMTP ou webhook
+reais, que dependem de credenciais fora do repositório.
 
-- Cada alerta grava `ingested_at`, `detected_at`, `alert_created_at` e `sent_at`.
-  Quando não há `ingested_at`, a medida usa `detected_at`, e o alerta registra
-  isso em `latency_base`.
-- `scripts/latencia_alertas.py` calcula p50, p95 e máximo e sai com código 2 se
-  p95 > 10 s. Teste do cálculo: `tests/alertas/test_utilitarios.py`.
-- Medição com canal real: pendente. Sem credenciais, o envio falha e não há
-  latência útil para reportar.
+- Cada alerta grava `ingested_at`, `detected_at`, `alert_created_at` e `sent_at`. Quando não
+  há `ingested_at`, a medida usa `detected_at`, e o alerta registra isso em `latency_base`.
+- `GET /alerts/latencia` e o painel mostram p50, p95 e máximo em tempo de execução
+  (`alertas/latencia.py::resumo_latencia`).
+- `scripts/medir_latencia_alertas.py` publica N achados de pacientes distintos, de outra
+  thread, no barramento real e mede até o envio. O teste
+  `tests/alertas/test_painel_e_latencia.py::test_ponta_a_ponta_p95_dentro_da_meta_do_dod`
+  roda o mesmo caminho com um webhook HTTP local e exige p95 ≤ 10 s.
+- Medição registrada (100 achados `news2_emergencia`, alta, webhook HTTP local, relógio real):
+
+  | Métrica | Valor |
+  | --- | --- |
+  | p50 | 0,002 s |
+  | p95 | 0,004 s |
+  | máximo | 0,026 s |
+  | Meta p95 ≤ 10 s | atendida |
+
+  Esse número mede o overhead do motor (barramento, regras, deduplicação, fila e gravação),
+  sem rede externa. A latência real de e-mail ou Teams/Slack soma o tempo do provedor:
+  rode `python scripts/medir_latencia_alertas.py -n 50 --env --saida saida/latencia_us19.json`
+  com o `.env` configurado e substitua a tabela acima pelo resultado.
+- `scripts/latencia_alertas.py` continua disponível para calcular a latência de um
+  `alertas.jsonl` já gerado e sai com código 2 se p95 > 10 s.
 
 ### 8. Controle de fadiga: deduplicação, supressão por janela e escalonamento
 
@@ -191,10 +215,10 @@ servidor real depende de credenciais que não estão no repositório.
 
 | Item | Motivo | Próximo passo |
 | --- | --- | --- |
-| Armazenamento em Cosmos DB (fase 5) | Exige conta, terraform e a dependência `azure-cosmos`; sem credenciais não há como testar | Implementar `CosmosStore` atrás do `AlertStore`, com `patient_id` como chave de partição |
-| Azure Communication Services Email (fase 7) | Exige recurso ACS e domínio | Novo `Notifier`, sem mudar o motor |
-| Página de dashboard | Plano a deixa por último | Streamlit ou página sobre `GET /alerts` |
-| Medição de latência com canal real | Sem credenciais de SMTP ou webhook | Rodar `scripts/simular_alertas.py --todos` com `.env` configurado e depois `scripts/latencia_alertas.py` |
+| Latência com canal real | Sem credenciais de SMTP ou webhook no repositório | `python scripts/medir_latencia_alertas.py -n 50 --env --saida saida/latencia_us19.json` com o `.env` configurado; colar o resultado na seção 7 |
+| Teste do Cosmos contra a conta real | `tests/alertas/test_cosmos.py` é pulado sem `COSMOS_ENDPOINT` e `COSMOS_KEY` | Rodar `uv run pytest tests/alertas/test_cosmos.py` com o `.env` preenchido |
+| Azure Communication Services Email | Opcional; exige recurso ACS e domínio | Novo `Notifier`, sem mudar o motor |
+| Detectores US14 a US18 | Ainda não estão no `main` | Publicar `EventoAchado` no barramento; o motor não muda |
 | Validação clínica das prioridades | As prioridades de `config/alertas_regras.yaml` são provisórias | Revisão pelo grupo clínico |
 
 ## Como reproduzir
@@ -204,6 +228,8 @@ uv run pytest tests/alertas -q                         # testes da US19
 python scripts/simular_alertas.py                      # cenário do DoD
 python scripts/simular_alertas.py --todos              # um achado por tipo do catálogo
 python scripts/latencia_alertas.py saida/alertas.jsonl # p50, p95 e máximo; código 2 se p95 > 10 s
+python scripts/medir_latencia_alertas.py -n 100         # latência ponta a ponta (webhook local)
+uv run uvicorn app.main:app                             # painel em http://localhost:8000/alerts/dashboard
 ```
 
 Configuração: [`.env.sample`](../.env.sample) (variáveis `ALERTA_*` e `SMTP_*`).

@@ -14,8 +14,10 @@ from fastapi.responses import HTMLResponse
 
 from alertas import Alerta, ServicoAlertas, StatusAlerta
 from alertas.ack import verificar_token
+from alertas.latencia import resumo_latencia
 from alertas.notificadores.formatacao import ROTULOS
-from contratos import Severidade
+from alertas.painel import renderizar_painel
+from contratos import Severidade, agora_utc
 
 router = APIRouter(prefix="/alerts", tags=["alertas (US19)"])
 
@@ -46,6 +48,35 @@ def listar_alertas(
         paciente_id=paciente_id,
         limite=limite,
     )
+
+
+# As rotas fixas (/dashboard, /latencia) vêm antes de /{alerta_id}, que só aceita UUID.
+@router.get("/dashboard", response_class=HTMLResponse)
+def painel(
+    request: Request,
+    status: StatusAlerta | None = Query(None),
+    prioridade: Severidade | None = Query(None),
+    limite: int = Query(100, ge=1, le=500),
+) -> HTMLResponse:
+    armazenamento = _servico(request).armazenamento
+    alertas = armazenamento.listar(
+        status=status, prioridade=prioridade.value if prioridade else None, limite=limite
+    )
+    # A latência é do conjunto inteiro enviado, não só da página filtrada.
+    latencia = resumo_latencia(armazenamento.listar(limite=500))
+    return HTMLResponse(renderizar_painel(
+        alertas,
+        latencia,
+        status=status.value if status else None,
+        prioridade=prioridade.value if prioridade else None,
+        agora=agora_utc(),
+    ))
+
+
+@router.get("/latencia")
+def latencia(request: Request) -> dict:
+    """p50, p95 e máximo da ingestão até o primeiro envio (meta do DoD: p95 ≤ 10 s)."""
+    return resumo_latencia(_servico(request).armazenamento.listar(limite=500))
 
 
 @router.get("/{alerta_id}")
