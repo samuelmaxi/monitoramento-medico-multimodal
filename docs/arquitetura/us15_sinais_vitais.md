@@ -107,5 +107,9 @@ e o último valor de cada parâmetro. O processamento leva ~0,1 ms por medição
 - **Replay em tempo real:** `python scripts/rodar_us15.py --velocidade 60`. As medições do
   MIMIC chegam na ordem de tempo, deslocadas para o instante da execução, e os eventos vão para
   `saida/sinais/eventos_us15.jsonl`.
-- **API em streaming:** `POST /sinais-vitais/medicoes` mantém a baseline entre chamadas.
+- **API em streaming:** `POST /sinais-vitais/medicoes` mantém a baseline entre chamadas. Um
+  `Lock` serializa os lotes (as rotas síncronas rodam em threads e compartilham o detector). O
+  estado é da memória do processo: rodar com 1 worker. Uma medição anterior à última já
+  processada (mesmo paciente e sinal) é descartada e contada em `DetectorSinais.fora_de_ordem`,
+  para não sobrescrever o valor atual nem voltar a janela no tempo.
 - **Avaliação:** `scripts/avaliar_us15.py` processa medição a medição, sem olhar o futuro.

@@ -131,7 +131,9 @@ Recall, que é a meta mais crítica num monitor clínico.
 - `POST /sinais-vitais/news2`: recebe `{fc, pas, spo2, fr, temp, o2_suplementar, alerta}` e
   devolve os pontos por parâmetro, o total, o gatilho, os ausentes e os artefatos descartados.
 - `POST /sinais-vitais/medicoes`: recebe um lote `{patient_id, timestamp, sinal, valor}`. O
-  `patient_id` é pseudonimizado na entrada. Devolve os `EventoAchado` gerados, e a baseline se
-  mantém entre chamadas.
+  `patient_id` é pseudonimizado na entrada. Devolve os `EventoAchado` gerados,
+  `artefatos_descartados` e `fora_de_ordem_descartadas`, e a baseline se mantém entre chamadas.
+  Um `Lock` serializa os lotes concorrentes; medições anteriores à última já processada (mesmo
+  paciente e sinal) são descartadas em vez de sobrescrever o valor atual.
 
 Testes: `tests/sinais/test_api_sinais.py`.

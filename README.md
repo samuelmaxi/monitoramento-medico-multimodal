@@ -575,7 +575,7 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/areas-criticas/{job_id}` | Status do job, parâmetros usados (conf, IoU, classes, ROIs) e resumo (quadros, detecções, entradas, saídas).                                |
 | `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
 | `POST` | `/sinais-vitais/news2`           | Recebe um conjunto de sinais vitais e devolve os pontos NEWS2 por parâmetro, o total e o gatilho (US15).                                   |
-| `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados. A baseline de cada paciente é mantida entre chamadas (US15).          |
+| `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados, os artefatos descartados e as medições fora de ordem descartadas. A baseline de cada paciente é mantida entre chamadas (US15).          |
 
 Exemplos com `curl`:
 
@@ -1054,7 +1054,9 @@ eventos = detector.processar(Medicao("pt_" + "0" * 24, datetime.now(UTC), "fc", 
 A API expõe o mesmo detector em `POST /sinais-vitais/news2` e
 `POST /sinais-vitais/medicoes` (veja [Endpoints](#endpoints)). O estado das
 baselines fica na memória do processo: é perdido quando a API reinicia e não é
-compartilhado entre workers.
+compartilhado entre workers (rode a API com 1 worker). Um lock serializa os
+lotes recebidos ao mesmo tempo. Uma medição anterior à última já processada do
+mesmo paciente e sinal é descartada e contada em `fora_de_ordem_descartadas`.
 
 ### Avaliação
 
