@@ -1,0 +1,573 @@
+{
+  "model_version": "anomalias-prescricoes@0.1.0",
+  "versao_limiares": "1.0.0",
+  "dataset": "MIMIC-IV Clinical Database Demo 2.2 (hosp: prescriptions, pharmacy, admissions)",
+  "protocolo": {
+    "sementes": 5,
+    "casos_por_cenario_por_semente": 100,
+    "meta_recall": 0.8,
+    "deteccao": "evento do tipo do caso citando a ordem injetada"
+  },
+  "modos": {
+    "controlado": {
+      "mudanca_abrupta_dose": {
+        "total": {
+          "positivos": 1000,
+          "detectados": 999,
+          "recall": 0.999,
+          "controles": 1000,
+          "falsos_positivos": 11,
+          "taxa_falso_positivo": 0.011,
+          "perdidos": [
+            "dose_aumento-inj-00085: Polyethylene Glycol: dose × 2.42, 20 h depois do corte"
+          ],
+          "alarmes_falsos": [
+            "dose_abaixo_limiar-inj-00215: CefePIME: dose × 0.66, 18 h depois do corte",
+            "dose_fora_da_janela-inj-00325: Senna: dose × 2.00, 46 h depois do corte",
+            "dose_fora_da_janela-inj-00333: RisperiDONE: dose × 2.00, 36 h depois do corte",
+            "dose_abaixo_limiar-inj-00215: LeVETiracetam: dose × 0.73, 11 h depois do corte",
+            "dose_abaixo_limiar-inj-00229: Escitalopram Oxalate: dose × 1.15, 6 h depois do corte",
+            "dose_abaixo_limiar-inj-00258: Docusate Sodium: dose × 0.71, 12 h depois do corte",
+            "dose_fora_da_janela-inj-00344: Famotidine: dose × 2.00, 64 h depois do corte",
+            "dose_fora_da_janela-inj-00359: Allopurinol: dose × 2.00, 67 h depois do corte",
+            "dose_abaixo_limiar-inj-00240: LeVETiracetam: dose × 0.85, 10 h depois do corte",
+            "dose_abaixo_limiar-inj-00285: Heparin: dose × 1.19, 17 h depois do corte"
+          ],
+          "recall_ic95": [
+            0.994,
+            1.0
+          ]
+        },
+        "dose_aumento": {
+          "positivos": 500,
+          "detectados": 499,
+          "recall": 0.998,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [
+            "dose_aumento-inj-00085: Polyethylene Glycol: dose × 2.42, 20 h depois do corte"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.989,
+            1.0
+          ]
+        },
+        "dose_reducao": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "dose_abaixo_limiar": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 7,
+          "taxa_falso_positivo": 0.014,
+          "perdidos": [],
+          "alarmes_falsos": [
+            "dose_abaixo_limiar-inj-00215: CefePIME: dose × 0.66, 18 h depois do corte",
+            "dose_abaixo_limiar-inj-00215: LeVETiracetam: dose × 0.73, 11 h depois do corte",
+            "dose_abaixo_limiar-inj-00229: Escitalopram Oxalate: dose × 1.15, 6 h depois do corte",
+            "dose_abaixo_limiar-inj-00258: Docusate Sodium: dose × 0.71, 12 h depois do corte",
+            "dose_abaixo_limiar-inj-00240: LeVETiracetam: dose × 0.85, 10 h depois do corte",
+            "dose_abaixo_limiar-inj-00285: Heparin: dose × 1.19, 17 h depois do corte",
+            "dose_abaixo_limiar-inj-00229: GlipiZIDE: dose × 1.31, 9 h depois do corte"
+          ],
+          "recall_ic95": null
+        },
+        "dose_fora_da_janela": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 4,
+          "taxa_falso_positivo": 0.008,
+          "perdidos": [],
+          "alarmes_falsos": [
+            "dose_fora_da_janela-inj-00325: Senna: dose × 2.00, 46 h depois do corte",
+            "dose_fora_da_janela-inj-00333: RisperiDONE: dose × 2.00, 36 h depois do corte",
+            "dose_fora_da_janela-inj-00344: Famotidine: dose × 2.00, 64 h depois do corte",
+            "dose_fora_da_janela-inj-00359: Allopurinol: dose × 2.00, 67 h depois do corte"
+          ],
+          "recall_ic95": null
+        }
+      },
+      "duplicidade_terapeutica": {
+        "total": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "duplicidade": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "troca_sem_sobreposicao": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        }
+      },
+      "suspensao_abrupta": {
+        "total": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 1000,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "suspensao": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "suspensao_com_desmame": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        },
+        "suspensao_na_alta": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        }
+      },
+      "medicamento_alta_vigilancia": {
+        "total": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "alta_vigilancia": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "introducao_comum": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        }
+      },
+      "geral": {
+        "positivos": 2500,
+        "detectados": 2499,
+        "recall": 1.0,
+        "controles": 3000,
+        "falsos_positivos": 11,
+        "taxa_falso_positivo": 0.004,
+        "recall_ic95": [
+          0.998,
+          1.0
+        ]
+      }
+    },
+    "realista": {
+      "mudanca_abrupta_dose": {
+        "total": {
+          "positivos": 1000,
+          "detectados": 965,
+          "recall": 0.965,
+          "controles": 1000,
+          "falsos_positivos": 45,
+          "taxa_falso_positivo": 0.045,
+          "perdidos": [
+            "dose_aumento-inj-00005: Divalproex (EXTended Release): dose × 2.83, 14 h depois do corte",
+            "dose_aumento-inj-00020: Gabapentin: dose × 3.95, 5 h depois do corte",
+            "dose_aumento-inj-00025: CloniDINE: dose × 2.55, 6 h depois do corte",
+            "dose_aumento-inj-00065: Vancomycin: dose × 1.55, 18 h depois do corte",
+            "dose_reducao-inj-00101: Hydrocortisone Na Succ.: dose × 0.31, 18 h depois do corte",
+            "dose_reducao-inj-00184: Fluoxetine: dose × 0.33, 4 h depois do corte",
+            "dose_reducao-inj-00186: Metoprolol Tartrate: dose × 0.37, 3 h depois do corte",
+            "dose_reducao-inj-00193: Vancomycin: dose × 0.45, 15 h depois do corte",
+            "dose_aumento-inj-00047: Levofloxacin: dose × 3.92, 18 h depois do corte",
+            "dose_aumento-inj-00055: Metoprolol Tartrate: dose × 1.54, 12 h depois do corte"
+          ],
+          "alarmes_falsos": [
+            "dose_abaixo_limiar-inj-00238: Heparin: dose × 1.33, 11 h depois do corte",
+            "dose_abaixo_limiar-inj-00291: QUEtiapine Fumarate: dose × 0.76, 11 h depois do corte",
+            "dose_fora_da_janela-inj-00322: Meropenem: dose × 2.00, 30 h depois do corte",
+            "dose_fora_da_janela-inj-00350: Enalapril Maleate: dose × 2.00, 42 h depois do corte",
+            "dose_fora_da_janela-inj-00352: Furosemide: dose × 2.00, 45 h depois do corte",
+            "dose_fora_da_janela-inj-00354: PHENObarbital Alcohol Withdrawal Dose Taper (Days 2-7): dose × 2.00, 47 h depois do corte",
+            "dose_abaixo_limiar-inj-00203: QUEtiapine Fumarate: dose × 1.13, 1 h depois do corte",
+            "dose_abaixo_limiar-inj-00204: Furosemide: dose × 1.19, 3 h depois do corte",
+            "dose_abaixo_limiar-inj-00211: Metoprolol Tartrate: dose × 1.19, 7 h depois do corte",
+            "dose_abaixo_limiar-inj-00235: Heparin: dose × 0.79, 8 h depois do corte"
+          ],
+          "recall_ic95": [
+            0.952,
+            0.975
+          ]
+        },
+        "dose_aumento": {
+          "positivos": 500,
+          "detectados": 480,
+          "recall": 0.96,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [
+            "dose_aumento-inj-00005: Divalproex (EXTended Release): dose × 2.83, 14 h depois do corte",
+            "dose_aumento-inj-00020: Gabapentin: dose × 3.95, 5 h depois do corte",
+            "dose_aumento-inj-00025: CloniDINE: dose × 2.55, 6 h depois do corte",
+            "dose_aumento-inj-00065: Vancomycin: dose × 1.55, 18 h depois do corte",
+            "dose_aumento-inj-00047: Levofloxacin: dose × 3.92, 18 h depois do corte",
+            "dose_aumento-inj-00055: Metoprolol Tartrate: dose × 1.54, 12 h depois do corte",
+            "dose_aumento-inj-00075: Docusate Sodium: dose × 2.45, 19 h depois do corte",
+            "dose_aumento-inj-00088: CefazoLIN: dose × 2.11, 1 h depois do corte",
+            "dose_aumento-inj-00091: Multivitamins: dose × 3.44, 7 h depois do corte",
+            "dose_aumento-inj-00021: Metoprolol Tartrate: dose × 2.28, 4 h depois do corte"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.939,
+            0.974
+          ]
+        },
+        "dose_reducao": {
+          "positivos": 500,
+          "detectados": 485,
+          "recall": 0.97,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [
+            "dose_reducao-inj-00101: Hydrocortisone Na Succ.: dose × 0.31, 18 h depois do corte",
+            "dose_reducao-inj-00184: Fluoxetine: dose × 0.33, 4 h depois do corte",
+            "dose_reducao-inj-00186: Metoprolol Tartrate: dose × 0.37, 3 h depois do corte",
+            "dose_reducao-inj-00193: Vancomycin: dose × 0.45, 15 h depois do corte",
+            "dose_reducao-inj-00103: Morphine SR (MS Contin): dose × 0.38, 12 h depois do corte",
+            "dose_reducao-inj-00188: Fluconazole: dose × 0.15, 19 h depois do corte",
+            "dose_reducao-inj-00121: Torsemide: dose × 0.38, 13 h depois do corte",
+            "dose_reducao-inj-00173: Morphine SR (MS Contin): dose × 0.38, 16 h depois do corte",
+            "dose_reducao-inj-00175: Docusate Sodium: dose × 0.18, 10 h depois do corte",
+            "dose_reducao-inj-00187: LaMOTrigine: dose × 0.49, 19 h depois do corte"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.951,
+            0.982
+          ]
+        },
+        "dose_abaixo_limiar": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 31,
+          "taxa_falso_positivo": 0.062,
+          "perdidos": [],
+          "alarmes_falsos": [
+            "dose_abaixo_limiar-inj-00238: Heparin: dose × 1.33, 11 h depois do corte",
+            "dose_abaixo_limiar-inj-00291: QUEtiapine Fumarate: dose × 0.76, 11 h depois do corte",
+            "dose_abaixo_limiar-inj-00203: QUEtiapine Fumarate: dose × 1.13, 1 h depois do corte",
+            "dose_abaixo_limiar-inj-00204: Furosemide: dose × 1.19, 3 h depois do corte",
+            "dose_abaixo_limiar-inj-00211: Metoprolol Tartrate: dose × 1.19, 7 h depois do corte",
+            "dose_abaixo_limiar-inj-00235: Heparin: dose × 0.79, 8 h depois do corte",
+            "dose_abaixo_limiar-inj-00254: HydrALAZINE: dose × 1.29, 16 h depois do corte",
+            "dose_abaixo_limiar-inj-00286: Senna: dose × 1.21, 6 h depois do corte",
+            "dose_abaixo_limiar-inj-00289: Oxycodone SR (OxyconTIN): dose × 0.62, 13 h depois do corte",
+            "dose_abaixo_limiar-inj-00296: Divalproex (EXTended Release): dose × 0.87, 19 h depois do corte"
+          ],
+          "recall_ic95": null
+        },
+        "dose_fora_da_janela": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 14,
+          "taxa_falso_positivo": 0.028,
+          "perdidos": [],
+          "alarmes_falsos": [
+            "dose_fora_da_janela-inj-00322: Meropenem: dose × 2.00, 30 h depois do corte",
+            "dose_fora_da_janela-inj-00350: Enalapril Maleate: dose × 2.00, 42 h depois do corte",
+            "dose_fora_da_janela-inj-00352: Furosemide: dose × 2.00, 45 h depois do corte",
+            "dose_fora_da_janela-inj-00354: PHENObarbital Alcohol Withdrawal Dose Taper (Days 2-7): dose × 2.00, 47 h depois do corte",
+            "dose_fora_da_janela-inj-00338: Thiamine: dose × 2.00, 38 h depois do corte",
+            "dose_fora_da_janela-inj-00341: Multivitamins W/minerals: dose × 2.00, 61 h depois do corte",
+            "dose_fora_da_janela-inj-00377: Piperacillin-Tazobactam: dose × 2.00, 31 h depois do corte",
+            "dose_fora_da_janela-inj-00360: Methylprednisolone: dose × 2.00, 66 h depois do corte",
+            "dose_fora_da_janela-inj-00363: Metoprolol Tartrate: dose × 2.00, 36 h depois do corte",
+            "dose_fora_da_janela-inj-00330: Magnesium Oxide: dose × 2.00, 60 h depois do corte"
+          ],
+          "recall_ic95": null
+        }
+      },
+      "duplicidade_terapeutica": {
+        "total": {
+          "positivos": 500,
+          "detectados": 471,
+          "recall": 0.942,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [
+            "duplicidade-inj-00406: Famotidine IV: cópia de 29 03h a 30 14h",
+            "duplicidade-inj-00418: Ampicillin-Sulbactam IV: cópia de 28 05h a 29 09h",
+            "duplicidade-inj-00423: Warfarin PO/NG: cópia de 26 01h a 27 00h",
+            "duplicidade-inj-00428: Acetaminophen PO/NG: cópia de 23 21h a 25 11h",
+            "duplicidade-inj-00468: Fluconazole PO/NG: cópia de 03 14h a 04 03h",
+            "duplicidade-inj-00481: Piperacillin-Tazobactam IV: cópia de 12 03h a 13 11h",
+            "duplicidade-inj-00487: Heparin SC: cópia de 18 15h a 19 01h",
+            "duplicidade-inj-00497: Metoclopramide IV: cópia de 26 22h a 28 05h",
+            "duplicidade-inj-00439: Allopurinol PO/NG: cópia de 28 19h a 01 18h",
+            "duplicidade-inj-00448: CeftriaXONE IV: cópia de 29 12h a 30 05h"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.918,
+            0.959
+          ]
+        },
+        "duplicidade": {
+          "positivos": 500,
+          "detectados": 471,
+          "recall": 0.942,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [
+            "duplicidade-inj-00406: Famotidine IV: cópia de 29 03h a 30 14h",
+            "duplicidade-inj-00418: Ampicillin-Sulbactam IV: cópia de 28 05h a 29 09h",
+            "duplicidade-inj-00423: Warfarin PO/NG: cópia de 26 01h a 27 00h",
+            "duplicidade-inj-00428: Acetaminophen PO/NG: cópia de 23 21h a 25 11h",
+            "duplicidade-inj-00468: Fluconazole PO/NG: cópia de 03 14h a 04 03h",
+            "duplicidade-inj-00481: Piperacillin-Tazobactam IV: cópia de 12 03h a 13 11h",
+            "duplicidade-inj-00487: Heparin SC: cópia de 18 15h a 19 01h",
+            "duplicidade-inj-00497: Metoclopramide IV: cópia de 26 22h a 28 05h",
+            "duplicidade-inj-00439: Allopurinol PO/NG: cópia de 28 19h a 01 18h",
+            "duplicidade-inj-00448: CeftriaXONE IV: cópia de 29 12h a 30 05h"
+          ],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.918,
+            0.959
+          ]
+        },
+        "troca_sem_sobreposicao": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        }
+      },
+      "suspensao_abrupta": {
+        "total": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 1000,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "suspensao": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "suspensao_com_desmame": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        },
+        "suspensao_na_alta": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        }
+      },
+      "medicamento_alta_vigilancia": {
+        "total": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "alta_vigilancia": {
+          "positivos": 500,
+          "detectados": 500,
+          "recall": 1.0,
+          "controles": 0,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": null,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": [
+            0.992,
+            1.0
+          ]
+        },
+        "introducao_comum": {
+          "positivos": 0,
+          "detectados": 0,
+          "recall": null,
+          "controles": 500,
+          "falsos_positivos": 0,
+          "taxa_falso_positivo": 0.0,
+          "perdidos": [],
+          "alarmes_falsos": [],
+          "recall_ic95": null
+        }
+      },
+      "geral": {
+        "positivos": 2500,
+        "detectados": 2436,
+        "recall": 0.974,
+        "controles": 3000,
+        "falsos_positivos": 45,
+        "taxa_falso_positivo": 0.015,
+        "recall_ic95": [
+          0.967,
+          0.98
+        ]
+      }
+    }
+  },
+  "dados_reais_sem_rotulo": {
+    "prescricoes": 13772,
+    "internacoes": 250,
+    "anomalias": 2046,
+    "por_tipo_e_severidade": {
+      "duplicidade_terapeutica/alta": 5,
+      "duplicidade_terapeutica/media": 139,
+      "medicamento_alta_vigilancia/alta": 28,
+      "medicamento_alta_vigilancia/baixa": 1058,
+      "medicamento_alta_vigilancia/media": 315,
+      "mudanca_abrupta_dose/baixa": 348,
+      "mudanca_abrupta_dose/media": 136,
+      "suspensao_abrupta/media": 17
+    },
+    "por_internacao_mediana": 6
+  }
+}

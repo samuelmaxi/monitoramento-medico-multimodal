@@ -4,6 +4,7 @@
 | --- | --- |
 | `audio-texto.json` | `/health`, termos críticos e sentimento nas transcrições (US13), `/sentiment`, transcrição (US11) e o fluxo áudio → análise |
 | `video-pose.json` | Análise de pose em vídeo (US06): enfileirar, status, keypoints, ângulos e feedback |
+| `prescricoes.json` | Anomalias na evolução de prescrições (US16): um exemplo de cada anomalia, controles sem anomalia, erros e pacientes reais do MIMIC-IV Demo |
 
 ## Rotas da API
 
@@ -19,6 +20,9 @@
 | GET | `/video/pose/{job_id}/keypoints` | Keypoints por quadro (JSON) | — |
 | GET | `/video/pose/{job_id}/angles` | Ângulos por quadro (CSV) | — |
 | GET | `/video/pose/{job_id}/feedback` | Resultado em linguagem natural | — |
+| POST | `/prescricoes/analise` | Ordens de uma internação → eventos `EventoAchado` (`modality="prescricoes"`): mudança abrupta de dose, duplicidade, suspensão abrupta e alta vigilância (US16) | `PSEUDONYM_KEY` (se enviar IDs de origem) |
+| GET | `/prescricoes/mimic/{subject_id}` | A mesma análise nas prescrições reais de um paciente do MIMIC-IV Demo | `PSEUDONYM_KEY`; tabelas em `dados/mimic-iv-demo` |
+| GET | `/prescricoes/config` | Limiares e lista ISMP em uso | — |
 
 A documentação interativa (Swagger) fica em <http://127.0.0.1:8000/docs> com a API no ar.
 
@@ -96,6 +100,50 @@ Os eventos também são publicados no barramento local (`EVENTOS_JSONL`, padrão
 
 A análise é síncrona. A primeira chamada de um texto leva alguns segundos; as repetições vêm do cache (`saida/cache_azure/language/`). O config usado é `audio/text/config.yaml` (outro caminho: `TEXT_CONFIG_PATH`).
 
+### `POST /prescricoes/analise` (US16)
+
+Corpo: as ordens de uma internação, com os campos das tabelas `prescriptions` e `pharmacy` do MIMIC. Todos os horários vão em UTC.
+
+```json
+{
+  "patient_id": "sim-paciente-16a",
+  "encounter_id": "sim-paciente-16a-int1",
+  "admissao": "2026-10-01T10:00:00Z",
+  "alta": "2026-10-12T14:00:00Z",
+  "is_synthetic": true,
+  "prescricoes": [
+    {"ordem_id": "enox-1", "medicamento": "Enoxaparin Sodium", "dose": "40", "unidade": "mg", "via": "SC",
+     "frequencia": "QPM", "doses_24h": 1, "inicio": "2026-10-01T22:00:00Z", "fim": "2026-10-03T11:00:00Z"},
+    {"ordem_id": "enox-2", "medicamento": "Enoxaparin Sodium", "dose": "100", "unidade": "mg", "via": "SC",
+     "frequencia": "Q12H", "doses_24h": 2, "inicio": "2026-10-03T12:00:00Z", "fim": "2026-10-07T20:00:00Z"}
+  ]
+}
+```
+
+| Campo | O que é |
+| --- | --- |
+| `patient_id`, `encounter_id` | ID de origem ou pseudônimo `pt_…`/`enc_…`. O ID de origem é pseudonimizado antes de sair |
+| `admissao`, `alta`, `obito` | `admissao` tem como padrão o início da primeira ordem. Sem `alta`, a suspensão abrupta não é avaliada, porque não dá para separar a suspensão do fim da internação |
+| `prescricoes[].dose` | Texto ou número: `"40"`, `"2-4"` (faixa: compara o máximo), `"25,000"` |
+| `prescricoes[].unidade` | Normalizada antes de comparar: mcg/g → mg, L → mL. `UNIT`, `mEq` e `mmol` ficam como estão |
+| `prescricoes[].frequencia` | `PRN`, `ONCE`, `TITRATE TO`, `ASDIR` e escala móvel (`escala_movel: true`) não têm dose fixa e ficam fora da mudança de dose |
+| `prescricoes[].doses_24h` | Dá a dose diária. Sem ela, só compara doses com a mesma frequência |
+| `prescricoes[].apresentacao` | `prod_strength`. O KCl só é de alta vigilância concentrado (`2mEq/mL`) |
+| `prescricoes[].status` | `Inactive (Due to a change order)` marca a ordem substituída, que se fecha no início da seguinte |
+
+- `?detalhes=true` inclui `normalizadas`: princípio ativo, dose e unidade canônicas, dose diária e tipo de frequência de cada ordem.
+- `?publicar=false` não grava no barramento local. O padrão é `true`, como nas outras rotas: os eventos vão para `EVENTOS_JSONL` e seguem para fusão e alertas.
+
+Resposta 200: `patient_id`, `encounter_id`, `versao_limiares`, `prescricoes_analisadas`, `total_anomalias`, `por_tipo` e `eventos`. Cada evento traz a justificativa em `evidence.summary` e os valores antes × depois em `evidence.features` (`antes_dose_diaria`, `depois_medicamento` etc.). Internação sem anomalia devolve um `sem_achados` (info).
+
+`GET /prescricoes/mimic/{subject_id}` faz a mesma análise nas prescrições reais de um paciente do demo, com `?hadm_id=` opcional. As tabelas são lidas de `dados/mimic-iv-demo` (ou de `PRESCRICOES_DADOS_DIR`) e baixadas uma vez com `uv run python -m prescricoes.run --baixar`.
+
+| Status | Quando |
+| --- | --- |
+| 422 | Horário fora de UTC, `prescricoes` vazio, fim antes do início, `ordem_id` repetido, alta antes da admissão |
+| 404 | `subject_id` fora do demo, ou `hadm_id` de outro paciente |
+| 503 | Falta `PSEUDONYM_KEY`, as tabelas do MIMIC não foram baixadas, ou a config está inválida |
+
 ## Como testar
 
 ### 1. Subir a API
@@ -117,6 +165,12 @@ curl http://127.0.0.1:8000/health    # {"status":"ok"}
 Na pasta **US11 + US13 - Áudio da consulta**, escolha um arquivo no campo `audio_file` e ajuste `medico_falante` antes de enviar. **Transcrever áudio** guarda o JSON na variável `transcricao`, que **Analisar a transcrição (US13)** envia para `/text/analysis`. **Áudio ponta a ponta** faz as duas etapas numa chamada.
 
 ### 2b. Pela linha de comando (Postman CLI)
+
+```bash
+# US16: roda sem Azure; a pasta do MIMIC precisa das tabelas baixadas
+postman collection run postman/prescricoes.json
+```
+
 
 ```bash
 postman collection run postman/audio-texto.json \
@@ -143,6 +197,22 @@ curl -X POST "http://127.0.0.1:8000/text/analysis?detalhes=true" \
 | Erro 422 | `recorded_at` com `-03:00` | 422 citando UTC |
 
 Todas checam que os eventos têm `modality="texto"` e o paciente pseudonimizado.
+
+## O que cada requisição da US16 verifica
+
+| Requisição | Entrada | Esperado |
+| --- | --- | --- |
+| Limiares e lista ISMP em uso | `GET /prescricoes/config` | Dose ±50% em 24 h; classes insulina, anticoagulante, opioide e KCl concentrado |
+| Mudança abrupta de dose | Enoxaparina 40 mg/dia → 100 mg a cada 12 h | `mudanca_abrupta_dose` média, +400%, `antes_dose_diaria=40` e `depois_dose_diaria=200` |
+| Duplicidade terapêutica | Oxicodona+paracetamol PRN com paracetamol 1 g TID | `duplicidade_terapeutica` com `principio_ativo=acetaminophen` |
+| Suspensão abrupta | Metoprolol 25 mg TID por 4 dias, parado 6 dias antes da alta | `suspensao_abrupta` no fim da última ordem |
+| Alta vigilância | Pantoprazol e KCl 2 mEq/mL IV | Um único `medicamento_alta_vigilancia`, `potassio_concentrado`, severidade alta |
+| Sem achados | Prednisona 40 → 30 mg e furosemida 40 → 50 mg (±25%) | Só `sem_achados` (info) |
+| Unidades normalizadas | Levotiroxina 100 mcg → 0,025 mg, `?detalhes=true` | As duas ordens em mg; queda de 75% |
+| Erros 422 | Horário com `-03:00`; ordem com fim antes do início | 422 citando UTC / "antes do início" |
+| Pacientes reais do MIMIC | `subject_id` 10008454; 10002428 com `hadm_id` 28676446; 99999999 | Enoxaparina +400%; paracetamol duplicado; 404 |
+
+Todas checam `modality="prescricoes"`, o paciente pseudonimizado e a `versao_limiares` nos eventos. A coleção vem de `scripts/gerar_postman_us16.py`, e `tests/prescricoes/test_api.py` envia os mesmos corpos à API. Mudou um exemplo, gere a coleção de novo com `uv run python scripts/gerar_postman_us16.py`. A variável `publicar` da coleção vem como `false`, para que rodar a coleção não encha `saida/eventos.jsonl` de eventos de teste.
 
 ## Limitações conhecidas
 
