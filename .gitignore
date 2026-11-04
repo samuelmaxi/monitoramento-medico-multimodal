@@ -263,3 +263,7 @@ dataset_medico/
 dados/
 # Saída bruta da US17 sobre o MIMIC (regenerável com python -m movimentacao.run mimic)
 saida/movimentacao/mimic_*
+# US16: tabelas do MIMIC-IV Demo (baixadas por `python -m prescricoes.run --baixar`)
+/dados/
+saida/prescricoes/*
+!saida/prescricoes/avaliacao_us16.json

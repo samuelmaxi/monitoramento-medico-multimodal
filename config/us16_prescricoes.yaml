@@ -1,0 +1,192 @@
+# US16 · Limiares das anomalias na evolução de prescrições e lista ISMP.
+#
+# Lido por prescricoes/config.py. Nenhum limiar fica no código: mudou um número
+# aqui, suba "versao" (vai em evidence.thresholds de cada evento, então todo
+# achado diz com que limiares foi gerado).
+#
+# Princípios ativos em minúsculas e em inglês, como saem de
+# prescricoes/principios.py ("metoprolol", "potassium chloride", "insulin glargine").
+# Doses já normalizadas (mcg/g → mg, L → mL) antes de qualquer comparação.
+
+versao: "1.0.0"
+
+geral:
+  # Prescrições que não são tratamento do paciente: soluções de manutenção de
+  # cateter (flush, dwell), priming de máquina. Regex no nome do medicamento.
+  nao_terapeuticos:
+    - "flush"
+    - "dwell"
+    - "priming"
+    - "\\(iabp\\)"
+    - "\\(hemodialysis\\)"
+    - "catheter clearance"
+    - "for picc"
+  # Vias de efeito sistêmico. Duplicidade e suspensão só olham estas: colírio,
+  # pomada e lidocaína gel em paralelo não são duplicidade terapêutica.
+  vias_sistemicas: [IV, enteral, SC, IM, sublingual, retal, transdermica]
+
+mudanca_abrupta_dose:
+  # Nova prescrição do mesmo princípio, mesma via, que começa até janela_h
+  # depois do fim da anterior (ou enquanto ela está ativa), com dose
+  # diferente em pelo menos variacao_min_pct, para cima ou para baixo.
+  # Compara a dose diária (dose × doses_per_24_hrs) quando as duas têm; senão
+  # a dose por administração, desde que a frequência seja a mesma.
+  variacao_min_pct: 50
+  janela_h: 24
+  # Sem dose fixa, sem o que comparar: PRN, dose única, titulação à beira do
+  # leito (TITRATE TO, INFUSION) e "conforme orientação" (ASDIR, escala móvel).
+  frequencias_comparaveis: [agendada]
+  # Score 0,5 no limiar, 1,0 quando a variação chega aqui.
+  saturacao_pct: 200
+  severidade: baixa
+  severidade_alta_vigilancia: media
+
+duplicidade_terapeutica:
+  # Duas prescrições ativas do mesmo princípio ativo (inclusive dentro de uma
+  # combinação: oxicodona+paracetamol com paracetamol), em via sistêmica,
+  # sobrepostas por pelo menos sobreposicao_min_h. Troca de prescrição (a nova
+  # começa e a antiga termina na mesma hora) fica abaixo do mínimo.
+  sobreposicao_min_h: 6
+  # Dose única não fica "ativa em paralelo". Infusão titulada e protocolo
+  # (ASDIR) têm várias ordens simultâneas por desenho: bolus + manutenção da
+  # heparina, bolsas de propofol de 1000 e 200 mg no mesmo início.
+  frequencias_ignoradas: [dose_unica, titulavel, conforme_orientacao]
+  # Mesmo produto com uma ordem PRN é esquema fixo + resgate (quetiapina 50 mg
+  # à noite + 25 mg se agitação) ou via alternativa (paracetamol VO ou VR).
+  # Combinação × isolado (oxicodona+paracetamol com paracetamol) continua.
+  ignorar_resgate_mesmo_produto: true
+  # Duplicidade intencional e rotineira:
+  #  - insulinas: esquema basal + correção é o padrão;
+  #  - eletrólitos e soros: reposição por protocolo IV + VO ao mesmo tempo.
+  principios_permitidos:
+    - insulin
+    - insulin regular
+    - insulin glargine
+    - insulin lispro
+    - potassium chloride
+    - magnesium sulfate
+    - calcium gluconate
+    - sodium chloride
+    - sodium bicarbonate
+    - dextrose
+    - phosphorus
+    - potassium phosphate
+    - sodium phosphate
+  severidade: media
+  # Só quando as duas ordens são agendadas; com PRN fica em "severidade".
+  severidade_alta_vigilancia: alta
+
+suspensao_abrupta:
+  # Princípio de uma classe que exige desmame, em uso contínuo (agendado) por
+  # pelo menos uso_continuo_min_h, que some de todas as prescrições sem
+  # retorno em sem_retorno_h, com o paciente ainda internado depois disso.
+  classes: [opioide, benzodiazepinico, betabloqueador, corticoide_sistemico, agonista_alfa2, antiepileptico, baclofeno]
+  uso_continuo_min_h: 72
+  sem_retorno_h: 24
+  # Se a última dose diária é pelo menos isto menor que a máxima do curso,
+  # houve desmame, não suspensão abrupta.
+  desmame_reducao_min_pct: 25
+  # Outro princípio da mesma classe começando até sem_retorno_h depois é
+  # troca (metoprolol tartarato → carvedilol), não suspensão.
+  troca_na_classe_conta: true
+  severidade: media
+
+alta_vigilancia:
+  # ISMP List of High-Alert Medications in Acute Care Settings (2024) e
+  # ISMP Brasil, Medicamentos potencialmente perigosos de uso hospitalar
+  # (Boletim v.8 n.1, fev/2019). "Introdução" = primeira prescrição do
+  # princípio na internação.
+  lista: "ISMP 2024 / ISMP Brasil 2019"
+  # Severidade = o que a introdução pede da equipe, não o risco do fármaco.
+  # Insulina, anticoagulante e opioide entram em quase toda internação (no
+  # demo, 55% das introduções): "baixa" registra e vai para a fusão sem
+  # acionar alerta, senão seriam 5,7 alertáveis por internação (fadiga de
+  # alarme). "media" (dupla checagem) para infusões IV de risco; "alta" para o
+  # erro mais grave e menos reversível: KCl concentrado, NaCl hipertônico,
+  # bloqueador neuromuscular, trombolítico.
+  classes:
+    insulina:
+      principios: [insulin, insulin regular, insulin glargine, insulin lispro, insulin aspart, insulin nph, insulin detemir]
+      severidade: baixa
+    anticoagulante:
+      principios: [heparin, enoxaparin, dalteparin, fondaparinux, warfarin, apixaban, rivaroxaban, dabigatran, edoxaban, argatroban, bivalirudin]
+      severidade: baixa
+    trombolitico:
+      principios: [alteplase, tenecteplase, reteplase]
+      severidade: alta
+    antiagregante_iib_iiia:
+      principios: [eptifibatide, tirofiban, abciximab]
+      severidade: alta
+    opioide:
+      principios: [morphine, hydromorphone, fentanyl, oxycodone, methadone, meperidine, hydrocodone, tramadol, codeine, opium tincture, opium, remifentanil, sufentanil, buprenorphine]
+      severidade: baixa
+    potassio_concentrado:
+      # Só a apresentação concentrada para injeção (≥ 2 mEq/mL); bolsas
+      # pré-diluídas (20 mEq/50 mL) e comprimidos ficam de fora.
+      principios: [potassium chloride]
+      vias: [IV]
+      apresentacao: "2 ?meq/ml"
+      severidade: alta
+    fosfato_de_potassio_injetavel:
+      principios: [potassium phosphate]
+      vias: [IV]
+      severidade: media
+    cloreto_de_sodio_hipertonico:
+      principios: [sodium chloride]
+      vias: [IV]
+      nome: "(3|23\\.4|7\\.5|20)%"
+      severidade: alta
+    glicose_hipertonica:
+      # Dextrose ≥ 20%.
+      principios: [dextrose]
+      vias: [IV]
+      nome: "(20|25|30|40|50|70)%"
+      # Quase sempre resgate de hipoglicemia por protocolo: registra, não alerta.
+      severidade: baixa
+    sulfato_de_magnesio_injetavel:
+      # Reposição de eletrólito por protocolo na UTI: registra, não alerta.
+      principios: [magnesium sulfate]
+      vias: [IV]
+      severidade: baixa
+    agonista_adrenergico_iv:
+      principios: [epinephrine, norepinephrine, phenylephrine, dopamine, dobutamine, vasopressin, isoproterenol, ephedrine]
+      vias: [IV]
+      severidade: media
+    inotropico_iv:
+      principios: [milrinone, digoxin]
+      vias: [IV]
+      severidade: media
+    antiarritmico_iv:
+      principios: [amiodarone, lidocaine, procainamide, ibutilide]
+      vias: [IV]
+      severidade: media
+    sedativo_iv:
+      principios: [propofol, ketamine, dexmedetomidine, midazolam, lorazepam, diazepam, etomidate]
+      vias: [IV]
+      severidade: media
+    bloqueador_neuromuscular:
+      principios: [rocuronium, vecuronium, cisatracurium, succinylcholine, atracurium, pancuronium]
+      severidade: alta
+    quimioterapico:
+      principios: [carboplatin, cisplatin, cytarabine, etoposide, fludarabine, idarubicin, daunorubicin, mitoxantrone, busulfan, decitabine, venetoclax, ibrutinib, ruxolitinib, lenalidomide, hydroxyurea, tamoxifen, methotrexate, cyclophosphamide, doxorubicin, vincristine]
+      severidade: media
+    hipoglicemiante_oral_sulfonilureia:
+      principios: [glipizide, glyburide, glimepiride, chlorpropamide, tolbutamide]
+      severidade: baixa
+    nitroprussiato:
+      principios: [nitroprusside]
+      severidade: media
+    prometazina_injetavel:
+      principios: [promethazine]
+      vias: [IV, IM]
+      severidade: baixa
+
+# Classes terapêuticas usadas pela suspensão abrupta (desmame e troca na classe).
+classes_terapeuticas:
+  opioide: [morphine, hydromorphone, fentanyl, oxycodone, methadone, meperidine, hydrocodone, tramadol, codeine, opium tincture]
+  benzodiazepinico: [lorazepam, diazepam, midazolam, clonazepam, alprazolam, chlordiazepoxide, temazepam]
+  betabloqueador: [metoprolol, atenolol, carvedilol, propranolol, labetalol, nadolol, sotalol, esmolol, bisoprolol]
+  corticoide_sistemico: [prednisone, prednisolone, methylprednisolone, hydrocortisone, dexamethasone, fludrocortisone]
+  agonista_alfa2: [clonidine, dexmedetomidine]
+  antiepileptico: [levetiracetam, phenytoin, valproate, carbamazepine, lamotrigine, topiramate, phenobarbital, gabapentin, pregabalin, lacosamide]
+  baclofeno: [baclofen]
