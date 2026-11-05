@@ -27,6 +27,7 @@ sistema.
 │       └── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
 ├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
 ├── dados/                     # MIMIC-IV Demo baixado por script (gitignored)
+│       └── prescricoes.py          # POST /prescricoes/analise, GET /prescricoes/mimic/{subject_id}, /config (US16)
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
 │   ├── test_smoke.py              # Smoke tests reais contra Azure (transcrição + sentiment)
@@ -41,6 +42,11 @@ sistema.
 │   ├── demo_us15.py           # Roda e confere cada item da DoD da US15
 │   ├── rodar_us15.py          # Replay em tempo real dos sinais vitais (US15)
 │   └── avaliar_us15.py        # Avaliação com anomalias injetadas (US15)
+│   └── avaliar_us16.py       # Recall da US16 em casos injetados no MIMIC-IV Demo
+├── prescricoes/               # US16: anomalias na evolução de prescrições
+├── config/us16_prescricoes.yaml  # Limiares e lista ISMP da US16 (versionados)
+├── dados/mimic-iv-demo/       # Tabelas do MIMIC-IV Demo (gitignored)
+│   └── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
 ├── teste/
 │   └── conteudos/             # Estrutura de destino dos conteúdos
 ├── terraform/                 # Infraestrutura Azure (Speech, Language, Blob Storage)
@@ -1085,6 +1091,54 @@ O MIMIC-IV Clinical Database Demo é distribuído pelo PhysioNet sob a
 [Open Data Commons Open Database License v1.0](https://physionet.org/content/mimic-iv-demo/view-license/2.2/).
 Ao usar os dados, cite o dataset conforme a
 [página do PhysioNet](https://physionet.org/content/mimic-iv-demo/2.2/).
+## Anomalias na evolução de prescrições (US16)
+
+Detecta "alterações inesperadas no tratamento" nas prescrições do
+[MIMIC-IV Clinical Database Demo 2.2](https://physionet.org/content/mimic-iv-demo/2.2/)
+(acesso aberto, ODbL): tabelas `prescriptions`, `pharmacy` e `admissions`, com
+100 pacientes e 250 internações.
+
+```bash
+# baixa as tabelas para dados/mimic-iv-demo/ (uma vez) e roda em todos os pacientes
+uv run python -m prescricoes.run --baixar
+# só alguns pacientes (subject_id do MIMIC)
+uv run python -m prescricoes.run --paciente 10002428 --paciente 10019777
+# avaliação com casos injetados (5 sementes × 100 casos por cenário, ~3 min)
+uv run python scripts/avaliar_us16.py
+```
+
+**API**: `POST /prescricoes/analise` recebe as ordens de uma internação e devolve
+os eventos; `GET /prescricoes/mimic/{subject_id}` roda nas prescrições reais de
+um paciente do demo; `GET /prescricoes/config` mostra os limiares e a lista ISMP.
+Os campos, os códigos de erro e a coleção `postman/prescricoes.json` (13
+requisições com testes) estão em `postman/README.md`:
+
+```bash
+uv run uvicorn app.main:app --reload
+postman collection run postman/prescricoes.json
+```
+
+Precisa de `PSEUDONYM_KEY` no `.env`. As saídas da CLI vão para `saida/prescricoes/`:
+`eventos.jsonl` (um `EventoAchado` por anomalia, mais um `sem_achados` por
+internação sem nenhuma) e `relatorio.json` (volume por tipo e severidade, e a
+justificativa de cada anomalia).
+
+| `event_type` | Regra (limiares em `config/us16_prescricoes.yaml`) |
+|---|---|
+| `mudanca_abrupta_dose` | Regime do produto muda ≥ 50% em relação ao que vigorava nas 24 h anteriores (dose diária, unidades normalizadas) |
+| `duplicidade_terapeutica` | Mesmo princípio ativo, também dentro de combinações, em duas ordens sistêmicas sobrepostas ≥ 6 h |
+| `suspensao_abrupta` | Medicamento que exige desmame, em uso contínuo ≥ 72 h, some sem desmame, sem troca na classe e sem alta em 24 h |
+| `medicamento_alta_vigilancia` | Primeira ordem na internação de um medicamento da lista ISMP / ISMP Brasil |
+
+Cada evento traz em `evidence.summary` a regra que disparou e os valores antes
+× depois, por exemplo: *"Dose de Enoxaparin Sodium (SC) subiu 400% (40 → 200
+mg/dia), 1 h depois do fim da anterior. Antes: 40 mg QPM (40 mg/dia); depois:
+100 mg Q12H (200 mg/dia). Limiar: ±50% em 24 h."*
+
+Recall nos casos injetados: 0,974 no modo realista e 1,00 no controlado (meta
+de 0,80). Protocolo, exceções que vieram dos dados, anomalias reais
+documentadas e limitações estão em
+[`docs/relatorio_us16_dod.md`](docs/relatorio_us16_dod.md).
 
 ## Demo ponta a ponta
 
