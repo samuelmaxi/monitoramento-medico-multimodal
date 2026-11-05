@@ -14,6 +14,7 @@ from app.routers import (  # noqa: E402
     audio_analysis,
     prescricoes,
     sentiment,
+    sinais_vitais,
     text_analysis,
     transcription,
     video_areas,
@@ -53,6 +54,7 @@ app.include_router(audio_analysis.router)
 app.include_router(video_pose.router)
 app.include_router(video_areas.router)
 app.include_router(alertas.router)
+app.include_router(sinais_vitais.router)
 app.include_router(prescricoes.router)
 
 
