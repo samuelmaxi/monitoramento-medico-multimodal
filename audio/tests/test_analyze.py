@@ -8,7 +8,6 @@ import logging
 import pytest
 from jsonschema import Draft202012Validator
 
-from audio.text.alerts import NOME_ASSINANTE, assinar_alertas
 from audio.text.analyze import analyze_transcript
 from audio.text.config import load_critical_terms
 from contratos import BarramentoLocal, EmissorMemoria, Severidade
@@ -194,17 +193,12 @@ def test_eventos_seguem_o_contrato_pydantic_e_o_json_schema(config, fake_factory
     assert {e.event_type for e in eventos} == {"termo_critico"}  # só 1 de 3 sentenças negativa
 
 
-def test_stub_de_alertas_recebe_so_severidade_alta(config, fake_factory, tmp_path, caplog):
+def test_publica_os_eventos_no_barramento(config, fake_factory, tmp_path):
     _, cliente = fake_factory({"dor no peito": {}, "febre": {}})
     barramento = BarramentoLocal(tmp_path / "eventos.jsonl")
-    assinar_alertas(barramento)
     t = consulta(("paciente", "Estou com dor no peito e febre."))
 
-    with caplog.at_level(logging.WARNING, logger="audio.text.alerts"):
-        analyze_transcript(t, config, cliente, barramento)
+    analyze_transcript(t, config, cliente, barramento)
 
-    alertas = [r for r in caplog.records if "STUB alertas" in r.getMessage()]
-    assert len(alertas) == 1 and "severidade=alta" in alertas[0].getMessage()
     assert not barramento.falhas
     assert barramento.total_publicados == 2
-    assert any(a.nome == NOME_ASSINANTE for a in barramento._assinaturas)

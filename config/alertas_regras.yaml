@@ -1,0 +1,47 @@
+# Políticas e regras do motor de alertas (US19). Editável sem mudar código.
+#
+# politicas: uma por prioridade (alta, media, baixa).
+#   canais: notificadores que recebem o alerta (email, webhook). Lista vazia = só registro no painel.
+#   janela_dedup_min: achado igual dentro desta janela (desde o último) vira ocorrência, não alerta novo.
+#   escalar_apos_ocorrencias / escalar_apos_min: persistência que sobe a prioridade e reenvia.
+#     Não se aplica à prioridade alta, que já é o topo.
+#   acao_padrao: texto usado quando a regra não define outro.
+#
+# regras: prioridade específica para (modalidade, tipo). tipo "*" vale para a modalidade inteira.
+#   Sem regra, a prioridade é a severidade do próprio achado.
+#   Os valores de prioridade abaixo são provisórios e precisam de validação clínica.
+versao: 1
+
+politicas:
+  alta:
+    canais: [email, webhook]
+    janela_dedup_min: 5
+    escalar_apos_ocorrencias: 10
+    escalar_apos_min: 60
+    acao_padrao: "Avaliar o paciente agora, conforme o protocolo do setor."
+  media:
+    canais: [email]
+    janela_dedup_min: 15
+    escalar_apos_ocorrencias: 5
+    escalar_apos_min: 30
+    acao_padrao: "Revisar o achado no painel e reavaliar o paciente ainda neste turno."
+  baixa:
+    canais: []
+    janela_dedup_min: 60
+    escalar_apos_ocorrencias: 10
+    escalar_apos_min: 120
+    acao_padrao: "Registrado para revisão no painel. Sem envio."
+
+regras:
+  - modalidade: sinais_vitais
+    tipo: news2_emergencia
+    prioridade: alta
+    acao_sugerida: "Avaliação de emergência pela equipe médica agora (NEWS2 ≥ 7)."
+  - modalidade: sinais_vitais
+    tipo: news2_resposta_urgente
+    prioridade: media
+    acao_sugerida: "Reavaliar o paciente em até 30 minutos (NEWS2 5 a 6, ou 3 em parâmetro único)."
+  - modalidade: movimentacao
+    tipo: queda
+    prioridade: alta
+    acao_sugerida: "Avaliar o paciente após a queda: lesões e sinais vitais."

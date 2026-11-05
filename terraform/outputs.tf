@@ -45,3 +45,19 @@ output "container_name" {
   description = "Nome do container Blob Storage para arquivos de áudio."
   value       = azurerm_storage_container.audio.name
 }
+
+output "cosmos_endpoint" {
+  description = "Endpoint do Cosmos DB de alertas (usar em COSMOS_ENDPOINT no .env)."
+  value       = azurerm_cosmosdb_account.alertas.endpoint
+}
+
+output "cosmos_key" {
+  description = "Chave primária do Cosmos DB de alertas (usar em COSMOS_KEY no .env)."
+  value       = azurerm_cosmosdb_account.alertas.primary_key
+  sensitive   = true
+}
+
+output "cosmos_database" {
+  description = "Nome do banco no Cosmos DB de alertas (usar em COSMOS_DATABASE no .env)."
+  value       = azurerm_cosmosdb_sql_database.alertas.name
+}
