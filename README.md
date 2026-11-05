@@ -24,6 +24,9 @@ sistema.
 │       ├── sentiment.py            # POST /sentiment
 │       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
 │       ├── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
+│       └── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
+├── dados/                     # MIMIC-IV Demo baixado por script (gitignored)
 │       └── prescricoes.py          # POST /prescricoes/analise, GET /prescricoes/mimic/{subject_id}, /config (US16)
 ├── tests/
 │   ├── conftest.py               # Fixtures pytest (TestClient, skip sem Azure configurada)
@@ -36,6 +39,10 @@ sistema.
 │   ├── avaliar_us07.py       # Avalia YOLO em dataset anotado
 │   ├── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
 │   └── avaliar_us17.py       # Recall de quedas (vídeo) e casos injetados de movimentação (US17)
+│   ├── baixar_sinais.py       # Download do MIMIC-IV Demo (US15)
+│   ├── demo_us15.py           # Roda e confere cada item da DoD da US15
+│   ├── rodar_us15.py          # Replay em tempo real dos sinais vitais (US15)
+│   └── avaliar_us15.py        # Avaliação com anomalias injetadas (US15)
 │   └── avaliar_us16.py       # Recall da US16 em casos injetados no MIMIC-IV Demo
 ├── prescricoes/               # US16: anomalias na evolução de prescrições
 ├── config/us16_prescricoes.yaml  # Limiares e lista ISMP da US16 (versionados)
@@ -103,7 +110,7 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `TRANSCRIPTION_OUTPUT_DIR`        | Não                              | Pasta das transcrições (JSON e áudio de origem). Padrão: `saida/transcricao`.                                                | `saida/transcricao`                                                                    |
 | `AZURE_STORAGE_CONNECTION_STRING` | Não (não usada pela transcrição) | Connection string do Azure Blob Storage. Não é mais usada pela transcrição (US11), que envia o áudio direto na requisição.  | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
 | `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
-| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose` e `POST /video/areas-criticas` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose`, `POST /video/areas-criticas` e `POST /sinais-vitais/medicoes` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
 | `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose` e `POST /video/areas-criticas`. Padrão: `500`.                         | `500`                                                                                  |
 | `US07_CONFIG_PATH`                | Não                              | Config da US07 usada pela API quando o `POST` não informa `camera_id`. Padrão: `config/exemplo_us07.json`.                   | `config/exemplo_us07.json`                                                             |
@@ -616,6 +623,8 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `POST` | `/video/areas-criticas`          | Recebe um vídeo (`video_file`) e enfileira a detecção YOLOv8 + ROIs (US07). Responde `202` com o `job_id`.                                  |
 | `GET`  | `/video/areas-criticas/{job_id}` | Status do job, parâmetros usados (conf, IoU, classes, ROIs) e resumo (quadros, detecções, entradas, saídas).                                |
 | `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
+| `POST` | `/sinais-vitais/news2`           | Recebe um conjunto de sinais vitais e devolve os pontos NEWS2 por parâmetro, o total e o gatilho (US15).                                   |
+| `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados, os artefatos descartados e as medições fora de ordem descartadas. A baseline de cada paciente é mantida entre chamadas (US15).          |
 
 Exemplos com `curl`:
 
@@ -646,6 +655,14 @@ curl -X POST http://127.0.0.1:8000/video/areas-criticas \
 
 curl http://127.0.0.1:8000/video/areas-criticas/<job_id>
 curl http://127.0.0.1:8000/video/areas-criticas/<job_id>/eventos
+
+curl -X POST http://127.0.0.1:8000/sinais-vitais/news2 \
+  -H "Content-Type: application/json" \
+  -d '{"fc": 115, "spo2": 93, "fr": 22, "temp": 38.5, "pas": 120}'
+
+curl -X POST http://127.0.0.1:8000/sinais-vitais/medicoes \
+  -H "Content-Type: application/json" \
+  -d '{"medicoes": [{"patient_id": "10000032", "timestamp": "2026-10-24T08:00:00Z", "sinal": "fc", "valor": 135}]}'
 ```
 
 ### Análise de pose pela API (`/video/pose`)
@@ -1001,6 +1018,122 @@ Formato de um evento `termo_critico` (resumido e com valores ilustrativos; o exe
 
 **Avaliação**: `scripts/eval_us13.py` compara, por consulta, os termos anotados em `data/text_samples/annotations.csv` com os eventos `termo_critico`. Ele grava em `eval.md` a precision, o recall, o F1, os falsos positivos e os falsos negativos (com o motivo de cada um) e os descartes corretos, além de um exemplo de termo detectado e um de negação ignorada para o relatório.
 
+## Anomalias em sinais vitais (US15)
+
+Módulo em `sinais/` que detecta anomalias nas séries de frequência cardíaca,
+pressão arterial (sistólica e diastólica), SpO2, frequência respiratória e
+temperatura de cada paciente. Roda local, só com numpy e pandas. Não usa o
+Azure AI Anomaly Detector, que foi aposentado em 01/10/2026.
+
+Cada medição passa por três etapas, uma de cada vez, como num stream:
+
+1. **Limpeza.** Valores fisiologicamente impossíveis (SpO2 = 0, FC > 300 etc.)
+   são descartados e contados. Um valor ausente não é interpolado: o último
+   válido continua valendo por um prazo (2 h para FC, PA, SpO2 e FR; 6 h para
+   temperatura; 8 h para O2 e consciência). Depois disso o parâmetro fica de
+   fora e o evento sai marcado como `news2_parcial`.
+2. **Regras clínicas (NEWS2, RCP 2017).** Pontos por parâmetro e total.
+   Total 5–6 ou 3 pontos em um parâmetro gera `news2_resposta_urgente`;
+   total ≥ 7 gera `news2_emergencia`.
+3. **ML não supervisionado.** Compara cada sinal com a baseline do próprio
+   paciente. A mudança súbita (`desvio_baseline`) usa um z-score robusto
+   (mediana/MAD das últimas 12 h). A tendência (`tendencia_deterioracao`) usa
+   a inclinação de uma reta nas últimas 6 h.
+
+Os achados seguem o contrato `EventoAchado` (`contratos/`), com `modality`
+`sinais_vitais` e o paciente pseudonimizado.
+
+```
+sinais/
+├── limpeza.py      # Faixas fisiológicas e validade do último valor
+├── news2.py        # Tabela NEWS2, pontos por parâmetro, total e gatilhos
+├── detector.py     # DetectorSinais.processar(medicao): estado por paciente e janelas deslizantes
+├── mimic.py        # Leitura do chartevents do MIMIC-IV Demo
+└── avaliacao.py    # Injeção de anomalias rotuladas e matriz de confusão
+```
+
+As regras de limpeza e as decisões de projeto estão em
+[`docs/arquitetura/us15_sinais_vitais.md`](docs/arquitetura/us15_sinais_vitais.md).
+A rastreabilidade de cada item da DoD está em
+[`docs/relatorio_us15_dod.md`](docs/relatorio_us15_dod.md).
+
+### Dados
+
+São 100 pacientes de UTI do **MIMIC-IV Clinical Database Demo 2.2** (PhysioNet,
+acesso aberto, cerca de 77 mil medições). Os dados ficam fora do Git, em
+`dados/mimic-iv-demo/`:
+
+```bash
+uv run python scripts/baixar_sinais.py
+```
+
+### Como rodar
+
+`PSEUDONYM_KEY` precisa estar no `.env` (veja [Variáveis de ambiente](#variáveis-de-ambiente)).
+
+```bash
+# Confere todos os itens da DoD no terminal (ou só alguns: news2 gatilhos ml ...)
+uv run python scripts/demo_us15.py
+
+# Replay em "tempo real": 1 h de dados por segundo; Ctrl+C para parar
+uv run python scripts/rodar_us15.py --pacientes 3 --velocidade 3600
+
+# Replay completo sem espera; eventos em saida/sinais/eventos_us15.jsonl
+uv run python scripts/rodar_us15.py
+
+# Avaliação (cerca de 1,5 min): saida/sinais/relatorio_us15.json e rotulos_us15.csv
+uv run python scripts/avaliar_us15.py
+
+# Testes
+uv run pytest tests/sinais
+```
+
+Pelo código:
+
+```python
+from datetime import UTC, datetime
+from sinais import DetectorSinais, Medicao, news2
+
+news2.calcular({"fc": 115, "spo2": 93, "fr": 22, "temp": 38.5}).gatilho   # 'news2_emergencia'
+
+detector = DetectorSinais()
+eventos = detector.processar(Medicao("pt_" + "0" * 24, datetime.now(UTC), "fc", 135))
+```
+
+A API expõe o mesmo detector em `POST /sinais-vitais/news2` e
+`POST /sinais-vitais/medicoes` (veja [Endpoints](#endpoints)). O estado das
+baselines fica na memória do processo: é perdido quando a API reinicia e não é
+compartilhado entre workers (rode a API com 1 worker). Um lock serializa os
+lotes recebidos ao mesmo tempo. Uma medição anterior à última já processada do
+mesmo paciente e sinal é descartada e contada em `fora_de_ordem_descartadas`.
+
+### Avaliação
+
+O MIMIC não tem anomalias rotuladas. Por isso a avaliação injeta degraus e
+rampas de piora (FC +30 bpm, PAS −30 mmHg, SpO2 −6 % etc.) em metade das janelas
+de 6 h de cada paciente e marca essas janelas. Os limiares foram ajustados nos
+pacientes de `subject_id` par. As métricas abaixo são as dos ímpares:
+
+|                       | Predito anomalia | Predito normal |
+| --------------------- | ---------------: | -------------: |
+| **Anomalia injetada** |             1264 |            244 |
+| **Normal**            |              574 |            842 |
+
+| Métrica  | Teste | Meta   |
+| -------- | ----: | ------ |
+| Recall   | 0,838 | ≥ 0,80 |
+| Precisão | 0,688 | —      |
+| F1       | 0,756 | ≥ 0,70 |
+
+Os falsos positivos incluem variações reais dos pacientes de UTI, que não têm
+rótulo. A precisão medida é, portanto, um limite inferior.
+
+### Licença dos dados
+
+O MIMIC-IV Clinical Database Demo é distribuído pelo PhysioNet sob a
+[Open Data Commons Open Database License v1.0](https://physionet.org/content/mimic-iv-demo/view-license/2.2/).
+Ao usar os dados, cite o dataset conforme a
+[página do PhysioNet](https://physionet.org/content/mimic-iv-demo/2.2/).
 ## Anomalias na evolução de prescrições (US16)
 
 Detecta "alterações inesperadas no tratamento" nas prescrições do
