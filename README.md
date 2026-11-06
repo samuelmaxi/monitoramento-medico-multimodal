@@ -24,7 +24,8 @@ sistema.
 │       ├── sentiment.py            # POST /sentiment
 │       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
 │       ├── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
-│       └── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+│       ├── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+│       └── fusao.py                # GET /fusao/pacientes[/{patient_id}], POST /fusao/risco (US18)
 ├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
 ├── dados/                     # MIMIC-IV Demo baixado por script (gitignored)
 │       └── prescricoes.py          # POST /prescricoes/analise, GET /prescricoes/mimic/{subject_id}, /config (US16)
@@ -46,6 +47,8 @@ sistema.
 │   └── avaliar_us16.py       # Recall da US16 em casos injetados no MIMIC-IV Demo
 ├── prescricoes/               # US16: anomalias na evolução de prescrições
 ├── config/us16_prescricoes.yaml  # Limiares e lista ISMP da US16 (versionados)
+├── fusao/                     # US18: fusão multimodal em score de risco por paciente
+├── config/us18_fusao.yaml     # Janela, pesos e eixos clínicos da fusão (versionados)
 ├── dados/mimic-iv-demo/       # Tabelas do MIMIC-IV Demo (gitignored)
 │   └── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
 ├── teste/
@@ -625,6 +628,9 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
 | `POST` | `/sinais-vitais/news2`           | Recebe um conjunto de sinais vitais e devolve os pontos NEWS2 por parâmetro, o total e o gatilho (US15).                                   |
 | `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados, os artefatos descartados e as medições fora de ordem descartadas. A baseline de cada paciente é mantida entre chamadas (US15).          |
+| `GET`  | `/fusao/pacientes`               | Último risco multimodal de cada paciente visto pelo barramento, do maior para o menor, com a contribuição de cada modalidade (US18). |
+| `GET`  | `/fusao/pacientes/{patient_id}`  | Risco atual de um paciente (404 sem achados na janela) (US18).                                                                         |
+| `POST` | `/fusao/risco`                   | Calcula o risco por paciente a partir de achados no contrato US04 enviados no corpo, com `janela_min` e `ate` opcionais. Sem estado (US18). |
 
 Exemplos com `curl`:
 
@@ -1182,6 +1188,37 @@ Recall nos casos injetados: 0,974 no modo realista e 1,00 no controlado (meta
 de 0,80). Protocolo, exceções que vieram dos dados, anomalias reais
 documentadas e limitações estão em
 [`docs/relatorio_us16_dod.md`](docs/relatorio_us16_dod.md).
+
+## Fusão multimodal em score de risco (US18)
+
+Combina os achados de vídeo, áudio, texto, sinais vitais, prescrições e
+movimentação de um paciente em um **score de risco de 0 a 1** e um nível
+(baixo < 0,4 ≤ médio < 0,7 ≤ alto), mostrando quanto cada modalidade contribuiu.
+
+```bash
+uv run python scripts/demo_us18.py               # caso SpO2 em queda + dispneia, até o alerta
+uv run python -m fusao.run saida/eventos.jsonl   # risco por paciente a partir de um JSONL
+uv run python -m fusao.run saida/eventos.jsonl --janela-min 30 --saida saida/fusao/eventos.jsonl
+```
+
+- **Estratégia:** *late fusion* com regras ponderadas. Cada achado vira uma força
+  (`peso da modalidade × severidade`, modulada pelo `score` e por decaimento no
+  tempo); a modalidade vale o seu achado mais forte; modalidades que concordam no
+  mesmo eixo clínico (respiratório, neurológico, queda) ganham um termo extra; e
+  tudo é combinado por noisy-OR (`1 − Π(1 − termo)`).
+- **Explicabilidade:** o score é repartido entre as modalidades (`contrib_*` em
+  `evidence.features`, somam o score) e `related_event_ids` aponta os achados usados.
+- **Modalidade ausente** não contribui e não falha; `modalidades_ausentes` diz quais faltaram.
+- **Tempo real:** no app, a fusão assina o mesmo barramento dos detectores e
+  publica `risco_multimodal`, que o motor de alertas (US19) trata como qualquer achado.
+- **Parâmetros** em `config/us18_fusao.yaml` (janela de 60 min, pesos, eixos,
+  níveis), todos justificados.
+
+No caso de demonstração, SpO2 em queda (risco isolado 0,42), relato de falta de
+ar (0,41) e fala com dispneia (0,35) somam **0,82, risco alto**, e geram um
+alerta de prioridade alta para a equipe, enquanto cada achado sozinho gera só
+um alerta médio. Estratégia, pesos, resultados e rastreabilidade ao DoD em
+[`docs/relatorio_us18_dod.md`](docs/relatorio_us18_dod.md).
 
 ## Demo ponta a ponta
 

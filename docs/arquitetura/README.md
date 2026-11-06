@@ -48,7 +48,7 @@ Quando a etapa diz "nenhum", o código roda localmente, sem serviço de nuvem.
 | **2 · Movimentação** | Local | nenhum | Série de movimentação por paciente (posição, saídas do leito, quedas, dia/noite) a partir da pose (US06), das áreas (US07) e do registro de enfermagem do MIMIC-IV Demo (`Position`/`Turn`/`Activity`) | US17 |
 | **3 · Detecção** | Local | nenhum | Regras e ML em Python: NEWS2 + Isolation Forest, regras ISMP/dose, postura/área crítica, imobilidade, classes vocais, termos críticos | US08, US13–US17 |
 | **Barramento** | Local | nenhum | `BarramentoLocal`: valida cada evento, grava em `saida/eventos.jsonl` e entrega em ordem a quem assinou | US04 |
-| **4 · Fusão** | Local | nenhum | *Late fusion* ponderada por paciente e janela; assina `modality ≠ fusao` | US18 |
+| **4 · Fusão** | Local | nenhum | *Late fusion* ponderada por paciente e janela (noisy-OR + concordância clínica, contribuição por modalidade); assina `modality ≠ fusao`. Detalhes em [`docs/relatorio_us18_dod.md`](../relatorio_us18_dod.md) | US18 |
 | **5 · Alerta** | Local (+ Azure na fase 7) | SMTP (Gmail/Brevo) e webhook Teams/Slack; Azure Communication Services Email como adaptador futuro | Motor de alertas agnóstico de modalidade: assina o barramento com `severity ≥ baixa` (`info` nunca alerta), prioridade alta/média/baixa (IEC 60601-1-8), dedup por janela, escalonamento por persistência, retentativa e reconhecimento. Grava `saida/alertas.jsonl` e a auditoria. Detalhes em [`docs/relatorio_us19_dod.md`](../relatorio_us19_dod.md) | US19 |
 
 ### Recursos a criar
