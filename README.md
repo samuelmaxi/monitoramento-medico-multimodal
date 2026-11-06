@@ -1199,6 +1199,7 @@ movimentação de um paciente em um **score de risco de 0 a 1** e um nível
 uv run python scripts/demo_us18.py               # caso SpO2 em queda + dispneia, até o alerta
 uv run python -m fusao.run saida/eventos.jsonl   # risco por paciente a partir de um JSONL
 uv run python -m fusao.run saida/eventos.jsonl --janela-min 30 --saida saida/fusao/eventos.jsonl
+postman collection run postman/fusao.json        # com a API no ar: cálculo + fluxo ao vivo até o alerta
 ```
 
 - **Estratégia:** *late fusion* com regras ponderadas. Cada achado vira uma força

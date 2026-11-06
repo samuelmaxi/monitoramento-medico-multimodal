@@ -5,6 +5,7 @@
 | `audio-texto.json` | `/health`, termos críticos e sentimento nas transcrições (US13), `/sentiment`, transcrição (US11) e o fluxo áudio → análise |
 | `video-pose.json` | Análise de pose em vídeo (US06): enfileirar, status, keypoints, ângulos e feedback |
 | `prescricoes.json` | Anomalias na evolução de prescrições (US16): um exemplo de cada anomalia, controles sem anomalia, erros e pacientes reais do MIMIC-IV Demo |
+| `fusao.json` | Fusão multimodal em score de risco (US18): caso de demonstração, sinais isolados, modalidade ausente, janela configurável, erros, e o fluxo ao vivo barramento → fusão → alerta |
 
 ## Rotas da API
 
@@ -23,6 +24,9 @@
 | POST | `/prescricoes/analise` | Ordens de uma internação → eventos `EventoAchado` (`modality="prescricoes"`): mudança abrupta de dose, duplicidade, suspensão abrupta e alta vigilância (US16) | `PSEUDONYM_KEY` (se enviar IDs de origem) |
 | GET | `/prescricoes/mimic/{subject_id}` | A mesma análise nas prescrições reais de um paciente do MIMIC-IV Demo | `PSEUDONYM_KEY`; tabelas em `dados/mimic-iv-demo` |
 | GET | `/prescricoes/config` | Limiares e lista ISMP em uso | — |
+| POST | `/fusao/risco` | Achados no contrato US04 → risco 0–1 por paciente, nível e contribuição de cada modalidade (US18). `janela_min` e `ate` opcionais no corpo. Com `?publicar=true`, os achados entram no barramento e seguem para a fusão ao vivo e os alertas | — |
+| GET | `/fusao/pacientes` | Último risco de cada paciente visto pelo barramento, do maior para o menor | — |
+| GET | `/fusao/pacientes/{patient_id}` | Risco atual de um paciente (404 sem achados na janela) | — |
 
 A documentação interativa (Swagger) fica em <http://127.0.0.1:8000/docs> com a API no ar.
 
@@ -169,6 +173,9 @@ Na pasta **US11 + US13 - Áudio da consulta**, escolha um arquivo no campo `audi
 ```bash
 # US16: roda sem Azure; a pasta do MIMIC precisa das tabelas baixadas
 postman collection run postman/prescricoes.json
+
+# US18: roda sem Azure e sem dados baixados (rode em ordem: a pasta ao vivo depende da anterior)
+postman collection run postman/fusao.json
 ```
 
 
@@ -213,6 +220,22 @@ Todas checam que os eventos têm `modality="texto"` e o paciente pseudonimizado.
 | Pacientes reais do MIMIC | `subject_id` 10008454; 10002428 com `hadm_id` 28676446; 99999999 | Enoxaparina +400%; paracetamol duplicado; 404 |
 
 Todas checam `modality="prescricoes"`, o paciente pseudonimizado e a `versao_limiares` nos eventos. A coleção vem de `scripts/gerar_postman_us16.py`, e `tests/prescricoes/test_api.py` envia os mesmos corpos à API. Mudou um exemplo, gere a coleção de novo com `uv run python scripts/gerar_postman_us16.py`. A variável `publicar` da coleção vem como `false`, para que rodar a coleção não encha `saida/eventos.jsonl` de eventos de teste.
+
+## O que cada requisição da US18 verifica
+
+| Requisição | Entrada | Esperado |
+| --- | --- | --- |
+| Caso de demonstração | NEWS2 = 5 (SpO2 92%) + fala com dispneia + relato de falta de ar, sem vídeo | Risco alto (≈ 0,82, severidade alta), acima de cada sinal isolado; concordância no eixo respiratório; vídeo e movimentação ausentes |
+| Sinal isolado: só sinais vitais | Só o NEWS2 do caso | Risco médio, severidade info (uma modalidade só não alerta de novo) |
+| Sinal isolado: só áudio | Só a dificuldade respiratória | Risco baixo |
+| Paciente sem vídeo | NEWS2 = 8 e prescrições | Risco alto sem falhar, quatro modalidades ausentes |
+| Janela configurável | Caso de demonstração com `janela_min = 5` | NEWS2 fora da janela, score menor que com 60 min |
+| Só `sem_achados` | Sinais vitais e prescrições normais | Score 0, nível baixo |
+| Dois pacientes no mesmo lote | Os dois casos juntos | Um risco por `patient_id`, maior primeiro |
+| Erros 422 / 404 | `patient_id` cru; `janela_min = 0`; paciente que a fusão não viu | 422 / 422 / 404 |
+| Fluxo ao vivo, em ordem | `POST /fusao/risco?publicar=true` → `GET /fusao/pacientes/{id}` → `GET /alerts?paciente_id=…` → `GET /fusao/pacientes` | O serviço calcula o mesmo risco alto; o motor da US19 gera um alerta **alta** da fusão e alertas **media** dos achados isolados |
+
+Todas checam que as contribuições somam o score e que o `risco_multimodal` está no contrato US04. A coleção vem de `scripts/gerar_postman_us18.py`, com os mesmos cenários de `fusao/cenarios.py` (achados sintéticos, `is_synthetic=true`); `tests/fusao/test_postman.py` roda a coleção inteira contra o app e falha se ela não estiver em dia com o gerador. Só a pasta do fluxo ao vivo publica no barramento.
 
 ## Limitações conhecidas
 

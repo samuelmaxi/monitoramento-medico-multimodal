@@ -2,17 +2,20 @@
 
 - ``GET  /fusao/pacientes``: último risco de cada paciente visto pelo barramento.
 - ``GET  /fusao/pacientes/{patient_id}``: risco atual de um paciente.
-- ``POST /fusao/risco``: calcula, sem estado, a partir de achados enviados no corpo.
+- ``POST /fusao/risco``: calcula, sem estado, a partir de achados enviados no corpo. Com
+  ``publicar=true``, os achados também entram no barramento local, como se viessem dos
+  detectores: a fusão ao vivo e o motor de alertas reagem (teste ponta a ponta).
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from contratos import EventoAchado
+from app.barramento import get_barramento
+from contratos import BarramentoLocal, EventoAchado
 from fusao import ConfigFusao, ErroDeConfiguracao, FusaoMultimodal, Risco, evento_de_risco
 from fusao.run import riscos_de
 
@@ -104,8 +107,17 @@ def detalhar(request: Request, patient_id: str) -> RiscoResposta:
 
 
 @router.post("/risco", response_model=list[RiscoResposta])
-def calcular(request: Request, corpo: RiscoRequest) -> list[RiscoResposta]:
-    """Risco por paciente a partir dos achados do corpo, sem tocar no estado do serviço."""
+def calcular(
+    request: Request,
+    corpo: RiscoRequest,
+    publicar: bool = Query(
+        False,
+        description="Publica os achados no barramento local: a fusão ao vivo e o motor de "
+        "alertas os recebem como se viessem dos detectores",
+    ),
+    barramento: BarramentoLocal = Depends(get_barramento),
+) -> list[RiscoResposta]:
+    """Risco por paciente a partir dos achados do corpo. O cálculo não usa o estado do serviço."""
     config = _fusao(request).config
     try:
         if corpo.janela_min is not None:
@@ -114,5 +126,8 @@ def calcular(request: Request, corpo: RiscoRequest) -> list[RiscoResposta]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if corpo.ate is not None and corpo.ate.tzinfo is None:
         raise HTTPException(status_code=422, detail="ate precisa de fuso (UTC)")
-    return [resposta(r, config) for r in riscos_de(corpo.eventos, config, ate=corpo.ate)]
+    riscos = [resposta(r, config) for r in riscos_de(corpo.eventos, config, ate=corpo.ate)]
+    if publicar:
+        barramento.emitir_varios(sorted(corpo.eventos, key=lambda e: e.timestamp))
+    return riscos
 

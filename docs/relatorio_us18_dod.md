@@ -15,9 +15,15 @@ Os caminhos são relativos à raiz do repositório.
 ```bash
 uv run python scripts/demo_us18.py               # caso de demonstração até o alerta
 uv run python -m fusao.run saida/eventos.jsonl   # risco por paciente a partir de um JSONL
-uv run pytest tests/fusao                        # 97 testes da US18
+uv run pytest tests/fusao                        # 100 testes da US18
 uv run uvicorn app.main:app --reload             # GET /fusao/pacientes, POST /fusao/risco
+postman collection run postman/fusao.json        # 15 requisições, inclusive o fluxo ao vivo até o alerta
 ```
+
+Com `POST /fusao/risco?publicar=true`, os achados do corpo entram no barramento
+como se viessem dos detectores: a fusão ao vivo e o motor de alertas reagem, e
+`GET /fusao/pacientes/{id}` e `GET /alerts` mostram o resultado. É o caminho da
+demonstração em vídeo sem depender do Azure.
 
 ## Fluxo
 
@@ -48,6 +54,7 @@ MotorAlertas (US19) ──► prioridade = severidade do risco ──► e-mail 
 | `fusao/cenarios.py` | Casos de demonstração, usados pelo script e pelos testes |
 | `app/routers/fusao.py` | API `/fusao` |
 | `scripts/demo_us18.py` | Demonstração ponta a ponta, até os alertas |
+| `postman/fusao.json` | Coleção Postman (gerada por `scripts/gerar_postman_us18.py`) |
 
 ## Estratégia de fusão
 
@@ -278,7 +285,7 @@ de ar: isolados 0,42 / 0,41 / 0,35, combinado 0,82 (alto). Ver a seção do caso
 
 ### 6. Testes unitários do alinhamento temporal e do cálculo do score
 
-**Status:** ✔ 97 testes em `tests/fusao/`, todos passando.
+**Status:** ✔ 100 testes em `tests/fusao/`, todos passando.
 
 | Arquivo | Cobre |
 |---|---|
@@ -288,6 +295,7 @@ de ar: isolados 0,42 / 0,41 / 0,35, combinado 0,82 (alto). Ver a seção do caso
 | `test_eventos.py` | Contrato US04, features, resumo, rastreabilidade, contexto e ingestão |
 | `test_servico.py` | Barramento em tempo real, sem laço, republicação só com mudança, pacientes independentes, achado atrasado, buffer, isolamento de falha, integração com a US19 |
 | `test_api_e_cli.py` | Endpoints `/fusao` e `python -m fusao.run` |
+| `test_postman.py` | A coleção `postman/fusao.json` inteira contra o app com lifespan, e se ela está em dia com o gerador |
 
 ## Requisitos do Tech Challenge atendidos
 
