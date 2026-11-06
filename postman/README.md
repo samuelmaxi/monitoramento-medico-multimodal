@@ -5,6 +5,7 @@
 | `audio-texto.json` | `/health`, termos críticos e sentimento nas transcrições (US13), `/sentiment`, transcrição (US11) e o fluxo áudio → análise |
 | `video-pose.json` | Análise de pose em vídeo (US06): enfileirar, status, keypoints, ângulos e feedback |
 | `prescricoes.json` | Anomalias na evolução de prescrições (US16): um exemplo de cada anomalia, controles sem anomalia, erros e pacientes reais do MIMIC-IV Demo |
+| `audio-vocal.json` | Biomarcadores vocais e achados de áudio (US10, US12, US14): análise de um áudio, com detalhes, sem publicar, com transcrição do Azure e os erros 400/422 |
 
 ## Rotas da API
 
@@ -13,6 +14,7 @@
 | GET | `/health` | Confere se a API está no ar | — |
 | POST | `/text/analysis` | Termos críticos e sentimento numa transcrição diarizada (US13): o JSON da US11 ou o formato compacto. Devolve eventos `EventoAchado` (`modality="texto"`) | `AZURE_LANGUAGE_ENDPOINT`, `AZURE_LANGUAGE_KEY`, `PSEUDONYM_KEY` |
 | POST | `/audio/analysis` | Áudio da consulta → transcrição (US11) → termos críticos e sentimento na fala do paciente (US13), numa chamada | as duas linhas de US11 e US13 |
+| POST | `/audio/vocal` | Áudio → WAV 16 kHz mono (US10) → biomarcadores vocais do paciente (US12) → classes `fadiga_vocal`, `dificuldade_respiratoria`, `possivel_disartria` ou `normal` (US14). Eventos `EventoAchado` (`modality="audio"`) no barramento; severidade alta vira alerta (US19). **Indicativo para avaliação clínica, não diagnóstico** | `PSEUDONYM_KEY`; com `transcrever=true`, `AZURE_SPEECH_KEY` e `AZURE_SPEECH_REGION`; o YAMNet (`scripts/baixar_modelos_audio.py`) é opcional |
 | POST | `/sentiment` | Sentimento de um texto avulso | `AZURE_LANGUAGE_ENDPOINT`, `AZURE_LANGUAGE_KEY` |
 | POST | `/transcription` | Transcreve um áudio em pt-BR, com diarização e timestamps (US11). Síncrono | `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` (ou `AZURE_SPEECH_ENDPOINT`) |
 | POST | `/video/pose` | Enfileira um vídeo para análise de pose (US06) | `PSEUDONYM_KEY` (se enviar IDs de origem) |
@@ -50,6 +52,33 @@ curl -X POST "http://127.0.0.1:8000/audio/analysis?detalhes=true" \
 ```
 
 Resposta: `audio_id`, `patient_id` (pseudônimo), `transcricao_uri`, `transcricao` (o JSON da US11), `eventos` e, com `detalhes`, o sentimento por sentença. Formato, config, credenciais da análise e `PSEUDONYM_KEY` são conferidos antes da chamada ao Speech, para não gastar a transcrição. Os códigos de erro são os das duas rotas: os do Speech (401/403, 429, 502, 504, com o áudio preservado) e os da tabela da US13 abaixo.
+
+### `POST /audio/vocal` (US10, US12, US14)
+
+`multipart/form-data`: `audio_file` e os campos abaixo. A resposta traz `classe`, `classes`, `aviso`, os `biomarcadores`, os `eventos` (contrato `EventoAchado`), `metadados` da ingestão e, com `?detalhes=true`, o relatório (segmentos, critérios satisfeitos com valor e limiar, baseline, eventos respiratórios). Campo ausente em `biomarcadores` = não mensurável neste áudio.
+
+| Campo | O que é |
+| --- | --- |
+| `patient_id` | ID de origem ou pseudônimo `pt_…`. Pseudonimizado com `PSEUDONYM_KEY`; o de origem nunca é gravado |
+| `recorded_at` | Início da gravação, ISO-8601 UTC. O `timestamp` do achado é `recorded_at` + a posição da fala no áudio |
+| `audio_id` | ID curto, sem dados pessoais (`[A-Za-z0-9][A-Za-z0-9_.-]{0,63}`). Padrão: `audio-<12 hex>`. Repetido → **409**; `..` ou começando por ponto → **422** |
+| `medico_falante` | Número do falante que é o médico. Sem ele, só vale áudio de um único falante (tratado como o paciente) |
+| `transcrever` | `true` transcreve com o Azure Speech (US11): dá a taxa de fala e separa médico e paciente. Sem credencial → 503 |
+| `bed_id`, `encounter_id` | Contexto do alerta (a internação é pseudonimizada) |
+| `origem`, `licenca` | Procedência da gravação, registrada nos metadados (US10) |
+
+Query: `detalhes` (relatório completo), `publicar` (padrão `true`; `false` não publica no barramento nem gera alerta), `atualizar_baseline`.
+
+O áudio enviado fica preservado em `saida/audio/<audio_id>/original.<ext>`, ao lado de `convertido.wav` (WAV PCM 16 kHz mono, o que vai ao Azure), `features.wav`, `metadados.json`, `eventos.jsonl` e `relatorio.json`. Limite de upload: `AUDIO_MAX_UPLOAD_MB` (padrão 100) → **413**.
+
+| Status | Quando |
+| --- | --- |
+| 400 | Extensão não suportada |
+| 409 | `audio_id` já usado |
+| 413 | Upload acima do limite |
+| 422 | Áudio vazio, mudo, corrompido ou curto demais; só ruído (sem fala); `recorded_at` fora de UTC; `audio_id` inválido; dois falantes sem `medico_falante` |
+| 429, 504, 502 | Falha do Azure Speech com `transcrever=true`, com os mesmos códigos de `/transcription` |
+| 503 | Falta `PSEUDONYM_KEY`, a config não carrega ou faltam as credenciais do Azure (com `transcrever=true`) |
 
 ### `POST /text/analysis` (US13)
 
@@ -214,7 +243,21 @@ Todas checam que os eventos têm `modality="texto"` e o paciente pseudonimizado.
 
 Todas checam `modality="prescricoes"`, o paciente pseudonimizado e a `versao_limiares` nos eventos. A coleção vem de `scripts/gerar_postman_us16.py`, e `tests/prescricoes/test_api.py` envia os mesmos corpos à API. Mudou um exemplo, gere a coleção de novo com `uv run python scripts/gerar_postman_us16.py`. A variável `publicar` da coleção vem como `false`, para que rodar a coleção não encha `saida/eventos.jsonl` de eventos de teste.
 
+## O que cada requisição da US10/US12/US14 verifica
+
+| Requisição | Esperado |
+| --- | --- |
+| Analisar voz | 200; `classe` entre as quatro; `aviso` com "não é diagnóstico"; paciente `pt_…`; `metadados` com 16 kHz, mono e `original_preservado`; eventos com `modality="audio"` |
+| Com detalhes | `detalhes.criterios` com `satisfeito` em cada critério; `respiratorio.disponivel` |
+| Sem publicar | `publicados = 0` |
+| Consulta com médico e paciente | 200 com `taxa_fala_pps`, ou 503 se o Azure não estiver configurado |
+| Erros | 422 (`recorded_at` sem UTC; `audio_id` `..`) e 400 (formato). Anexe um áudio qualquer nas de 422 |
+
+Em todas, selecione um áudio no campo `audio_file`. Os áudios **não** vão para o repositório (o `.gitignore` bloqueia as extensões de áudio).
+
 ## Limitações conhecidas
+
+- **US12/US14**: os limiares de jitter, shimmer e HNR (MDVP) valem para gravação de qualidade clínica; áudio comprimido com perdas (Opus do WhatsApp, MP3, AAC) os ultrapassa com facilidade. O achado leva `audio_comprimido=true` e o relatório uma nota. Ver [`docs/relatorio_us12_dod.md`](../docs/relatorio_us12_dod.md).
 
 - **US13 em português**: o modelo `pt` do Text Analytics for health nem sempre marca hipótese e terceiro. Por exemplo, "minha irmã tem convulsões" e "se a falta de ar piorar" viram achado. Por isso a requisição de terceiro usa a consulta 03 sem a fala da irmã. Medições em `outputs/text_analysis/*/eval.md` (`scripts/eval_us13.py`).
 - **US11**: a diarização numera os falantes na ordem em que aparecem, mas não diz qual é o médico. Por isso `medico_falante` precisa ser informado; se for o número errado, a fala do médico vai para a análise e a do paciente fica de fora.

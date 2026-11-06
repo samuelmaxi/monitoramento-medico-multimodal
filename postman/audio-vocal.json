@@ -1,0 +1,451 @@
+{
+  "info": {
+    "_postman_id": "6f1c2e0a-3b6d-5d3e-9a41-7c5b8a0e2d14",
+    "name": "Monitoramento Médico - Áudio vocal (US10, US12, US14)",
+    "description": "Biomarcadores vocais e achados de áudio. Suba a API com `uvicorn app.main:app --reload` e ajuste `baseUrl` se não for http://127.0.0.1:8000. Em cada requisição, selecione um áudio no campo `audio_file` (um áudio de voz, de preferência 5 s ou mais). O resultado é um INDICATIVO PARA AVALIAÇÃO CLÍNICA, não um diagnóstico. Precisa de `PSEUDONYM_KEY` no .env; o YAMNet (python scripts/baixar_modelos_audio.py) é opcional. Instruções em postman/README.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Analisar voz (áudio só do paciente)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "audio_file",
+              "type": "file",
+              "src": [],
+              "description": "Selecione um áudio (wav, ogg/opus, flac, mp3, m4a...)"
+            },
+            {
+              "key": "patient_id",
+              "value": "10000032",
+              "type": "text",
+              "description": "ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+            },
+            {
+              "key": "recorded_at",
+              "value": "2026-10-01T13:00:00Z",
+              "type": "text",
+              "description": "Início da gravação, ISO-8601 em UTC"
+            },
+            {
+              "key": "origem",
+              "value": "gravação de teste",
+              "type": "text",
+              "description": "Origem registrada nos metadados (US10)"
+            },
+            {
+              "key": "licenca",
+              "value": "uso restrito ao projeto",
+              "type": "text",
+              "description": "Licença/base legal registrada nos metadados"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/audio/vocal",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audio",
+            "vocal"
+          ]
+        },
+        "description": "Converte para WAV 16 kHz mono (US10), mede os biomarcadores (US12) e classifica (US14). Sem transcrição, os segmentos de fala vêm de energia e não há taxa de fala."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "const corpo = pm.response.json();",
+              "pm.test(\"classe conhecida\", () => pm.expect([\"normal\", \"fadiga_vocal\", \"dificuldade_respiratoria\", \"possivel_disartria\"]).to.include(corpo.classe));",
+              "pm.test(\"aviso de indicativo\", () => pm.expect(corpo.aviso).to.include(\"não é diagnóstico\"));",
+              "pm.test(\"paciente pseudonimizado\", () => pm.expect(corpo.patient_id).to.match(/^pt_[0-9a-f]{24}$/));",
+              "pm.test(\"metadados da ingestão\", () => {",
+              "    pm.expect(corpo.metadados.convertido_taxa_hz).to.eql(16000);",
+              "    pm.expect(corpo.metadados.convertido_canais).to.eql(1);",
+              "    pm.expect(corpo.metadados.original_preservado).to.eql(true);",
+              "});",
+              "pm.test(\"eventos de áudio\", () => corpo.eventos.forEach(e => pm.expect(e.modality).to.eql(\"audio\")));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Com detalhes (segmentos, critérios, baseline)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "audio_file",
+              "type": "file",
+              "src": [],
+              "description": "Selecione um áudio (wav, ogg/opus, flac, mp3, m4a...)"
+            },
+            {
+              "key": "patient_id",
+              "value": "10000032",
+              "type": "text",
+              "description": "ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+            },
+            {
+              "key": "recorded_at",
+              "value": "2026-10-01T13:00:00Z",
+              "type": "text",
+              "description": "Início da gravação, ISO-8601 em UTC"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/audio/vocal?detalhes=true",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audio",
+            "vocal"
+          ],
+          "query": [
+            {
+              "key": "detalhes",
+              "value": "true"
+            }
+          ]
+        },
+        "description": "O mesmo, com o relatório completo: cada critério com valor, limiar e se foi satisfeito."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "const d = pm.response.json().detalhes;",
+              "pm.test(\"critérios com valor e limiar\", () => {",
+              "    pm.expect(d.criterios.length).to.be.above(0);",
+              "    d.criterios.forEach(c => pm.expect(c).to.have.property(\"satisfeito\"));",
+              "});",
+              "pm.test(\"respiratório declara se o modelo estava disponível\", () => pm.expect(d.respiratorio).to.have.property(\"disponivel\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sem publicar no barramento (?publicar=false)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "audio_file",
+              "type": "file",
+              "src": [],
+              "description": "Selecione um áudio (wav, ogg/opus, flac, mp3, m4a...)"
+            },
+            {
+              "key": "patient_id",
+              "value": "10000032",
+              "type": "text",
+              "description": "ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+            },
+            {
+              "key": "recorded_at",
+              "value": "2026-10-01T13:00:00Z",
+              "type": "text",
+              "description": "Início da gravação, ISO-8601 em UTC"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/audio/vocal?publicar=false",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audio",
+            "vocal"
+          ],
+          "query": [
+            {
+              "key": "publicar",
+              "value": "false"
+            }
+          ]
+        },
+        "description": "Analisa sem publicar os eventos: nenhum alerta é gerado."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+              "pm.test(\"nada publicado\", () => pm.expect(pm.response.json().publicados).to.eql(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consulta com médico e paciente (transcrição Azure Speech)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "audio_file",
+              "type": "file",
+              "src": [],
+              "description": "Selecione um áudio (wav, ogg/opus, flac, mp3, m4a...)"
+            },
+            {
+              "key": "patient_id",
+              "value": "10000032",
+              "type": "text",
+              "description": "ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+            },
+            {
+              "key": "recorded_at",
+              "value": "2026-10-01T13:00:00Z",
+              "type": "text",
+              "description": "Início da gravação, ISO-8601 em UTC"
+            },
+            {
+              "key": "transcrever",
+              "value": "true",
+              "type": "text",
+              "description": "Usa o Azure Speech"
+            },
+            {
+              "key": "medico_falante",
+              "value": "1",
+              "type": "text",
+              "description": "Número do falante que é o médico (ouça o áudio)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/audio/vocal",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audio",
+            "vocal"
+          ]
+        },
+        "description": "Transcreve com o Azure Speech (US11, diarização): separa o paciente do médico e dá a taxa de fala. Sem credencial do Azure responde 503 e não grava nada."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 ou 503 (sem Azure configurado)\", () => pm.expect([200, 503]).to.include(pm.response.code));",
+              "if (pm.response.code === 200) {",
+              "    const d = pm.response.json();",
+              "    pm.test(\"taxa de fala medida\", () => pm.expect(d.biomarcadores.taxa_fala_pps).to.be.a(\"number\"));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Erro 422 - recorded_at fora de UTC",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "audio_file",
+              "type": "file",
+              "src": [],
+              "description": "Selecione um áudio (wav, ogg/opus, flac, mp3, m4a...)"
+            },
+            {
+              "key": "patient_id",
+              "value": "10000032",
+              "type": "text",
+              "description": "ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+            },
+            {
+              "key": "recorded_at",
+              "value": "2026-10-01T13:00:00",
+              "type": "text",
+              "description": "Sem fuso: inválido"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/audio/vocal",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audio",
+            "vocal"
+          ]
+        },
+        "description": "Anexe qualquer áudio. Rejeitado antes de gravar o áudio."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"422\", () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Erro 422 - audio_id que sairia da pasta de saída",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "audio_file",
+              "type": "file",
+              "src": [],
+              "description": "Selecione um áudio (wav, ogg/opus, flac, mp3, m4a...)"
+            },
+            {
+              "key": "patient_id",
+              "value": "10000032",
+              "type": "text",
+              "description": "ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+            },
+            {
+              "key": "recorded_at",
+              "value": "2026-10-01T13:00:00Z",
+              "type": "text",
+              "description": "Início da gravação, ISO-8601 em UTC"
+            },
+            {
+              "key": "audio_id",
+              "value": "..",
+              "type": "text",
+              "description": "Inválido: precisa começar por letra ou número"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/audio/vocal",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audio",
+            "vocal"
+          ]
+        },
+        "description": "Anexe qualquer áudio. `..` casa o padrão do contrato, mas viraria nome de pasta fora de saida/audio; a rota recusa."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"422\", () => pm.response.to.have.status(422));",
+              "pm.test(\"código estável\", () => pm.expect(pm.response.json().detail).to.include(\"audio_id_invalido\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Erro 400 - formato não suportado",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "audio_file",
+              "type": "file",
+              "src": [],
+              "description": "Selecione um áudio (wav, ogg/opus, flac, mp3, m4a...)"
+            },
+            {
+              "key": "patient_id",
+              "value": "10000032",
+              "type": "text",
+              "description": "ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+            },
+            {
+              "key": "recorded_at",
+              "value": "2026-10-01T13:00:00Z",
+              "type": "text",
+              "description": "Início da gravação, ISO-8601 em UTC"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/audio/vocal",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "audio",
+            "vocal"
+          ]
+        },
+        "description": "Anexe um arquivo que não seja áudio (ex.: .txt)."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"400\", () => pm.response.to.have.status(400));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

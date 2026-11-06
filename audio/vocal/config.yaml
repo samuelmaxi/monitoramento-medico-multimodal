@@ -1,0 +1,124 @@
+# Biomarcadores vocais (US12) e achados de áudio (US14).
+# Todos os números do módulo ficam aqui; o código não tem valores escondidos.
+#
+# LEGENDA DA ORIGEM DOS LIMIARES
+#   [MDVP]  limiar de normalidade do MDVP, citado na US12. Indica alteração vocal.
+#   [PRAAT] parâmetro padrão do Praat para análise de voz (jitter/shimmer/HNR).
+#   [EXP]   EXPERIMENTAL: valor de partida plausível, sem validação clínica neste projeto.
+#           Precisa ser calibrado com gravações rotuladas antes de qualquer uso assistencial.
+versao: "1.0.0"
+
+praat:
+  pitch_floor_hz: 75                # [PRAAT] limite inferior de F0 (voz masculina grave)
+  pitch_ceiling_hz: 500             # [PRAAT] limite superior de F0 (voz feminina aguda)
+  passo_s: 0.01
+  periodo_minimo_s: 0.0001          # [PRAAT] jitter/shimmer: menor período considerado
+  periodo_maximo_s: 0.02            # [PRAAT] jitter/shimmer: maior período considerado
+  fator_maximo_periodo: 1.3         # [PRAAT] razão máxima entre períodos vizinhos
+  fator_maximo_amplitude: 1.6       # [PRAAT] razão máxima entre amplitudes vizinhas (shimmer)
+  hnr_limiar_silencio: 0.1          # [PRAAT] To Harmonicity (cc)
+  hnr_periodos_por_janela: 1.0      # [PRAAT] To Harmonicity (cc)
+  # Menos voz sustentada que isto não dá períodos suficientes: jitter, shimmer e HNR ficam nulos.
+  vozeado_minimo_s: 0.25
+
+segmentos:
+  # Falas mais curtas que isto são ignoradas (poucos ciclos de F0 para medir).
+  duracao_minima_s: 0.3
+  # Só quando não há transcrição: segmentos de fala por energia (sem contagem de palavras).
+  vad:
+    janela_ms: 20
+    pausa_entre_segmentos_s: 1.0    # silêncio maior que isto separa dois segmentos
+
+pausas:
+  janela_ms: 20
+  # Quadro é silêncio se o RMS ficar este tanto de dB abaixo do nível de fala do paciente
+  # (percentil 95 dos RMS dos segmentos). Mesmo critério de medidas de fluência da literatura.
+  limiar_relativo_db: -25
+  # Silêncio menor que isto é articulação normal, não pausa.
+  duracao_minima_s: 0.25
+  # Piso ABSOLUTO do nível de fala (RMS, dBFS). Sem ele, o critério relativo acima trataria como
+  # "fala" um segmento só de silêncio ou de ruído de ambiente. Fala normal fica perto de -25 dBFS
+  # e o ruído de fundo em -60 dBFS ou menos. [EXP]
+  nivel_minimo_fala_db: -50
+
+# Eventos respiratórios: YAMNet (AudioSet). Um evento por trecho contínuo de quadros acima do
+# score mínimo. Os nomes são os do yamnet_class_map.csv e são conferidos no carregamento.
+respiratorio:
+  score_minimo: 0.30                # [EXP]
+  lacuna_quadros: 1                 # quadros abaixo do score tolerados dentro de um mesmo trecho
+  max_eventos: 20                   # evita inundar o painel de alertas com uma respiração contínua
+  classes:
+    Cough:     {tipo: tosse,                severidade: baixa}
+    Breathing: {tipo: respiracao,           severidade: baixa}
+    Wheeze:    {tipo: sibilo,               severidade: media}
+    Gasp:      {tipo: arfar,                severidade: media}
+    Pant:      {tipo: respiracao_ofegante,  severidade: media}
+
+# Qualidade do áudio de origem. Os limiares MDVP (jitter, shimmer, HNR) valem para gravação de
+# qualidade clínica, em geral de vogal sustentada. Codecs com perdas (Opus do WhatsApp, MP3, AAC...)
+# e fala encadeada elevam jitter e shimmer e reduzem o HNR. Em uma rodada com 3 áudios de voz do
+# WhatsApp, todos ultrapassaram os três limiares ao mesmo tempo. Nesses formatos o achado leva a
+# ressalva `audio_comprimido` e o relatório, uma nota.
+qualidade:
+  formatos_com_perdas: [ogg, oga, opus, mp3, m4a, aac, wma, amr, webm]
+
+limiares:
+  jitter_local_pct_max: 1.04        # [MDVP] jitter local acima disto indica alteração vocal
+  shimmer_local_pct_max: 3.81       # [MDVP] shimmer local acima disto indica alteração vocal
+  hnr_db_min: 20.0                  # [MDVP] HNR abaixo disto indica alteração vocal
+  proporcao_pausas_max: 0.40        # [EXP] fração do tempo de fala ocupada por pausas
+  taxa_fala_pps_min: 1.8            # [EXP] palavras/s incluindo pausas (~108 palavras/min)
+  taxa_articulacao_pps_min: 2.2     # [EXP] palavras/s excluindo pausas
+  f0_desvio_st_min: 2.0             # [EXP] desvio padrão de F0 em semitons abaixo disto = fala monótona
+  intensidade_queda_baseline_db: 6.0  # [EXP] queda da intensidade vs baseline do próprio paciente
+  eventos_respiratorios_min: 2      # [EXP] eventos respiratórios para o critério valer...
+  score_respiratorio_forte: 0.60    # [EXP] ...ou um único evento com score igual ou maior que isto
+
+# Regras por classe. Um critério avaliável e satisfeito conta 1. A classe dispara com `minimo`
+# critérios (e, se houver, pelo menos um de `exigir_um_de`). Com `forte` critérios, usa
+# `severidade_forte`. Critério sem dado (ex.: taxa de fala sem transcrição) não é avaliável e não conta.
+# Critérios: eventos_respiratorios, pausas_altas, fala_lenta, articulacao_lenta, f0_monotona,
+#            intensidade_caiu, jitter_alto, shimmer_alto, hnr_baixo
+classes:
+  dificuldade_respiratoria:
+    criterios: [eventos_respiratorios, pausas_altas, fala_lenta, hnr_baixo]
+    minimo: 2
+    # Voz alterada + fala lenta também ocorre em disartria. Dificuldade respiratória exige sinal
+    # respiratório (YAMNet) ou pausas frequentes (fala entrecortada para respirar). Sem isto, a
+    # avaliação injetada mostrou 60/60 casos de disartria também marcados como dificuldade.
+    exigir_um_de: [eventos_respiratorios, pausas_altas]
+    forte: 3
+    severidade: media
+    severidade_forte: alta          # severidade alta vai ao motor de alertas (US19)
+  fadiga_vocal:
+    criterios: [intensidade_caiu, f0_monotona, pausas_altas, fala_lenta]
+    minimo: 2
+    severidade: media
+  possivel_disartria:
+    criterios: [jitter_alto, shimmer_alto, hnr_baixo, articulacao_lenta, pausas_altas]
+    minimo: 3
+    exigir_um_de: [articulacao_lenta, pausas_altas]
+    severidade: media
+
+# Baseline do próprio paciente (vale com mais de um áudio dele). Desvio = |x - mediana| / dispersão,
+# com dispersão = max(1,4826 * MAD, piso da métrica). O piso evita z enorme quando o histórico
+# é quase constante.
+baseline:
+  audios_minimos: 3
+  audios_maximos: 30
+  z_minimo: 3.5                     # [EXP] limiar clássico de z robusto
+  excluir_audios_alterados: true    # áudio com achado de classe não entra na baseline
+  severidade: baixa
+  severidade_forte: media
+  metricas_fortes: 3                # nº de métricas fora da baseline para usar severidade_forte
+  # piso da dispersão, na unidade de cada métrica
+  metricas:
+    jitter_local_pct: 0.10
+    shimmer_local_pct: 0.50
+    hnr_db: 1.0
+    f0_media_hz: 5.0
+    f0_desvio_st: 0.5
+    intensidade_db: 2.0
+    proporcao_pausas: 0.05
+    taxa_fala_pps: 0.2
+    taxa_articulacao_pps: 0.2

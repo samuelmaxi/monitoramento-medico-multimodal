@@ -1,0 +1,42 @@
+# Ingestão e pré-processamento de áudios de consultas (US10).
+# Todos os números do módulo ficam aqui; o código não tem valores escondidos.
+versao: "1.0.0"
+
+# WAV PCM 16 bits, mono, nesta taxa: formato recomendado pelo Azure Speech.
+# A profundidade (16 bits) e o número de canais (1) são fixos no código.
+saida:
+  taxa_amostragem_hz: 16000
+
+validacao:
+  # Abaixo disso não há fala suficiente para transcrever nem medir jitter/shimmer.
+  duracao_minima_s: 0.5
+  # Protege a memória: a decodificação carrega o áudio inteiro como float32.
+  duracao_maxima_s: 3600
+  extensoes: [wav, flac, ogg, oga, opus, mp3, m4a, aac, wma, amr, webm]
+  # Decodificados pelo libsndfile (soundfile), sem ffmpeg. Os demais precisam do ffmpeg no PATH.
+  decodificador_nativo: [wav, flac, ogg, oga, opus]
+  ffmpeg_timeout_s: 300
+  # Pico (0 a 1) abaixo do qual o áudio é tratado como silêncio digital (equivale a -80 dBFS).
+  pico_minimo: 0.0001
+
+# Cópia usada só na extração de features (US12). O áudio original e o WAV convertido
+# não sofrem normalização nem corte de silêncio.
+copia_features:
+  # Normalização de volume: o pico vai a este valor (0 a 1)...
+  pico_alvo: 0.95
+  # ...mas o ganho nunca passa deste fator, para não amplificar só ruído (5x = 14 dB).
+  ganho_maximo: 5.0
+  silencio:
+    # Quadro é silêncio se o RMS ficar este tanto de dB abaixo do nível de fala da gravação
+    # (percentil 95 dos RMS). Relativo, para valer em gravações altas e baixas.
+    limiar_relativo_db: -30
+    # Só silêncios com pelo menos esta duração são encurtados.
+    duracao_longa_s: 1.0
+    # Quanto de cada silêncio longo permanece (metade em cada lado, preserva ataque e decaimento).
+    manter_s: 0.3
+    janela_ms: 25
+
+proveniencia:
+  # Usados quando --origem/--licenca não são informados. Dado de paciente exige consentimento.
+  origem_padrao: "gravação de consulta; origem não informada"
+  licenca_padrao: "uso restrito ao projeto; confirmar consentimento (LGPD) do titular antes de usar"
