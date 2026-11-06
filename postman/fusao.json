@@ -1,0 +1,895 @@
+{
+  "info": {
+    "_postman_id": "bddd5259-72fb-50bc-ad8a-a42d1720b67a",
+    "name": "Monitoramento Médico - Fusão multimodal (US18)",
+    "description": "Score de risco multimodal por paciente (US18): late fusion ponderada dos achados de vídeo, áudio, texto, sinais vitais, prescrições e movimentação, com a contribuição de cada modalidade. Suba a API com `uv run uvicorn app.main:app --reload` e ajuste `baseUrl` se não for http://127.0.0.1:8000. A pasta \"Cálculo\" não altera o estado (publicar=false). A pasta \"Fluxo ao vivo\" publica o caso de demonstração no barramento e confere o risco e o alerta resultantes; rode-a em ordem. Os achados são sintéticos (is_synthetic=true). Gerada por scripts/gerar_postman_us18.py; instruções em postman/README.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "pacienteDemo",
+      "value": "pt_00000000000000000000a007"
+    },
+    {
+      "key": "scoreDemo",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "id": "02526602-ab81-5d97-b466-9e646f09ef94",
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "health"
+          ]
+        },
+        "description": "Confere se a API está no ar."
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"200 OK\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "US18 - Cálculo do risco",
+      "item": [
+        {
+          "id": "f52b9407-7aec-5490-8945-b52f3fec54b7",
+          "name": "Caso de demonstração: SpO2 em queda + dispneia",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Leito UTI-07: NEWS2 = 5 (SpO2 92%), fala com dispneia (áudio) e relato de falta de ar (texto), sem vídeo nem movimentação. Esperado: risco alto (≈ 0,82), acima de cada sinal isolado, com concordância no eixo respiratório.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"f56acf1a-d2d8-5532-9618-9272d09c2db2\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4c6b6c9b-3101-5c61-8ca1-f0d4ea89140c\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:20:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:20:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:20:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 2: janela sem anomalias\",\n        \"features\": {\n          \"spo2_pct\": 95,\n          \"fr_irpm\": 19,\n          \"news2_total\": 2\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"966123f1-c04b-57ed-add6-2eda13e04afb\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_resposta_urgente\",\n      \"timestamp\": \"2026-09-26T16:50:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:50:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:50:00.000Z\",\n      \"score\": 0.25,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 5 (spo2 92, fr 22): resposta urgente\",\n        \"features\": {\n          \"spo2_pct\": 92,\n          \"fr_irpm\": 22,\n          \"news2_spo2\": 2,\n          \"news2_fr\": 2,\n          \"news2_total\": 5\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"aaff95a5-bc59-5299-b650-9fcf54d09156\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"audio\",\n      \"event_type\": \"dificuldade_respiratoria\",\n      \"timestamp\": \"2026-09-26T16:55:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:55:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:55:00.000Z\",\n      \"window\": {\n        \"start\": \"2026-09-26T16:55:00.000Z\",\n        \"end\": \"2026-09-26T16:58:00.000Z\"\n      },\n      \"score\": 0.62,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Fala entrecortada: pausas respiratórias frequentes e frases curtas\",\n        \"features\": {\n          \"pausas_por_min\": 14.0,\n          \"duracao_media_frase_s\": 1.9\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-audio\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4e3fcbe5-6de3-54d4-9759-3c072a2a3d71\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"texto\",\n      \"event_type\": \"termo_critico\",\n      \"timestamp\": \"2026-09-26T16:56:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:56:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:56:00.000Z\",\n      \"score\": 0.97,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Paciente relata falta de ar: “cansado, falta o ar” (afirmado, sem negação)\",\n        \"features\": {\n          \"termo\": \"falta de ar\",\n          \"certeza\": \"positive\"\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-texto\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente\", () => pm.expect(riscos).to.have.length(1));",
+                  "const r = riscos[0];",
+                  "pm.test(\"contribuições somam o score (explicabilidade)\", () => {",
+                  "    const soma = Object.values(r.contribuicoes).reduce((a, b) => a + b, 0);",
+                  "    pm.expect(soma).to.be.closeTo(r.score, 0.002);",
+                  "});",
+                  "pm.test(\"risco_multimodal no contrato US04\", () => {",
+                  "    pm.expect(r.evento.modality).to.eql(\"fusao\");",
+                  "    pm.expect(r.evento.event_type).to.eql(\"risco_multimodal\");",
+                  "    pm.expect(r.evento.related_event_ids.length).to.be.above(0);",
+                  "    pm.expect(r.evento.score).to.be.closeTo(r.score, 0.0001);",
+                  "});",
+                  "pm.test(\"nível alto, severidade alta\", () => {",
+                  "    pm.expect(r.nivel).to.eql(\"alto\");",
+                  "    pm.expect(r.severidade).to.eql(\"alta\");",
+                  "});",
+                  "pm.test(\"combinação supera cada sinal isolado\", () => {",
+                  "    pm.expect(r.score).to.be.above(r.score_max_isolado);",
+                  "    pm.expect(r.ganho_fusao).to.be.above(0);",
+                  "    [\"sinais_vitais\", \"audio\", \"texto\"].forEach(m => pm.expect(r.forca_isolada[m]).to.be.below(0.7));",
+                  "});",
+                  "pm.test(\"concordância no eixo respiratório\", () => {",
+                  "    pm.expect(r.concordancia.eixo).to.eql(\"respiratorio\");",
+                  "    pm.expect(r.concordancia.modalidades).to.have.members([\"sinais_vitais\", \"audio\", \"texto\"]);",
+                  "});",
+                  "pm.test(\"vídeo e movimentação ausentes, sem erro\", () => {",
+                  "    pm.expect(r.modalidades_ausentes).to.eql([\"video\", \"movimentacao\"]);",
+                  "    pm.expect(r.contribuicoes.video).to.eql(0);",
+                  "});",
+                  "pm.collectionVariables.set(\"scoreDemo\", r.score);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "1c989b0d-29d3-55b4-9495-b0e9e346f35d",
+          "name": "Sinal isolado: só sinais vitais",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Só o NEWS2 de resposta urgente do caso. Esperado: risco médio, severidade info (uma modalidade só não gera alerta de novo).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4c6b6c9b-3101-5c61-8ca1-f0d4ea89140c\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:20:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:20:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:20:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 2: janela sem anomalias\",\n        \"features\": {\n          \"spo2_pct\": 95,\n          \"fr_irpm\": 19,\n          \"news2_total\": 2\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"966123f1-c04b-57ed-add6-2eda13e04afb\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_resposta_urgente\",\n      \"timestamp\": \"2026-09-26T16:50:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:50:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:50:00.000Z\",\n      \"score\": 0.25,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 5 (spo2 92, fr 22): resposta urgente\",\n        \"features\": {\n          \"spo2_pct\": 92,\n          \"fr_irpm\": 22,\n          \"news2_spo2\": 2,\n          \"news2_fr\": 2,\n          \"news2_total\": 5\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente\", () => pm.expect(riscos).to.have.length(1));",
+                  "const r = riscos[0];",
+                  "pm.test(\"contribuições somam o score (explicabilidade)\", () => {",
+                  "    const soma = Object.values(r.contribuicoes).reduce((a, b) => a + b, 0);",
+                  "    pm.expect(soma).to.be.closeTo(r.score, 0.002);",
+                  "});",
+                  "pm.test(\"risco_multimodal no contrato US04\", () => {",
+                  "    pm.expect(r.evento.modality).to.eql(\"fusao\");",
+                  "    pm.expect(r.evento.event_type).to.eql(\"risco_multimodal\");",
+                  "    pm.expect(r.evento.related_event_ids.length).to.be.above(0);",
+                  "    pm.expect(r.evento.score).to.be.closeTo(r.score, 0.0001);",
+                  "});",
+                  "pm.test(\"nível medio, severidade info\", () => {",
+                  "    pm.expect(r.nivel).to.eql(\"medio\");",
+                  "    pm.expect(r.severidade).to.eql(\"info\");",
+                  "});",
+                  "pm.test(\"só sinais_vitais contribui\", () => {",
+                  "    Object.entries(r.contribuicoes).forEach(([m, c]) => {",
+                  "        if (m === \"sinais_vitais\") pm.expect(c).to.be.above(0);",
+                  "        else pm.expect(c).to.eql(0);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "3002a2d3-c5bb-57ed-a609-758b38667ac3",
+          "name": "Sinal isolado: só áudio",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Só a dificuldade respiratória na fala. Esperado: risco baixo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"aaff95a5-bc59-5299-b650-9fcf54d09156\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"audio\",\n      \"event_type\": \"dificuldade_respiratoria\",\n      \"timestamp\": \"2026-09-26T16:55:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:55:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:55:00.000Z\",\n      \"window\": {\n        \"start\": \"2026-09-26T16:55:00.000Z\",\n        \"end\": \"2026-09-26T16:58:00.000Z\"\n      },\n      \"score\": 0.62,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Fala entrecortada: pausas respiratórias frequentes e frases curtas\",\n        \"features\": {\n          \"pausas_por_min\": 14.0,\n          \"duracao_media_frase_s\": 1.9\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-audio\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente\", () => pm.expect(riscos).to.have.length(1));",
+                  "const r = riscos[0];",
+                  "pm.test(\"contribuições somam o score (explicabilidade)\", () => {",
+                  "    const soma = Object.values(r.contribuicoes).reduce((a, b) => a + b, 0);",
+                  "    pm.expect(soma).to.be.closeTo(r.score, 0.002);",
+                  "});",
+                  "pm.test(\"risco_multimodal no contrato US04\", () => {",
+                  "    pm.expect(r.evento.modality).to.eql(\"fusao\");",
+                  "    pm.expect(r.evento.event_type).to.eql(\"risco_multimodal\");",
+                  "    pm.expect(r.evento.related_event_ids.length).to.be.above(0);",
+                  "    pm.expect(r.evento.score).to.be.closeTo(r.score, 0.0001);",
+                  "});",
+                  "pm.test(\"nível baixo, severidade info\", () => {",
+                  "    pm.expect(r.nivel).to.eql(\"baixo\");",
+                  "    pm.expect(r.severidade).to.eql(\"info\");",
+                  "});",
+                  "pm.test(\"só audio contribui\", () => {",
+                  "    Object.entries(r.contribuicoes).forEach(([m, c]) => {",
+                  "        if (m === \"audio\") pm.expect(c).to.be.above(0);",
+                  "        else pm.expect(c).to.eql(0);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "f378a908-8192-5840-af20-375c4ae0e906",
+          "name": "Modalidade ausente: paciente sem vídeo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Leito UTI-03: só sinais vitais (NEWS2 = 8) e prescrições. Esperado: risco alto sem falhar pelas quatro modalidades ausentes, severidade info.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"dde6bb10-6132-55d1-b459-f3b6ce2b5d61\",\n      \"patient_id\": \"pt_00000000000000000000a003\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-03\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"7ec3a61c-49bb-5ead-83b1-59af9af8db20\",\n      \"patient_id\": \"pt_00000000000000000000a003\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_emergencia\",\n      \"timestamp\": \"2026-09-26T16:40:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:40:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:40:00.000Z\",\n      \"score\": 0.4,\n      \"severity\": \"alta\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 8 (spo2 89, fc 128): emergência\",\n        \"features\": {\n          \"spo2_pct\": 89,\n          \"fc_bpm\": 128,\n          \"news2_total\": 8\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-03\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente\", () => pm.expect(riscos).to.have.length(1));",
+                  "const r = riscos[0];",
+                  "pm.test(\"contribuições somam o score (explicabilidade)\", () => {",
+                  "    const soma = Object.values(r.contribuicoes).reduce((a, b) => a + b, 0);",
+                  "    pm.expect(soma).to.be.closeTo(r.score, 0.002);",
+                  "});",
+                  "pm.test(\"risco_multimodal no contrato US04\", () => {",
+                  "    pm.expect(r.evento.modality).to.eql(\"fusao\");",
+                  "    pm.expect(r.evento.event_type).to.eql(\"risco_multimodal\");",
+                  "    pm.expect(r.evento.related_event_ids.length).to.be.above(0);",
+                  "    pm.expect(r.evento.score).to.be.closeTo(r.score, 0.0001);",
+                  "});",
+                  "pm.test(\"nível alto, severidade info\", () => {",
+                  "    pm.expect(r.nivel).to.eql(\"alto\");",
+                  "    pm.expect(r.severidade).to.eql(\"info\");",
+                  "});",
+                  "pm.test(\"quatro modalidades ausentes, sem erro\", () => {",
+                  "    pm.expect(r.modalidades_ausentes).to.eql([\"video\", \"audio\", \"texto\", \"movimentacao\"]);",
+                  "});",
+                  "pm.test(\"só sinais_vitais contribui\", () => {",
+                  "    Object.entries(r.contribuicoes).forEach(([m, c]) => {",
+                  "        if (m === \"sinais_vitais\") pm.expect(c).to.be.above(0);",
+                  "        else pm.expect(c).to.eql(0);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "fb215ead-dc4d-5914-a687-941940a8ac0b",
+          "name": "Janela configurável: 5 min",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "O caso de demonstração com janela_min = 5. Esperado: o NEWS2 (16:50) sai da janela e o score cai.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"f56acf1a-d2d8-5532-9618-9272d09c2db2\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4c6b6c9b-3101-5c61-8ca1-f0d4ea89140c\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:20:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:20:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:20:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 2: janela sem anomalias\",\n        \"features\": {\n          \"spo2_pct\": 95,\n          \"fr_irpm\": 19,\n          \"news2_total\": 2\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"966123f1-c04b-57ed-add6-2eda13e04afb\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_resposta_urgente\",\n      \"timestamp\": \"2026-09-26T16:50:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:50:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:50:00.000Z\",\n      \"score\": 0.25,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 5 (spo2 92, fr 22): resposta urgente\",\n        \"features\": {\n          \"spo2_pct\": 92,\n          \"fr_irpm\": 22,\n          \"news2_spo2\": 2,\n          \"news2_fr\": 2,\n          \"news2_total\": 5\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"aaff95a5-bc59-5299-b650-9fcf54d09156\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"audio\",\n      \"event_type\": \"dificuldade_respiratoria\",\n      \"timestamp\": \"2026-09-26T16:55:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:55:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:55:00.000Z\",\n      \"window\": {\n        \"start\": \"2026-09-26T16:55:00.000Z\",\n        \"end\": \"2026-09-26T16:58:00.000Z\"\n      },\n      \"score\": 0.62,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Fala entrecortada: pausas respiratórias frequentes e frases curtas\",\n        \"features\": {\n          \"pausas_por_min\": 14.0,\n          \"duracao_media_frase_s\": 1.9\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-audio\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4e3fcbe5-6de3-54d4-9759-3c072a2a3d71\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"texto\",\n      \"event_type\": \"termo_critico\",\n      \"timestamp\": \"2026-09-26T16:56:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:56:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:56:00.000Z\",\n      \"score\": 0.97,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Paciente relata falta de ar: “cansado, falta o ar” (afirmado, sem negação)\",\n        \"features\": {\n          \"termo\": \"falta de ar\",\n          \"certeza\": \"positive\"\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-texto\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ],\n  \"janela_min\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente\", () => pm.expect(riscos).to.have.length(1));",
+                  "const r = riscos[0];",
+                  "pm.test(\"contribuições somam o score (explicabilidade)\", () => {",
+                  "    const soma = Object.values(r.contribuicoes).reduce((a, b) => a + b, 0);",
+                  "    pm.expect(soma).to.be.closeTo(r.score, 0.002);",
+                  "});",
+                  "pm.test(\"risco_multimodal no contrato US04\", () => {",
+                  "    pm.expect(r.evento.modality).to.eql(\"fusao\");",
+                  "    pm.expect(r.evento.event_type).to.eql(\"risco_multimodal\");",
+                  "    pm.expect(r.evento.related_event_ids.length).to.be.above(0);",
+                  "    pm.expect(r.evento.score).to.be.closeTo(r.score, 0.0001);",
+                  "});",
+                  "pm.test(\"janela de 5 min deixa o NEWS2 de fora\", () => {",
+                  "    pm.expect(r.contribuicoes.sinais_vitais).to.eql(0);",
+                  "    pm.expect(r.modalidades_ausentes).to.include(\"sinais_vitais\");",
+                  "});",
+                  "pm.test(\"score menor que o do caso com janela de 60 min\", () => {",
+                  "    const demo = Number(pm.collectionVariables.get(\"scoreDemo\"));",
+                  "    if (!isNaN(demo)) pm.expect(r.score).to.be.below(demo);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "d0633774-5adf-51d3-baf8-b6a6b63ad245",
+          "name": "Só sem_achados",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Sinais vitais e prescrições analisados, sem anomalias. Esperado: score 0, modalidades presentes, nível baixo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"9785dd63-4bb8-5bf4-9c8f-1f3468ec773d\",\n      \"patient_id\": \"pt_00000000000000000000a001\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"b026b441-cada-510a-9580-bc10880547b3\",\n      \"patient_id\": \"pt_00000000000000000000a001\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:20:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:20:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:20:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 2: janela sem anomalias\",\n        \"features\": {\n          \"spo2_pct\": 95,\n          \"fr_irpm\": 19,\n          \"news2_total\": 2\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente\", () => pm.expect(riscos).to.have.length(1));",
+                  "const r = riscos[0];",
+                  "pm.test(\"contribuições somam o score (explicabilidade)\", () => {",
+                  "    const soma = Object.values(r.contribuicoes).reduce((a, b) => a + b, 0);",
+                  "    pm.expect(soma).to.be.closeTo(r.score, 0.002);",
+                  "});",
+                  "pm.test(\"risco_multimodal no contrato US04\", () => {",
+                  "    pm.expect(r.evento.modality).to.eql(\"fusao\");",
+                  "    pm.expect(r.evento.event_type).to.eql(\"risco_multimodal\");",
+                  "    pm.expect(r.evento.related_event_ids.length).to.be.above(0);",
+                  "    pm.expect(r.evento.score).to.be.closeTo(r.score, 0.0001);",
+                  "});",
+                  "pm.test(\"nível baixo, severidade info\", () => {",
+                  "    pm.expect(r.nivel).to.eql(\"baixo\");",
+                  "    pm.expect(r.severidade).to.eql(\"info\");",
+                  "});",
+                  "pm.test(\"só sem_achados: score 0 com modalidades presentes\", () => {",
+                  "    pm.expect(r.score).to.eql(0);",
+                  "    pm.expect(r.modalidades_presentes).to.have.members([\"sinais_vitais\", \"prescricoes\"]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "e945fda8-3c76-562b-99c6-93a76f09aa16",
+          "name": "Dois pacientes no mesmo lote",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Achados dos leitos UTI-07 e UTI-03 juntos. Esperado: um risco por patient_id, ordenados do maior para o menor.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"f56acf1a-d2d8-5532-9618-9272d09c2db2\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4c6b6c9b-3101-5c61-8ca1-f0d4ea89140c\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:20:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:20:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:20:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 2: janela sem anomalias\",\n        \"features\": {\n          \"spo2_pct\": 95,\n          \"fr_irpm\": 19,\n          \"news2_total\": 2\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"966123f1-c04b-57ed-add6-2eda13e04afb\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_resposta_urgente\",\n      \"timestamp\": \"2026-09-26T16:50:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:50:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:50:00.000Z\",\n      \"score\": 0.25,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 5 (spo2 92, fr 22): resposta urgente\",\n        \"features\": {\n          \"spo2_pct\": 92,\n          \"fr_irpm\": 22,\n          \"news2_spo2\": 2,\n          \"news2_fr\": 2,\n          \"news2_total\": 5\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"aaff95a5-bc59-5299-b650-9fcf54d09156\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"audio\",\n      \"event_type\": \"dificuldade_respiratoria\",\n      \"timestamp\": \"2026-09-26T16:55:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:55:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:55:00.000Z\",\n      \"window\": {\n        \"start\": \"2026-09-26T16:55:00.000Z\",\n        \"end\": \"2026-09-26T16:58:00.000Z\"\n      },\n      \"score\": 0.62,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Fala entrecortada: pausas respiratórias frequentes e frases curtas\",\n        \"features\": {\n          \"pausas_por_min\": 14.0,\n          \"duracao_media_frase_s\": 1.9\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-audio\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4e3fcbe5-6de3-54d4-9759-3c072a2a3d71\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"texto\",\n      \"event_type\": \"termo_critico\",\n      \"timestamp\": \"2026-09-26T16:56:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:56:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:56:00.000Z\",\n      \"score\": 0.97,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Paciente relata falta de ar: “cansado, falta o ar” (afirmado, sem negação)\",\n        \"features\": {\n          \"termo\": \"falta de ar\",\n          \"certeza\": \"positive\"\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-texto\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"dde6bb10-6132-55d1-b459-f3b6ce2b5d61\",\n      \"patient_id\": \"pt_00000000000000000000a003\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-03\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"7ec3a61c-49bb-5ead-83b1-59af9af8db20\",\n      \"patient_id\": \"pt_00000000000000000000a003\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_emergencia\",\n      \"timestamp\": \"2026-09-26T16:40:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:40:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:40:00.000Z\",\n      \"score\": 0.4,\n      \"severity\": \"alta\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 8 (spo2 89, fc 128): emergência\",\n        \"features\": {\n          \"spo2_pct\": 89,\n          \"fc_bpm\": 128,\n          \"news2_total\": 8\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-03\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente, maior primeiro\", () => {",
+                  "    pm.expect(riscos).to.have.length(2);",
+                  "    pm.expect(riscos[0].patient_id).to.eql(\"pt_00000000000000000000a007\");",
+                  "    pm.expect(riscos[0].score).to.be.at.least(riscos[1].score);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "9a9279c3-3406-570b-9de0-d22dfccd7c9c",
+          "name": "Erro 422 - patient_id sem pseudônimo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Achado com o ID cru do paciente: o contrato exige pt_<24 hex>. Esperado: 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"966123f1-c04b-57ed-add6-2eda13e04afb\",\n      \"patient_id\": \"10000032\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_resposta_urgente\",\n      \"timestamp\": \"2026-09-26T16:50:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:50:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:50:00.000Z\",\n      \"score\": 0.25,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 5 (spo2 92, fr 22): resposta urgente\",\n        \"features\": {\n          \"spo2_pct\": 92,\n          \"fr_irpm\": 22,\n          \"news2_spo2\": 2,\n          \"news2_fr\": 2,\n          \"news2_total\": 5\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"cita o patient_id\", () => pm.expect(JSON.stringify(pm.response.json())).to.include(\"patient_id\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "2581a55b-05bc-5563-8f92-119ef2c93692",
+          "name": "Erro 422 - janela_min = 0",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Janela precisa ser maior que zero. Esperado: 422.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"f56acf1a-d2d8-5532-9618-9272d09c2db2\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4c6b6c9b-3101-5c61-8ca1-f0d4ea89140c\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:20:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:20:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:20:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 2: janela sem anomalias\",\n        \"features\": {\n          \"spo2_pct\": 95,\n          \"fr_irpm\": 19,\n          \"news2_total\": 2\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"966123f1-c04b-57ed-add6-2eda13e04afb\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_resposta_urgente\",\n      \"timestamp\": \"2026-09-26T16:50:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:50:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:50:00.000Z\",\n      \"score\": 0.25,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 5 (spo2 92, fr 22): resposta urgente\",\n        \"features\": {\n          \"spo2_pct\": 92,\n          \"fr_irpm\": 22,\n          \"news2_spo2\": 2,\n          \"news2_fr\": 2,\n          \"news2_total\": 5\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"aaff95a5-bc59-5299-b650-9fcf54d09156\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"audio\",\n      \"event_type\": \"dificuldade_respiratoria\",\n      \"timestamp\": \"2026-09-26T16:55:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:55:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:55:00.000Z\",\n      \"window\": {\n        \"start\": \"2026-09-26T16:55:00.000Z\",\n        \"end\": \"2026-09-26T16:58:00.000Z\"\n      },\n      \"score\": 0.62,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Fala entrecortada: pausas respiratórias frequentes e frases curtas\",\n        \"features\": {\n          \"pausas_por_min\": 14.0,\n          \"duracao_media_frase_s\": 1.9\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-audio\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4e3fcbe5-6de3-54d4-9759-3c072a2a3d71\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"texto\",\n      \"event_type\": \"termo_critico\",\n      \"timestamp\": \"2026-09-26T16:56:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:56:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:56:00.000Z\",\n      \"score\": 0.97,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Paciente relata falta de ar: “cansado, falta o ar” (afirmado, sem negação)\",\n        \"features\": {\n          \"termo\": \"falta de ar\",\n          \"certeza\": \"positive\"\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-texto\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ],\n  \"janela_min\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"422\", () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "US18 - Fluxo ao vivo (barramento → fusão → alerta)",
+      "item": [
+        {
+          "id": "fd739aa4-a1b1-5bd5-b52a-e4cca4ac01df",
+          "name": "1. Publicar o caso no barramento",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/risco?publicar=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "risco"
+              ],
+              "query": [
+                {
+                  "key": "publicar",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Os achados do caso de demonstração entram no barramento local como se viessem dos detectores. A fusão ao vivo recalcula o risco a cada achado e publica risco_multimodal; o motor de alertas (US19) recebe tudo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventos\": [\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"f56acf1a-d2d8-5532-9618-9272d09c2db2\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"prescricoes\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:10:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:10:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:10:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"Evolução de prescrições sem anomalias na internação\",\n        \"features\": {},\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-prescricoes\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4c6b6c9b-3101-5c61-8ca1-f0d4ea89140c\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"sem_achados\",\n      \"timestamp\": \"2026-09-26T16:20:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:20:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:20:00.000Z\",\n      \"score\": 0.0,\n      \"severity\": \"info\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 2: janela sem anomalias\",\n        \"features\": {\n          \"spo2_pct\": 95,\n          \"fr_irpm\": 19,\n          \"news2_total\": 2\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"966123f1-c04b-57ed-add6-2eda13e04afb\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"sinais_vitais\",\n      \"event_type\": \"news2_resposta_urgente\",\n      \"timestamp\": \"2026-09-26T16:50:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:50:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:50:00.000Z\",\n      \"score\": 0.25,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"NEWS2 = 5 (spo2 92, fr 22): resposta urgente\",\n        \"features\": {\n          \"spo2_pct\": 92,\n          \"fr_irpm\": 22,\n          \"news2_spo2\": 2,\n          \"news2_fr\": 2,\n          \"news2_total\": 5\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-sinais_vitais\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"aaff95a5-bc59-5299-b650-9fcf54d09156\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"audio\",\n      \"event_type\": \"dificuldade_respiratoria\",\n      \"timestamp\": \"2026-09-26T16:55:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:55:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:55:00.000Z\",\n      \"window\": {\n        \"start\": \"2026-09-26T16:55:00.000Z\",\n        \"end\": \"2026-09-26T16:58:00.000Z\"\n      },\n      \"score\": 0.62,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Fala entrecortada: pausas respiratórias frequentes e frases curtas\",\n        \"features\": {\n          \"pausas_por_min\": 14.0,\n          \"duracao_media_frase_s\": 1.9\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-audio\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    },\n    {\n      \"schema_version\": \"1.0.0\",\n      \"event_id\": \"4e3fcbe5-6de3-54d4-9759-3c072a2a3d71\",\n      \"patient_id\": \"pt_00000000000000000000a007\",\n      \"modality\": \"texto\",\n      \"event_type\": \"termo_critico\",\n      \"timestamp\": \"2026-09-26T16:56:00.000Z\",\n      \"detected_at\": \"2026-09-26T16:56:02.000Z\",\n      \"ingested_at\": \"2026-09-26T16:56:00.000Z\",\n      \"score\": 0.97,\n      \"severity\": \"media\",\n      \"evidence\": {\n        \"summary\": \"Paciente relata falta de ar: “cansado, falta o ar” (afirmado, sem negação)\",\n        \"features\": {\n          \"termo\": \"falta de ar\",\n          \"certeza\": \"positive\"\n        },\n        \"thresholds\": {},\n        \"models\": {},\n        \"artifacts\": []\n      },\n      \"model_version\": \"cenario-us18@0.1.0\",\n      \"context\": {\n        \"bed_id\": \"UTI-07\",\n        \"source_id\": \"demo-texto\"\n      },\n      \"related_event_ids\": [],\n      \"is_synthetic\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const riscos = pm.response.json();",
+                  "pm.test(\"um risco por paciente\", () => pm.expect(riscos).to.have.length(1));",
+                  "const r = riscos[0];",
+                  "pm.test(\"contribuições somam o score (explicabilidade)\", () => {",
+                  "    const soma = Object.values(r.contribuicoes).reduce((a, b) => a + b, 0);",
+                  "    pm.expect(soma).to.be.closeTo(r.score, 0.002);",
+                  "});",
+                  "pm.test(\"risco_multimodal no contrato US04\", () => {",
+                  "    pm.expect(r.evento.modality).to.eql(\"fusao\");",
+                  "    pm.expect(r.evento.event_type).to.eql(\"risco_multimodal\");",
+                  "    pm.expect(r.evento.related_event_ids.length).to.be.above(0);",
+                  "    pm.expect(r.evento.score).to.be.closeTo(r.score, 0.0001);",
+                  "});",
+                  "pm.test(\"nível alto, severidade alta\", () => {",
+                  "    pm.expect(r.nivel).to.eql(\"alto\");",
+                  "    pm.expect(r.severidade).to.eql(\"alta\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "4ea8def9-63ff-5d3c-998f-8fac76748504",
+          "name": "2. Risco atual do paciente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/pacientes/{{pacienteDemo}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "pacientes",
+                "{{pacienteDemo}}"
+              ]
+            },
+            "description": "Estado da fusão ao vivo depois da publicação. Esperado: o mesmo risco alto do cálculo."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test(\"risco alto calculado pelo serviço\", () => {",
+                  "    pm.expect(r.nivel).to.eql(\"alto\");",
+                  "    pm.expect(r.concordancia.eixo).to.eql(\"respiratorio\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "a5554e60-7b69-5bff-95a4-bb65f6f3d143",
+          "name": "3. Alerta alta gerado pela fusão",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/alerts?paciente_id={{pacienteDemo}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "alerts"
+              ],
+              "query": [
+                {
+                  "key": "paciente_id",
+                  "value": "{{pacienteDemo}}"
+                }
+              ]
+            },
+            "description": "Alertas do paciente no motor da US19. Esperado: cada achado isolado gerou alerta media, e o risco_multimodal gerou o alerta alta com a contribuição de cada modalidade no resumo."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "const alertas = pm.response.json();",
+                  "const fusao = alertas.find(a => a.modalities.includes(\"fusao\"));",
+                  "pm.test(\"alerta da fusão com prioridade alta\", () => {",
+                  "    pm.expect(fusao, \"alerta de fusao\").to.exist;",
+                  "    pm.expect(fusao.priority).to.eql(\"alta\");",
+                  "    pm.expect(fusao.summary).to.include(\"Risco alto\");",
+                  "    pm.expect(fusao.evidence.features.contrib_sinais_vitais).to.be.above(0);",
+                  "});",
+                  "pm.test(\"achados isolados só geraram alerta media\", () => {",
+                  "    alertas.filter(a => !a.modalities.includes(\"fusao\"))",
+                  "        .forEach(a => pm.expect(a.priority).to.eql(\"media\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "ee35a9e0-6784-5efc-93a3-ac3df2cad60a",
+          "name": "4. Todos os pacientes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/pacientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "pacientes"
+              ]
+            },
+            "description": "Último risco de cada paciente visto pelo barramento, do maior para o menor."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"inclui o paciente do caso\", () => {",
+                  "    const ids = pm.response.json().map(r => r.patient_id);",
+                  "    pm.expect(ids).to.include(pm.collectionVariables.get(\"pacienteDemo\"));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "9fc911e7-962f-5f89-bf67-9aab8f8ed1bf",
+          "name": "Erro 404 - paciente sem achados",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/fusao/pacientes/pt_ffffffffffffffffffffffff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "fusao",
+                "pacientes",
+                "pt_ffffffffffffffffffffffff"
+              ]
+            },
+            "description": "Paciente que a fusão nunca viu. Esperado: 404."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

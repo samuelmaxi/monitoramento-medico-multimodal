@@ -118,6 +118,44 @@ class TestEscalonamento:
         assert len(email.enviados) == 1
 
 
+    def test_achado_mais_grave_com_alerta_aberto_sobe_prioridade_e_reenvia(
+        self, montar, email, webhook, relogio
+    ):
+        """Mesmo tipo, agora mais grave (ex.: risco_multimodal médio → alto, US18)."""
+        store = MemoriaStore()
+        servico = montar(store, [email, webhook])
+        servico.motor.receber(evento(Modalidade.FUSAO, "risco_multimodal", Severidade.MEDIA,
+                                     agora=relogio(), resumo="Risco médio (0,55)"))
+        processar(servico)
+
+        relogio.avancar(minutes=2)  # dentro da janela de dedup da média (15 min)
+        servico.motor.receber(evento(Modalidade.FUSAO, "risco_multimodal", Severidade.ALTA,
+                                     agora=relogio(), resumo="Risco alto (0,82)"))
+        processar(servico)
+
+        [alerta] = store.listar()
+        assert alerta.priority is Severidade.ALTA
+        assert alerta.summary == "Risco alto (0,82)"
+        assert alerta.occurrences == 2
+        assert [a.priority for a in email.enviados] == [Severidade.MEDIA, Severidade.ALTA]
+        assert [a.priority for a in webhook.enviados] == [Severidade.ALTA]
+        assert TipoAuditoria.ESCALONADO in _tipos_de_auditoria(store, alerta.id)
+
+    def test_achado_menos_grave_com_alerta_aberto_so_agrega(self, montar, email, webhook, relogio):
+        store = MemoriaStore()
+        servico = montar(store, [email, webhook])
+        servico.motor.receber(evento(Modalidade.FUSAO, "risco_multimodal", Severidade.ALTA,
+                                     agora=relogio(), resumo="Risco alto"))
+        relogio.avancar(minutes=1)
+        servico.motor.receber(evento(Modalidade.FUSAO, "risco_multimodal", Severidade.MEDIA,
+                                     agora=relogio(), resumo="Risco médio"))
+        processar(servico)
+
+        [alerta] = store.listar()
+        assert alerta.priority is Severidade.ALTA and alerta.summary == "Risco alto"
+        assert len(email.enviados) == 1
+
+
 class TestRegistroEReconhecimento:
     def test_baixa_fica_so_no_painel(self, montar, email, relogio):
         store = MemoriaStore()

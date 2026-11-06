@@ -188,9 +188,12 @@ def test_lifespan_liga_o_motor_ao_barramento_que_os_roteadores_usam(monkeypatch,
                 if alertas:
                     break
                 time.sleep(0.01)
+            riscos = client.get("/fusao/pacientes").json()
 
         assert len(alertas) == 1
         assert alertas[0]["modalities"] == ["sinais_vitais"]
         assert alertas[0]["priority"] == "alta"
+        # a fusão (US18) também assina: com uma modalidade só publica risco "info", sem alerta extra
+        assert len(riscos) == 1 and riscos[0]["severidade"] == "info"
     finally:
         get_barramento.cache_clear()
