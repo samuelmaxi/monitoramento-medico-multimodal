@@ -5,6 +5,11 @@ obtenção e organização dos conteúdos multimodais (vídeos, áudio, document
 anomalias e fusão de alertas) que serão utilizados como fonte de dados do
 sistema.
 
+**Relatório técnico (US21):** [`docs/relatorio_tecnico.pdf`](docs/relatorio_tecnico.pdf)
+(fonte em [`docs/relatorio_tecnico.md`](docs/relatorio_tecnico.md)): arquitetura, modelos,
+resultados, exemplos de anomalias, datasets/LGPD e limitações. Para regenerar o PDF depois de
+editar o `.md`: `uv run --with weasyprint python scripts/gerar_relatorio_pdf.py`.
+
 ## Estrutura do projeto
 
 ```
