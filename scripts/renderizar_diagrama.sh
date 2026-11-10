@@ -6,7 +6,9 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)/docs/arquitetura"
-ARGS=(-i "$DIR/fluxo_multimodal.mmd" -c "$DIR/mermaid.config.json" -b white -s 2 -w 2400 -q)
+ARGS=(-i "$DIR/fluxo_multimodal.mmd" -c "$DIR/mermaid.config.json" -b white -s 2 -q)
+# mermaid-cli até a v11 usa -w (largura da página); a v12 trocou por --size.
+if mmdc --help 2>&1 | grep -q -- "--width"; then ARGS+=(-w 2400); else ARGS+=(--size 2400); fi
 if [[ -n "${PUPPETEER_CONFIG:-}" ]]; then ARGS+=(-p "$PUPPETEER_CONFIG"); fi
 
 for ext in png svg; do
