@@ -15,6 +15,7 @@ from app.routers import (  # noqa: E402
     audio_analysis,
     audio_vocal,
     fusao,
+    pipeline,
     prescricoes,
     sentiment,
     sinais_vitais,
@@ -52,11 +53,9 @@ app = FastAPI(
     description=(
         "Endpoints locais para testar os fluxos Azure Speech e Language, a transcrição de "
         "consultas (US11), os termos críticos e o sentimento na fala do paciente (US13), os "
-        "biomarcadores vocais e achados de áudio (US10, US12, US14), a análise de pose em vídeo "
-        "e os alertas automáticos para a equipe médica (US19)."
-        "consultas (US11), os termos críticos e o sentimento na fala do paciente (US13), a "
-        "análise de pose em vídeo, a fusão multimodal em score de risco por paciente (US18) e os "
-        "alertas automáticos para a equipe médica (US19)."
+        "biomarcadores vocais e achados de áudio (US10, US12, US14), a análise de pose em vídeo, "
+        "a fusão multimodal em score de risco por paciente (US18), os alertas automáticos para "
+        "a equipe médica (US19) e o pipeline ponta a ponta que une tudo isso (US20)."
     ),
     lifespan=lifespan,
 )
@@ -72,6 +71,7 @@ app.include_router(alertas.router)
 app.include_router(sinais_vitais.router)
 app.include_router(prescricoes.router)
 app.include_router(fusao.router)
+app.include_router(pipeline.router)
 
 
 @app.get("/health")

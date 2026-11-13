@@ -1326,6 +1326,42 @@ de risco da fusão e os caminhos dos artefatos. O código de saída é 0 se toda
 certo e 2 se alguma falhou. Uma etapa com falha fica com `status: falha` no relatório e o fluxo
 segue com as demais; use `--abortar-na-falha` para interromper.
 
+### Pela API
+
+O mesmo fluxo está exposto em `POST /pipeline/executar`, o ponto de entrada que une todas as
+modalidades, funde os achados e dispara os alertas. Suba a API e abra `http://localhost:8000/docs`:
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+```bash
+# cenário de demonstração (sem arquivos): vídeo, áudio e prescrições simulados
+curl -X POST localhost:8000/pipeline/executar -F modo=simulado
+
+# com a consulta gravada; no modo real usa Azure Speech, Azure AI Language e o YOLO do servidor
+curl -X POST localhost:8000/pipeline/executar -F modo=real      -F audio_file=@consulta.wav -F video_file=@leito.mp4 -F medico_falante=1 -F publicar=true
+```
+
+| Campo | Padrão | Efeito |
+|---|---|---|
+| `audio_file`, `video_file` | vazios | Entradas opcionais; sem elas a etapa usa o cenário de demonstração |
+| `modo` | `simulado` | `real` usa as chaves Azure e o YOLO do servidor |
+| `patient_id`, `bed_id` | `demo-uti07`, `UTI-07` | Paciente (ID de origem ou `pt_...`) e leito |
+| `sinais_fonte` | `auto` | `mimic`, `sintetico` ou `auto` (MIMIC se o dataset existir) |
+| `velocidade` | `0` | Aceleração do replay dos sinais vitais; 0 = sem espera |
+| `publicar` | `false` | Envia os achados ao barramento da API: `GET /fusao/pacientes` e `GET /alerts` passam a refletir a execução |
+| `abortar_na_falha` | `false` | Uma etapa com falha interrompe as seguintes |
+
+A resposta traz o `status` (`sucesso` ou `parcial`), o risco da fusão com a contribuição de cada
+modalidade, o total de achados e alertas, e o relatório de cada etapa (duração, eventos e
+`detalhes`, que dizem se o Azure usado foi o real ou o simulado). Cada execução fica em
+`saida/pipeline_api/<id>/` (`PIPELINE_API_SAIDA_DIR`), consultável por
+`GET /pipeline/execucoes/{id}` e `GET /pipeline/execucoes/{id}/eventos`.
+
+A chamada é síncrona: no `modo=real` com vídeo, o YOLO pode levar minutos. Com `publicar=true`, os
+alertas vão para o armazenamento configurado em `ALERTA_STORE` (`cosmos` grava no banco real).
+
 ### Azure no fluxo
 
 O modo simulado usa o mesmo código do real, trocando só o cliente do serviço. Para chamar os

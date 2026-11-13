@@ -40,6 +40,8 @@ class ResumoExecucao:
     caminho_alertas: Path | None
     etapas_com_falha: tuple[str, ...] = ()
     caminho_log: Path | None = None
+    risco: Any = None  # fusao.Risco do paciente (None se nenhum achado chegou à fusão)
+    config_fusao: Any = None
 
 
 class OrquestradorPipeline:
@@ -135,5 +137,7 @@ class OrquestradorPipeline:
             caminho_alertas=caminho_alertas,
             etapas_com_falha=tuple(r.etapa for r in logger.registros if r.status == "falha"),
             caminho_log=logger.caminho_log,
+            risco=risco_paciente,
+            config_fusao=config_fusao,
         )
 
