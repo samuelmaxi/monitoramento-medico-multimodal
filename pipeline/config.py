@@ -22,6 +22,7 @@ class ConfigPipeline:
     video_path: Path | None = None
     audio_path: Path | None = None
     max_frames_video: int = 50
+    medico_falante: int = 1  # falante (diarização do Speech) que é o médico
     chave_pseudonimizacao: str = "chave-padrao-demonstracao-us20-32bytes-000000"
 
     @classmethod
@@ -56,5 +57,6 @@ class ConfigPipeline:
             video_path=sobrescritas.get("video_path"),
             audio_path=sobrescritas.get("audio_path"),
             max_frames_video=int(sobrescritas.get("max_frames_video", 50)),
+            medico_falante=int(sobrescritas.get("medico_falante", 1)),
             chave_pseudonimizacao=chave,
         )

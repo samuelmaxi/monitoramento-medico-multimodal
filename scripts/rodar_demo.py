@@ -27,6 +27,10 @@ from rich.table import Table
 
 from pipeline import ConfigPipeline, OrquestradorPipeline
 
+for _fluxo in (sys.stdout, sys.stderr):
+    if hasattr(_fluxo, "reconfigure"):
+        _fluxo.reconfigure(encoding="utf-8")
+
 console = Console(highlight=False)
 
 
@@ -82,6 +86,19 @@ def main(argv: list[str] | None = None) -> int:
         help="caminho de arquivo de vídeo para processamento YOLO opcional",
     )
 
+    parser.add_argument(
+        "--audio",
+        type=Path,
+        default=None,
+        help="áudio da consulta para o Azure Speech (só no --modo real)",
+    )
+    parser.add_argument(
+        "--medico-falante",
+        type=int,
+        default=1,
+        help="número do falante (diarização) que é o médico",
+    )
+
     args = parser.parse_args(argv)
 
     velocidade = 0.0 if args.rapido else args.velocidade
@@ -94,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         paciente_id=args.paciente,
         leito_id=args.leito,
         video_path=args.video,
+        audio_path=args.audio,
+        medico_falante=args.medico_falante,
     )
 
     console.print(

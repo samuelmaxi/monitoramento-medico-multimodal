@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Instalar dependências
+        run: uv sync --frozen
+      - name: Testes (inclui integração da US20, em modo simulado)
+        env:
+          PSEUDONYM_KEY: chave-de-ci-com-mais-de-32-bytes-0000000
+        run: uv run pytest tests audio/tests -q
+      - name: Demo ponta a ponta (US20)
+        run: uv run python scripts/rodar_demo.py --rapido --saida saida/ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: saida-demo
+          path: saida/ci
