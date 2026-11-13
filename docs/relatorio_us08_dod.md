@@ -282,7 +282,12 @@ braço da evidência, por isso não é usado quando há keypoints.
 aplicado (`padrao_esperado`), versão dos limiares, cobertura de pose, avisos
 (repetições fora do esperado, pouca pessoa visível), a lista de repetições com
 pico e medidas, e cada desvio com `timestamp`, trecho do vídeo, resumo em
-português e caminho do quadro de evidência. É a base da US09.
+português e caminho do quadro de evidência. É a base da US09, que o reaproveita e
+acrescenta confiança, % do tempo em desvio, versões dos modelos, envio ao motor de
+alertas e uma página HTML: [`relatorio_us09_dod.md`](relatorio_us09_dod.md). O
+`<fonte>_relatorio.json` da US08 guarda o caminho do vídeo e dos arquivos de entrada
+(`fonte`), então **não** é o relatório para compartilhar: o da US09 não traz caminho nem
+nome de arquivo.
 
 ## Limitações
 

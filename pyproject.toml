@@ -56,4 +56,5 @@ select = ["E", "F", "W", "I", "B", "C4", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["E501"]
+"notebooks/**" = ["E501"]
 
