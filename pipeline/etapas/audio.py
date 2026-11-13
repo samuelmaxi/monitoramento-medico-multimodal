@@ -130,7 +130,7 @@ class EtapaAudio:
             ),
             context=Contexto(bed_id=contexto.leito_id, source_id="audio-consulta-01"),
             model_version="audio-biomarcadores@0.1.0",
-            is_synthetic=(contexto.config.modo != "real"),
+            is_synthetic=True,  # achado de demonstração: nunca é medição real
         )
 
     def _analisar_voz(

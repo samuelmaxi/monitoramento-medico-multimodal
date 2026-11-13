@@ -51,3 +51,24 @@ def test_audio_invalido_cai_no_achado_de_demonstracao_e_registra_o_motivo(tmp_pa
     _, etapa = _executar(tmp_path, audio_path=wav)
     assert etapa["status"] == "sucesso"
     assert "falhou" in etapa["detalhes"]["biomarcadores_vocais"]
+
+
+def test_achados_de_demonstracao_sao_sinteticos_mesmo_no_modo_real(tmp_path, monkeypatch):
+    """Sem áudio/vídeo reais, os achados de fallback não podem passar por medições reais."""
+    # Sem YOLO: o vídeo de exemplo (conteudos/) só existe em quem baixou os conteúdos.
+    monkeypatch.setattr("pipeline.etapas.video.VIDEO_PADRAO", tmp_path / "nao_existe.mp4")
+    cfg = ConfigPipeline.from_env(
+        modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida", sinais_fonte="sintetico"
+    )
+    resumo = OrquestradorPipeline(cfg).executar()
+    eventos = [json.loads(x) for x in resumo.caminho_eventos.read_text(encoding="utf-8").splitlines()]
+    demo = [
+        e for e in eventos
+        if (e["modality"], e["event_type"])
+        in {("audio", "dificuldade_respiratoria"), ("video", "entrada_area_critica")}
+    ]
+    assert {(e["modality"], e["event_type"]) for e in demo} == {
+        ("audio", "dificuldade_respiratoria"),
+        ("video", "entrada_area_critica"),
+    }
+    assert all(e["is_synthetic"] for e in demo)

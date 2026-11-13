@@ -21,6 +21,7 @@ from pipeline.etapas.base import ContextoPipeline
 log = logging.getLogger("pipeline.etapas.video")
 
 CONFIG_VIDEO_PATH = Path("config/leito_uti_07.json")
+VIDEO_PADRAO = Path("conteudos/videos/video.mp4")  # usado se não vier --video
 
 
 class EtapaVideo:
@@ -35,9 +36,8 @@ class EtapaVideo:
 
         video_path = contexto.config.video_path
         if video_path is None:
-            candidato = Path("conteudos/videos/video.mp4")
-            if candidato.is_file():
-                video_path = candidato
+            if VIDEO_PADRAO.is_file():
+                video_path = VIDEO_PADRAO
 
         agora = agora_utc()
 
@@ -83,7 +83,7 @@ class EtapaVideo:
                 ),
                 context=Contexto(bed_id=contexto.leito_id, source_id="video-cam-01"),
                 model_version="video-areas@0.1.0",
-                is_synthetic=(contexto.config.modo != "real"),
+                is_synthetic=True,  # achado de demonstração: nunca é medição real
             )
             contexto.barramento.emitir(evento)
             eventos.append(evento)
