@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from dataclasses import replace
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from contratos import (
@@ -18,6 +19,8 @@ from contratos import (
 from pipeline.etapas.base import ContextoPipeline
 
 log = logging.getLogger("pipeline.etapas.video")
+
+CONFIG_VIDEO_PATH = Path("config/leito_uti_07.json")
 
 
 class EtapaVideo:
@@ -40,41 +43,26 @@ class EtapaVideo:
 
         if contexto.config.modo == "real" and video_path and video_path.is_file():
             try:
-                from video import DetectorYolo, PipelineAreaCritica
-                from video.areas import AreaCritica, ConjuntoAreas
-
-                areas = ConjuntoAreas([
-                    AreaCritica(
-                        id="lateral_leito",
-                        nome="Lateral do Leito",
-                        descricao="Área adjacente à grade de proteção do leito",
-                        points=[(0.0, 0.5), (0.4, 0.5), (0.4, 1.0), (0.0, 1.0)],
-                        classe_filtro="person",
-                    )
-                ])
-                detector = DetectorYolo(pesos="yolov8n.pt", confianca=0.25)
-                pipe = PipelineAreaCritica(
-                    detector=detector,
-                    areas=areas,
-                    emissor=contexto.barramento,
+                eventos, resumo = self._processar_yolo(contexto, video_path, agora)
+                detalhes.update(
+                    modo="yolo_real",
+                    video=video_path.name,
+                    quadros_lidos=resumo.quadros_lidos,
+                    deteccoes_total=resumo.deteccoes_total,
+                    eventos_reais=len(eventos),
                 )
-                resumo = pipe.processar_video(
-                    video_path,
-                    max_quadros=contexto.config.max_frames_video,
-                    patient_id=contexto.paciente_id,
-                    bed_id=contexto.leito_id,
-                )
-                detalhes["quadros_lidos"] = resumo.quadros_lidos
-                detalhes["deteccoes_total"] = resumo.deteccoes_total
-                detalhes["eventos_reais"] = resumo.eventos
-                detalhes["modo"] = "yolo_real"
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Falha ao rodar pipeline YOLO real (%s); usando evento clínico de leito", exc)
+                executou_yolo = True
+            except Exception as exc:
+                log.warning("Falha ao rodar o pipeline YOLO (%s); usando evento de leito", exc)
                 detalhes["modo"] = "fallback_simulado"
                 detalhes["motivo_fallback"] = str(exc)
+                executou_yolo = False
+        else:
+            executou_yolo = False
 
-        # Se não houve emissão real (ou modo simulado), emite o achado clínico de leito
-        if not detalhes.get("eventos_reais"):
+        # Sem YOLO (modo simulado, sem vídeo ou falha), emite o achado clínico de leito de demonstração.
+        # Com YOLO que não viu entrada/saída, não se inventa achado.
+        if not executou_yolo:
             evento = EventoAchado.criar(
                 patient_id=contexto.paciente_id,
                 modality=Modalidade.VIDEO,
@@ -103,8 +91,27 @@ class EtapaVideo:
             detalhes["roi"] = "lateral_leito"
 
         contexto.logger.concluir_etapa(
-            eventos_emitidos=len(eventos) or int(detalhes.get("eventos_reais", 0)),
+            eventos_emitidos=len(eventos),
             status="sucesso",
             detalhes=detalhes,
         )
         return eventos
+
+    def _processar_yolo(self, contexto: ContextoPipeline, video_path: Path, agora: datetime):
+        from video import Configuracao, PipelineAreaCritica
+
+        config = Configuracao.de_arquivo(CONFIG_VIDEO_PATH)
+        config = replace(
+            config,
+            fonte=replace(
+                config.fonte,
+                video=video_path.resolve(),
+                id=video_path.stem,
+                patient_id=contexto.paciente_id,
+                bed_id=contexto.leito_id,
+                max_quadros=contexto.config.max_frames_video,
+            ),
+        )
+        pipeline = PipelineAreaCritica(config, emissor=contexto.barramento)
+        resultado = pipeline.executar(detectado_em=agora - timedelta(minutes=5))
+        return resultado.eventos, resultado.resumo
