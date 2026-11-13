@@ -17,7 +17,9 @@ def _sem_credenciais_azure(monkeypatch):
 
 @pytest.fixture
 def execucao(tmp_path):
-    config = ConfigPipeline.from_env(modo="simulado", fator_velocidade=0.0, saida_dir=tmp_path)
+    config = ConfigPipeline.from_env(
+        modo="simulado", fator_velocidade=0.0, saida_dir=tmp_path, sinais_fonte="sintetico"
+    )
     resumo = OrquestradorPipeline(config).executar()
     relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
     return resumo, relatorio
@@ -92,7 +94,7 @@ def test_modo_real_com_audio_chama_azure_speech(tmp_path, monkeypatch):
             "recorded_at": kwargs["recorded_at"],
             "medico_falante": kwargs["medico_falante"],
             "falas": [
-                {"papel": "paciente", "texto": "Estou com falta de ar.", "offset_ms": 0, "duracao_ms": 2000},
+                {"papel": "paciente", "texto": "Estou com aperto no peito.", "offset_ms": 0, "duracao_ms": 2000},
             ],
         }
 
@@ -106,4 +108,10 @@ def test_modo_real_com_audio_chama_azure_speech(tmp_path, monkeypatch):
     relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
     audio_etapa = next(e for e in relatorio["etapas"] if e["etapa"] == "audio")
     assert audio_etapa["detalhes"]["falas_transcritas"] == 1
+    # só o texto do Speech chega ao Language; a transcrição de demonstração não pode vazar
+    linhas = resumo.caminho_eventos.read_text(encoding="utf-8").splitlines()
+    textos = [json.loads(linha) for linha in linhas]
+    eventos = " ".join(str(e) for e in textos if e["modality"] == "texto").lower()
+    assert "aperto no peito" in eventos
+    assert "falta de ar" not in eventos
     assert "real" in audio_etapa["detalhes"]["servico_speech"]

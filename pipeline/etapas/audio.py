@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +13,6 @@ from audio.text.config import load_config
 from audio.text.language_client import LanguageClient
 from audio.text.terms import TermMatcher
 from audio.text.transcript import Transcript, transcript_from_dict
-from audio.text.transcript import transcript_from_dict
 from contratos import (
     Contexto,
     EventoAchado,
@@ -62,7 +61,7 @@ class EtapaAudio:
         cfg = load_config(CONFIG_TEXTO_PATH)
         matcher = TermMatcher(cfg.critical_terms)
 
-        transcricao = self._obter_transcricao(contexto, agora, detalhes)
+        transcricao, documento_speech = self._obter_transcricao(contexto, agora, detalhes)
 
         # Azure AI Language: cliente real (modo real + chaves) ou SDK simulado
         cliente = None
@@ -74,73 +73,11 @@ class EtapaAudio:
             try:
                 cliente = LanguageClient.from_env(cfg.azure)
                 detalhes["servico_language"] = "Azure AI Language (real)"
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.warning("Falha ao inicializar LanguageClient real (%s); usando SDK simulado", exc)
         if cliente is None:
             cliente = LanguageClient(LanguageSdkSimulado(), cfg.azure)
             detalhes["servico_language"] = "Azure AI Language (SDK simulado)"
-        # Transcrição da consulta com médico e paciente
-        dados_transcricao = {
-            "audio_id": f"consulta-{contexto.leito_id.lower()}",
-            "patient_id": contexto.paciente_id,
-            "recorded_at": (agora - timedelta(minutes=15)).isoformat(),
-            "is_synthetic": (contexto.config.modo != "real"),
-            "segments": [
-                {
-                    "speaker": "medico",
-                    "text": "Olá, como você tem passado desde ontem à noite?",
-                    "offset_ms": 0,
-                    "duration_ms": 2500,
-                    "confidence": 0.98,
-                },
-                {
-                    "speaker": "paciente",
-                    "text": "Doutor, estou muito cansado, com muita falta de ar e um aperto no peito ao respirar.",
-                    "offset_ms": 3000,
-                    "duration_ms": 5000,
-                    "confidence": 0.95,
-                },
-            ],
-        }
-        transcricao = transcript_from_dict(dados_transcricao)
-
-        # Determina o cliente da Azure (real ou falso com o mesmo schema do SDK)
-        usar_real = (
-            contexto.config.modo == "real"
-            and os.getenv("AZURE_LANGUAGE_KEY")
-            and os.getenv("AZURE_LANGUAGE_ENDPOINT")
-        )
-
-        if usar_real:
-            try:
-                cliente = LanguageClient.from_env(cfg.azure)
-                detalhes["servico_azure"] = "Azure AI Language (produção)"
-                detalhes["modo"] = "azure_real"
-            except Exception as exc:  # noqa: BLE001
-                log.warning("Falha ao inicializar LanguageClient real (%s); usando adaptador de teste", exc)
-                usar_real = False
-
-        if not usar_real:
-            from audio.tests.conftest import FakeTextAnalytics
-
-            fake_sdk = FakeTextAnalytics(
-                regras={
-                    "falta de ar": {
-                        "category": "SymptomOrSign",
-                        "certainty": "positive",
-                        "confidence": 0.98,
-                    },
-                    "aperto no peito": {
-                        "category": "SymptomOrSign",
-                        "certainty": "positive",
-                        "confidence": 0.95,
-                    },
-                },
-                palavras_negativas=("cansado", "falta de ar", "aperto"),
-            )
-            cliente = LanguageClient(fake_sdk, cfg.azure)
-            detalhes["servico_azure"] = "Azure AI Language (simulação determinística do SDK)"
-            detalhes["modo"] = "simulado"
 
         # Executa a análise pelo módulo oficial audio.text.analyze
         resultado = analyze_transcript(
@@ -154,8 +91,24 @@ class EtapaAudio:
         detalhes["eventos_texto"] = len(resultado.events)
         detalhes["audio_id"] = resultado.audio_id
 
-        # Adiciona também o achado vocal na modalidade AUDIO (dispneia / fala entrecortada)
-        evento_vocal = EventoAchado.criar(
+        # Biomarcadores vocais (US12/US14) sobre o áudio; sem áudio, achado sintético de demonstração
+        eventos_vocais = self._analisar_voz(contexto, agora, documento_speech, detalhes)
+        if eventos_vocais is None:
+            eventos_vocais = [self._evento_vocal_demo(contexto, agora)]
+            for evento in eventos_vocais:
+                contexto.barramento.emitir(evento)
+        eventos.extend(eventos_vocais)
+
+        detalhes["total_achados_audio_e_texto"] = len(eventos)
+        contexto.logger.concluir_etapa(
+            eventos_emitidos=len(eventos),
+            status="sucesso",
+            detalhes=detalhes,
+        )
+        return eventos
+
+    def _evento_vocal_demo(self, contexto: ContextoPipeline, agora: datetime) -> EventoAchado:
+        return EventoAchado.criar(
             patient_id=contexto.paciente_id,
             modality=Modalidade.AUDIO,
             event_type="dificuldade_respiratoria",
@@ -179,20 +132,64 @@ class EtapaAudio:
             model_version="audio-biomarcadores@0.1.0",
             is_synthetic=(contexto.config.modo != "real"),
         )
-        contexto.barramento.emitir(evento_vocal)
-        eventos.append(evento_vocal)
 
-        detalhes["total_achados_audio_e_texto"] = len(eventos)
-        contexto.logger.concluir_etapa(
-            eventos_emitidos=len(eventos),
-            status="sucesso",
-            detalhes=detalhes,
+    def _analisar_voz(
+        self,
+        contexto: ContextoPipeline,
+        agora: datetime,
+        documento_speech: dict[str, Any] | None,
+        detalhes: dict[str, Any],
+    ) -> list[EventoAchado] | None:
+        """Roda ``audio.vocal`` sobre ``audio_path``. ``None`` se não há áudio ou a análise falha."""
+        cfg = contexto.config
+        audio = cfg.audio_path
+        if audio is None or not audio.is_file():
+            detalhes["biomarcadores_vocais"] = "sem áudio: achado sintético de demonstração"
+            return None
+
+        from audio.ingestao.config import carregar_config as carregar_config_ingestao
+        from audio.ingestao.erros import ErroDeAudio
+        from audio.vocal.baseline import RepositorioBaseline
+        from audio.vocal.config import carregar_config as carregar_config_vocal
+        from audio.vocal.erros import ErroDeAnalise
+        from audio.vocal.respiratorio import carregar_detector
+        from audio.vocal.run import processar
+
+        saida = cfg.saida_dir / "audio"
+        try:
+            cfg_vocal = carregar_config_vocal()
+            execucao = processar(
+                audio,
+                patient_id=contexto.paciente_id,
+                recorded_at=agora - timedelta(minutes=15),
+                saida=saida,
+                cfg_ingestao=carregar_config_ingestao(),
+                cfg=cfg_vocal,
+                medico_falante=cfg.medico_falante if documento_speech else None,
+                transcricao=documento_speech,
+                detector=carregar_detector(cfg_vocal.respiratorio, cfg.modelo_yamnet),
+                repositorio=RepositorioBaseline(saida / "baseline"),
+                emissor=contexto.barramento,
+                bed_id=contexto.leito_id,
+                sintetico=(cfg.modo != "real"),
+            )
+        except (ErroDeAudio, ErroDeAnalise) as erro:
+            log.warning("Análise vocal falhou (%s); usando achado sintético de demonstração", erro)
+            detalhes["biomarcadores_vocais"] = f"falhou ({erro}): achado sintético de demonstração"
+            return None
+
+        resultado = execucao.resultado
+        detalhes["biomarcadores_vocais"] = "audio.vocal (US12/US14)"
+        detalhes["classe_vocal"] = resultado.classe
+        detalhes["eventos_vocais"] = len(resultado.eventos)
+        detalhes["yamnet"] = (
+            "disponível" if resultado.relatorio.get("respiratorio", {}).get("disponivel") else "indisponível"
         )
-        return eventos
+        return list(resultado.eventos)
 
     def _obter_transcricao(
         self, contexto: ContextoPipeline, agora: datetime, detalhes: dict[str, Any]
-    ) -> Transcript:
+    ) -> tuple[Transcript, dict[str, Any] | None]:
         """Azure Speech sobre ``audio_path`` (modo real) ou transcrição de demonstração."""
         cfg = contexto.config
         endpoint, chave = _credenciais_speech()
@@ -217,18 +214,19 @@ class EtapaAudio:
             detalhes["servico_speech"] = "Azure AI Speech (transcrição rápida, real)"
             detalhes["audio_origem"] = audio.name
             detalhes["falas_transcritas"] = len(documento.get("falas", []))
-            return transcript_from_dict(documento)
+            return transcript_from_dict(documento), documento
 
         if cfg.modo == "real":
             log.warning("Modo real sem audio_path ou credenciais do Speech; usando transcrição de demonstração")
         detalhes["servico_speech"] = "Azure AI Speech (transcrição de demonstração)"
-        return transcript_from_dict({
+        demo = transcript_from_dict({
             "audio_id": audio_id,
             "patient_id": contexto.paciente_id,
             "recorded_at": gravado_em,
             "is_synthetic": True,
             "segments": TRANSCRICAO_DEMO,
         })
+        return demo, None
 
 
 def _credenciais_speech() -> tuple[str | None, str | None]:

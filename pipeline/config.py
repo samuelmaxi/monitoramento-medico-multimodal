@@ -22,6 +22,11 @@ class ConfigPipeline:
     video_path: Path | None = None
     audio_path: Path | None = None
     max_frames_video: int = 50
+    sinais_fonte: str = "auto"  # "auto" | "mimic" | "sintetico"
+    mimic_path: Path = Path("dados/mimic-iv-demo/chartevents.csv.gz")
+    mimic_subject_id: int = 10002428
+    mimic_janela_horas: float = 6.0  # trecho final do registro que passa pelo replay
+    modelo_yamnet: Path = Path("models/audio/yamnet.onnx")
     medico_falante: int = 1  # falante (diarização do Speech) que é o médico
     chave_pseudonimizacao: str = "chave-padrao-demonstracao-us20-32bytes-000000"
 
@@ -57,6 +62,19 @@ class ConfigPipeline:
             video_path=sobrescritas.get("video_path"),
             audio_path=sobrescritas.get("audio_path"),
             max_frames_video=int(sobrescritas.get("max_frames_video", 50)),
+            sinais_fonte=str(sobrescritas.get("sinais_fonte") or os.getenv("PIPELINE_SINAIS", "auto")),
+            mimic_path=Path(sobrescritas.get("mimic_path") or cls.mimic_path),
+            mimic_subject_id=int(
+                sobrescritas.get("mimic_subject_id") or cls.mimic_subject_id
+            ),
+            mimic_janela_horas=float(
+                sobrescritas.get("mimic_janela_horas") or cls.mimic_janela_horas
+            ),
+            modelo_yamnet=Path(
+                sobrescritas.get("modelo_yamnet")
+                or os.getenv("AUDIO_YAMNET_MODEL_PATH")
+                or cls.modelo_yamnet
+            ),
             medico_falante=int(sobrescritas.get("medico_falante", 1)),
             chave_pseudonimizacao=chave,
         )

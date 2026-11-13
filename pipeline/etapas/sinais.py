@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from contratos import EventoAchado, agora_utc
 from pipeline.etapas.base import ContextoPipeline
-from sinais import DetectorSinais, Medicao
+from sinais import DetectorSinais, Medicao, mimic
 
 log = logging.getLogger("pipeline.etapas.sinais")
+
+LIMITE_ESPERA_S = 0.05
 
 
 def gerar_serie_streaming_clinica(paciente: str, inicio: datetime) -> list[Medicao]:
@@ -50,6 +53,27 @@ def gerar_serie_streaming_clinica(paciente: str, inicio: datetime) -> list[Medic
     return medicoes
 
 
+def carregar_replay_mimic(
+    caminho: Path, subject_id: int, janela_horas: float, paciente: str, fim: datetime
+) -> list[Medicao]:
+    """Trecho final do registro de um paciente do MIMIC-IV Demo, deslocado para terminar em ``fim``.
+
+    As datas do MIMIC são deslocadas por paciente; só os intervalos entre as medições valem.
+    """
+    df = mimic.carregar(caminho)
+    df = df[df.subject_id == subject_id]
+    if df.empty:
+        raise ValueError(f"subject_id {subject_id} não existe em {caminho}")
+    ultimo = df.instante.max()
+    df = df[df.instante >= ultimo - timedelta(hours=janela_horas)]
+    return [
+        Medicao(
+            paciente, fim - (ultimo - linha.instante).to_pytimedelta(), linha.sinal, linha.valor
+        )
+        for linha in df.itertuples()
+    ]
+
+
 class EtapaSinaisVitais:
     """Simula streaming de sinais vitais e processa via DetectorSinais em tempo real."""
 
@@ -64,8 +88,7 @@ class EtapaSinaisVitais:
         agora = agora_utc()
         inicio_sim = agora - timedelta(minutes=95)
 
-        # Gera série de streaming
-        medicoes = gerar_serie_streaming_clinica(contexto.paciente_id, inicio_sim)
+        medicoes = self._medicoes(contexto, agora, inicio_sim, detalhes)
         detalhes["total_medicoes_streaming"] = len(medicoes)
 
         velocidade = contexto.config.fator_velocidade
@@ -75,8 +98,8 @@ class EtapaSinaisVitais:
             # Temporização proporcional para demonstração em tempo real
             if velocidade > 0 and anterior_instante is not None:
                 delta_s = (medicao.instante - anterior_instante).total_seconds()
-                atraso = min(delta_s / velocidade, 0.4)  # Limita a 400ms para manter a demo dinâmica
-                if atraso > 0.01:
+                atraso = min(delta_s / velocidade, LIMITE_ESPERA_S)  # mantém a demo dinâmica
+                if atraso > 0.005:
                     time.sleep(atraso)
 
             anterior_instante = medicao.instante
@@ -105,3 +128,32 @@ class EtapaSinaisVitais:
         )
         return eventos
 
+    def _medicoes(
+        self,
+        contexto: ContextoPipeline,
+        agora: datetime,
+        inicio_sim: datetime,
+        detalhes: dict[str, Any],
+    ) -> list[Medicao]:
+        cfg = contexto.config
+        fonte = cfg.sinais_fonte
+        if fonte == "auto":
+            fonte = "mimic" if cfg.mimic_path.is_file() else "sintetico"
+        if fonte == "mimic":
+            if not cfg.mimic_path.is_file():
+                raise FileNotFoundError(
+                    f"{cfg.mimic_path} não existe; rode scripts/baixar_sinais.py"
+                )
+            detalhes["fonte"] = (
+                f"MIMIC-IV Demo (subject_id {cfg.mimic_subject_id}, "
+                f"últimas {cfg.mimic_janela_horas:g} h)"
+            )
+            return carregar_replay_mimic(
+                cfg.mimic_path,
+                cfg.mimic_subject_id,
+                cfg.mimic_janela_horas,
+                contexto.paciente_id,
+                agora - timedelta(minutes=5),
+            )
+        detalhes["fonte"] = "série sintética"
+        return gerar_serie_streaming_clinica(contexto.paciente_id, inicio_sim)
