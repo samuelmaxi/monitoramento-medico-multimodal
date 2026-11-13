@@ -45,6 +45,7 @@ class EtapaMovimentacao:
             "bed_id": contexto.leito_id,
             "source_id": f"leito-{contexto.leito_id.lower()}",
             "sintetico": True,
+            "chave": contexto.config.chave_pseudonimizacao,
         }
         eventos = [montar_evento(a, cfg, **ids) for a in anomalias]
         if not eventos:

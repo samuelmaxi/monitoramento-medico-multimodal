@@ -97,3 +97,10 @@ def test_video_real_que_falha_cai_no_achado_de_demonstracao(tmp_path):
     assert etapa["detalhes"]["modo"] == "clinico_leito"
     assert "motivo_fallback" in etapa["detalhes"]
     assert etapa["eventos_emitidos"] == 1
+
+
+def test_demo_roda_sem_pseudonym_key_no_ambiente(tmp_path, monkeypatch):
+    monkeypatch.setenv("PSEUDONYM_KEY", "")
+    cfg = ConfigPipeline.from_env(fator_velocidade=0.0, saida_dir=tmp_path, sinais_fonte="sintetico")
+    resumo = OrquestradorPipeline(cfg).executar()
+    assert resumo.etapas_com_falha == ()

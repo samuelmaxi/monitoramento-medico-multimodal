@@ -1254,41 +1254,126 @@ foi medido em tosse ou respiração reais. Detalhes e rastreabilidade ao DoD:
 Formatos WAV, FLAC e OGG/Opus são lidos sem ffmpeg; MP3, M4A, AAC, WMA e AMR precisam do `ffmpeg` no
 PATH. Nenhum áudio é versionado (o `.gitignore` bloqueia as extensões de áudio).
 
-## Demo ponta a ponta
+## Demo ponta a ponta (US20)
 
-1. Configure as variáveis de ambiente:
+Um único comando executa o fluxo completo: vídeo, áudio, sinais vitais, prescrições e
+movimentação geram achados, a fusão calcula o risco do paciente e o motor de alertas avisa a
+equipe.
 
-   ```bash
-   cp .env.sample .env
-   # edite .env e defina GOOGLE_DRIVE_FOLDER_URL com a pasta desejada
-   ```
+```bash
+uv run python scripts/rodar_demo.py
+```
 
-2. Instale as dependências:
+### Cenário da demonstração
+
+O mesmo usado na gravação do vídeo. O paciente do leito UTI-07 piora do ponto de vista
+respiratório, e cada modalidade enxerga uma parte disso:
+
+| Etapa | O que roda | Achados |
+|---|---|---|
+| `video` | Achado de leito de demonstração (no `--modo real` com `--video`, o YOLOv8 da US07) | `entrada_area_critica` |
+| `audio` | Azure Speech (transcrição) → Azure AI Language (termos críticos e sentimento, US13) → biomarcadores vocais (US12/US14) | 2 × `termo_critico` (falta de ar, aperto no peito), `sentimento_negativo`, `dificuldade_respiratoria` |
+| `sinais_vitais` | Replay das últimas 6 h de um paciente do MIMIC-IV Demo pelo detector da US15 | `news2_resposta_urgente`, `tendencia_deterioracao` |
+| `prescricoes` | Regras da US16 sobre morfina IV de 2 para 8 mg e heparina SC iniciada | `mudanca_abrupta_dose`, 2 × `medicamento_alta_vigilancia` |
+| `movimentacao` | Regras da US17 sobre 190 min em supino sem reposicionamento | `imobilidade_prolongada` |
+| `fusao` | Fusão multimodal da US18 | `risco_multimodal` |
+| `alertas` | Motor de alertas da US19 | alertas por severidade |
+
+Resultado esperado: **risco 0,92 (alto)**, 16 achados no barramento e 10 alertas. A execução
+leva menos de 1 s com `--rapido`. Sem o dataset do MIMIC (passo 3 abaixo) os sinais vêm de uma
+série sintética de 21 medições, e o resultado é risco 0,97, 13 achados e 8 alertas.
+
+### Como reproduzir
+
+1. Instale as dependências:
 
    ```bash
    uv sync
    ```
 
-3. Execute o download dos conteúdos:
+2. Configure o ambiente. A demo em modo simulado não precisa de chave nenhuma:
 
    ```bash
-   python scripts/get_content_script.py
+   cp .env.sample .env
    ```
 
-4. Confira que os arquivos foram baixados:
+3. Baixe o dataset de sinais vitais (acesso aberto, uma vez; fica fora do Git):
 
    ```bash
-   find conteudos -type f
+   uv run python scripts/baixar_sinais.py
    ```
 
-   Exemplo de resultado esperado:
-
-   ```
-   conteudos/videos/Samurai_Desembanha_Espada_Rapidamente.mp4
-   ```
-
-5. Execute o `main.py` como verificação final:
+4. Execute o fluxo. Com `--velocidade 30` (padrão) o replay dos sinais vitais é animado, para
+   mostrar a detecção em tempo real; com `--rapido` não há espera:
 
    ```bash
-   python main.py
+   uv run python scripts/rodar_demo.py              # replay animado (30x)
+   uv run python scripts/rodar_demo.py --rapido     # sem espera
+   uv run python scripts/rodar_demo.py -v           # também mostra o log JSON de cada etapa
    ```
+
+5. Confira os artefatos em `saida/demo_ponta_a_ponta/` (troque com `--saida`):
+
+   | Arquivo | Conteúdo |
+   |---|---|
+   | `eventos.jsonl` | Todos os achados publicados no barramento, no formato [`EventoAchado`](docs/arquitetura/contrato_eventos.md) |
+   | `relatorio_execucao.json` | Duração, status e detalhes de cada etapa |
+   | `log_execucao.jsonl` | Uma linha JSON no início e no fim de cada etapa, com o tempo de processamento |
+   | `alertas.jsonl` | Alertas disparados pelo motor da US19 |
+
+A saída do comando é a tabela de etapas (status, duração em ms, eventos e destaques), o painel
+de risco da fusão e os caminhos dos artefatos. O código de saída é 0 se todas as etapas deram
+certo e 2 se alguma falhou. Uma etapa com falha fica com `status: falha` no relatório e o fluxo
+segue com as demais; use `--abortar-na-falha` para interromper.
+
+### Azure no fluxo
+
+O modo simulado usa o mesmo código do real, trocando só o cliente do serviço. Para chamar os
+serviços de verdade, preencha no `.env` as variáveis `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`
+(ou `AZURE_SPEECH_ENDPOINT`), `AZURE_LANGUAGE_ENDPOINT` e `AZURE_LANGUAGE_KEY`
+(provisionamento em [Infraestrutura Azure](#infraestrutura-terraform)) e rode:
+
+```bash
+uv run python scripts/rodar_demo.py --modo real --audio consulta.wav --medico-falante 1
+```
+
+| Serviço | Onde roda | Sem chave ou sem arquivo |
+|---|---|---|
+| Azure Speech | Etapa `audio`, sobre `--audio` (transcrição rápida com diarização, US11) | Transcrição de demonstração |
+| Azure AI Language | Etapa `audio`, sobre a transcrição (US13) | SDK simulado, com o mesmo formato de resposta |
+| Biomarcadores vocais | Etapa `audio`, sobre `--audio` (US12/US14) | Achado vocal de demonstração |
+| YOLOv8 | Etapa `video`, sobre `--video` no `--modo real` | Achado de leito de demonstração |
+
+Cada etapa registra no relatório qual caminho usou (`servico_speech`, `servico_language`,
+`biomarcadores_vocais`, `modo`). Para o detector respiratório dos biomarcadores vocais, baixe o
+modelo com `uv run python scripts/baixar_modelos_audio.py`; sem ele a análise segue, sem eventos
+respiratórios. Com `--audio`, a `PSEUDONYM_KEY` precisa estar no `.env`.
+
+### O que é simulado
+
+- **Prescrições e movimentação:** as regras são as reais (US16 e US17), mas os dados de entrada
+  são cenários montados em relação ao instante atual. As datas do MIMIC são deslocadas por
+  paciente e a fusão só combina achados de uma janela de 60 min.
+- **Vídeo:** sem `--modo real` e `--video`, o achado de leito é de demonstração.
+- **Áudio:** sem `--audio`, a transcrição e o achado vocal são de demonstração.
+- Os eventos de demonstração saem com `is_synthetic: true`.
+
+### Testes
+
+```bash
+uv run pytest tests/pipeline    # integração do fluxo completo, em modo simulado
+uv run pytest tests audio/tests # suíte inteira (a mesma da CI)
+```
+
+A CI (`.github/workflows/ci.yml`) roda a suíte e a demo `--rapido` a cada push na `main` e a cada
+pull request, e guarda os artefatos da demo.
+
+### Download dos vídeos (opcional)
+
+Os vídeos de entrada do `--modo real` vêm de uma pasta do Google Drive:
+
+```bash
+# defina GOOGLE_DRIVE_FOLDER_URL no .env
+python scripts/get_content_script.py
+find conteudos -type f
+```

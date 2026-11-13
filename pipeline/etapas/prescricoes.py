@@ -62,7 +62,12 @@ class EtapaPrescricoes:
             alta=None,
         )
         prescricoes = gerar_prescricoes_demo(contexto.paciente_id, internacao.id, agora)
-        anomalias, achados = eventos_de(prescricoes, {internacao.id: internacao}, cfg)
+        anomalias, achados = eventos_de(
+            prescricoes,
+            {internacao.id: internacao},
+            cfg,
+            chave=contexto.config.chave_pseudonimizacao,
+        )
 
         eventos: list[EventoAchado] = []
         for evento in achados:
