@@ -27,6 +27,7 @@ class ConfigPipeline:
     mimic_subject_id: int = 10002428
     mimic_janela_horas: float = 6.0  # trecho final do registro que passa pelo replay
     modelo_yamnet: Path = Path("models/audio/yamnet.onnx")
+    abortar_na_falha: bool = False  # True: uma etapa com falha interrompe as seguintes
     medico_falante: int = 1  # falante (diarização do Speech) que é o médico
     chave_pseudonimizacao: str = "chave-padrao-demonstracao-us20-32bytes-000000"
 
@@ -75,6 +76,7 @@ class ConfigPipeline:
                 or os.getenv("AUDIO_YAMNET_MODEL_PATH")
                 or cls.modelo_yamnet
             ),
+            abortar_na_falha=bool(sobrescritas.get("abortar_na_falha", False)),
             medico_falante=int(sobrescritas.get("medico_falante", 1)),
             chave_pseudonimizacao=chave,
         )

@@ -26,6 +26,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from pipeline import ConfigPipeline, OrquestradorPipeline
+from pipeline.logger import configurar_logging
 
 for _fluxo in (sys.stdout, sys.stderr):
     if hasattr(_fluxo, "reconfigure"):
@@ -99,7 +100,20 @@ def main(argv: list[str] | None = None) -> int:
         help="número do falante (diarização) que é o médico",
     )
 
+    parser.add_argument(
+        "--abortar-na-falha",
+        action="store_true",
+        help="uma etapa com falha interrompe as seguintes (padrão: segue e registra a falha)",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="mostra no stderr o log JSON de cada etapa (também gravado em log_execucao.jsonl)",
+    )
+
     args = parser.parse_args(argv)
+    configurar_logging(logging.INFO if args.verbose else logging.WARNING)
 
     velocidade = 0.0 if args.rapido else args.velocidade
 
@@ -113,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         video_path=args.video,
         audio_path=args.audio,
         medico_falante=args.medico_falante,
+        abortar_na_falha=args.abortar_na_falha,
     )
 
     console.print(
@@ -166,8 +181,12 @@ def main(argv: list[str] | None = None) -> int:
         f"[dim]Artefatos gerados em {config.saida_dir}:[/dim]\n"
         f"  • Eventos brutos (auditoria): {resumo.caminho_eventos}\n"
         f"  • Relatório de etapas (DoD 4): {resumo.caminho_relatorio}\n"
+        f"  • Log estruturado por etapa: {resumo.caminho_log}\n"
         + (f"  • Alertas disparados: {resumo.caminho_alertas}\n" if resumo.caminho_alertas else "")
     )
+    if resumo.etapas_com_falha:
+        console.print(f"[bold red]Etapas com falha: {', '.join(resumo.etapas_com_falha)}[/bold red]")
+        return 2
     return 0
 
 

@@ -38,6 +38,8 @@ class ResumoExecucao:
     caminho_relatorio: Path
     caminho_eventos: Path
     caminho_alertas: Path | None
+    etapas_com_falha: tuple[str, ...] = ()
+    caminho_log: Path | None = None
 
 
 class OrquestradorPipeline:
@@ -52,6 +54,7 @@ class OrquestradorPipeline:
 
         caminho_eventos = saida_dir / "eventos.jsonl"
         caminho_eventos.unlink(missing_ok=True)
+        (saida_dir / "log_execucao.jsonl").unlink(missing_ok=True)  # cada execução reescreve o seu
 
         barramento = BarramentoLocal(caminho_eventos)
         logger = LoggerPipeline(saida_dir)
@@ -100,7 +103,13 @@ class OrquestradorPipeline:
         ]
 
         for etapa in etapas:
-            etapa.executar(contexto)
+            try:
+                etapa.executar(contexto)
+            except Exception as erro:
+                log.exception("etapa %s falhou", etapa.nome)
+                logger.falhar_etapa(etapa.nome, erro)
+                if self.config.abortar_na_falha:
+                    break
 
         # 5. Gera relatório estruturado e consolida resumo
         caminho_relatorio = logger.salvar_relatorio()
@@ -119,10 +128,12 @@ class OrquestradorPipeline:
             duracao_total_ms=round(total_ms, 2),
             total_eventos_barramento=barramento.total_publicados,
             total_alertas=len(alertas_gerados),
-            score_risco_final=round(risco_paciente.score, 4),
-            nivel_risco_final=risco_paciente.nivel,
+            score_risco_final=round(risco_paciente.score, 4) if risco_paciente else 0.0,
+            nivel_risco_final=risco_paciente.nivel if risco_paciente else "indisponivel",
             caminho_relatorio=caminho_relatorio,
             caminho_eventos=caminho_eventos,
             caminho_alertas=caminho_alertas,
+            etapas_com_falha=tuple(r.etapa for r in logger.registros if r.status == "falha"),
+            caminho_log=logger.caminho_log,
         )
 

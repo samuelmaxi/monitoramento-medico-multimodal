@@ -43,12 +43,17 @@ def test_replay_de_paciente_inexistente_falha_com_mensagem_clara(chartevents):
         carregar_replay_mimic(chartevents, 99, 3.0, PACIENTE, datetime.now(UTC))
 
 
-def test_fonte_mimic_sem_arquivo_falha_em_vez_de_cair_no_sintetico(tmp_path):
+def test_fonte_mimic_sem_arquivo_registra_falha_em_vez_de_cair_no_sintetico(tmp_path):
     config = ConfigPipeline.from_env(
         fator_velocidade=0.0, saida_dir=tmp_path, sinais_fonte="mimic", mimic_path=tmp_path / "nao_existe.gz"
     )
-    with pytest.raises(FileNotFoundError, match="baixar_sinais"):
-        OrquestradorPipeline(config).executar()
+    resumo = OrquestradorPipeline(config).executar()
+    relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
+    sinais = next(e for e in relatorio["etapas"] if e["etapa"] == "sinais_vitais")
+    assert resumo.etapas_com_falha == ("sinais_vitais",)
+    assert sinais["status"] == "falha"
+    assert "baixar_sinais" in sinais["detalhes"]["erro"]
+    assert "total_medicoes_streaming" not in sinais["detalhes"]
 
 
 @pytest.mark.skipif(not mimic.CHARTEVENTS.is_file(), reason="rode scripts/baixar_sinais.py")
