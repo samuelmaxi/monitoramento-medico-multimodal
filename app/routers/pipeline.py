@@ -113,6 +113,11 @@ def executar(
     ),
     sinais_fonte: Literal["auto", "mimic", "sintetico"] = Form("auto"),
     abortar_na_falha: bool = Form(False),
+    notificar_email: bool = Form(
+        False,
+        description="Envia os alertas médios e altos por e-mail/webhook (SMTP_* e "
+        "ALERTA_DESTINATARIOS do servidor). Desligado por padrão: envia de verdade.",
+    ),
     publicar: bool = Form(
         False,
         description="Publica os achados no barramento da API (fusão ao vivo e alertas)",
@@ -159,6 +164,7 @@ def executar(
             video_path=video_path,
             medico_falante=medico_falante,
             abortar_na_falha=abortar_na_falha,
+            notificar_smtp=notificar_email,
         )
         resumo = OrquestradorPipeline(config).executar()
     except HTTPException:

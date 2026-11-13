@@ -104,3 +104,32 @@ def test_demo_roda_sem_pseudonym_key_no_ambiente(tmp_path, monkeypatch):
     cfg = ConfigPipeline.from_env(fator_velocidade=0.0, saida_dir=tmp_path, sinais_fonte="sintetico")
     resumo = OrquestradorPipeline(cfg).executar()
     assert resumo.etapas_com_falha == ()
+
+
+def test_alertas_por_email_leem_o_ambiente_e_nunca_usam_cosmos(tmp_path, monkeypatch):
+    from pipeline.orquestrador import config_alertas
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.exemplo")
+    monkeypatch.setenv("SMTP_REMETENTE", "alertas@exemplo")
+    monkeypatch.setenv("ALERTA_DESTINATARIOS", "a@exemplo,b@exemplo")
+    monkeypatch.setenv("ALERTA_STORE", "cosmos")
+    cfg = ConfigPipeline.from_env(saida_dir=tmp_path, notificar_smtp=True)
+
+    alertas = config_alertas(cfg, tmp_path)
+
+    assert alertas.email_configurado
+    assert alertas.destinatarios == ["a@exemplo", "b@exemplo"] or tuple(alertas.destinatarios) == (
+        "a@exemplo", "b@exemplo")
+    assert alertas.armazenamento == "jsonl"
+    assert alertas.saida_dir == tmp_path
+
+
+def test_sem_notificar_o_email_fica_desligado_mesmo_com_smtp_no_ambiente(tmp_path, monkeypatch):
+    from pipeline.orquestrador import config_alertas
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.exemplo")
+    monkeypatch.setenv("SMTP_REMETENTE", "alertas@exemplo")
+    monkeypatch.setenv("ALERTA_DESTINATARIOS", "a@exemplo")
+    cfg = ConfigPipeline.from_env(saida_dir=tmp_path)
+
+    assert not config_alertas(cfg, tmp_path).email_configurado

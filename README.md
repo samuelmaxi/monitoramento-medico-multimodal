@@ -1352,6 +1352,7 @@ curl -X POST localhost:8000/pipeline/executar -F modo=real      -F audio_file=@c
 | `velocidade` | `0` | Aceleração do replay dos sinais vitais; 0 = sem espera |
 | `publicar` | `false` | Envia os achados ao barramento da API: `GET /fusao/pacientes` e `GET /alerts` passam a refletir a execução |
 | `abortar_na_falha` | `false` | Uma etapa com falha interrompe as seguintes |
+| `notificar_email` | `false` | Envia os alertas médios e altos por e-mail e webhook (`SMTP_HOST`, `SMTP_REMETENTE`, `ALERTA_DESTINATARIOS`, `ALERTA_WEBHOOK_URL` do servidor). **Envia de verdade** |
 
 A resposta traz o `status` (`sucesso` ou `parcial`), o risco da fusão com a contribuição de cada
 modalidade, o total de achados e alertas, e o relatório de cada etapa (duração, eventos e

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,19 @@ class ResumoExecucao:
     config_fusao: Any = None
 
 
+def config_alertas(config: ConfigPipeline, saida_dir: Path) -> ConfigAlertas:
+    """Motor de alertas da execução: sempre em JSONL na pasta da execução, nunca no Cosmos.
+
+    Com ``notificar_smtp`` o e-mail (e o webhook) vêm do ambiente: SMTP_HOST, SMTP_REMETENTE,
+    ALERTA_DESTINATARIOS e ALERTA_WEBHOOK_URL. Sem ele, os alertas ficam só no painel.
+    """
+    if not config.notificar_smtp:
+        return ConfigAlertas(armazenamento="jsonl", saida_dir=saida_dir)
+    return ConfigAlertas.from_env(
+        {**os.environ, "ALERTA_SAIDA_DIR": str(saida_dir), "ALERTA_STORE": "jsonl"}
+    )
+
+
 class OrquestradorPipeline:
     """Coordena todas as modalidades, barramento, fusão e alertas em comando único."""
 
@@ -67,16 +81,7 @@ class OrquestradorPipeline:
         fusao.assinar(barramento)
 
         # 2. Configura Motor de Alertas (US19)
-        if self.config.notificar_smtp:
-            cfg_alertas = ConfigAlertas.from_env({
-                "ALERTA_SAIDA_DIR": str(saida_dir),
-                "ALERTA_STORE": "jsonl",
-            })
-        else:
-            cfg_alertas = ConfigAlertas(
-                armazenamento="jsonl",
-                saida_dir=saida_dir,
-            )
+        cfg_alertas = config_alertas(self.config, saida_dir)
         servico_alertas = construir(cfg_alertas)
         servico_alertas.assinar(barramento)
 
