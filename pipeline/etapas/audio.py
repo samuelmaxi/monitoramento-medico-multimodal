@@ -13,6 +13,7 @@ from audio.text.config import load_config
 from audio.text.language_client import LanguageClient
 from audio.text.terms import TermMatcher
 from audio.text.transcript import Transcript, transcript_from_dict
+from audio.text.transcript import transcript_from_dict
 from contratos import (
     Contexto,
     EventoAchado,
@@ -78,6 +79,68 @@ class EtapaAudio:
         if cliente is None:
             cliente = LanguageClient(LanguageSdkSimulado(), cfg.azure)
             detalhes["servico_language"] = "Azure AI Language (SDK simulado)"
+        # Transcrição da consulta com médico e paciente
+        dados_transcricao = {
+            "audio_id": f"consulta-{contexto.leito_id.lower()}",
+            "patient_id": contexto.paciente_id,
+            "recorded_at": (agora - timedelta(minutes=15)).isoformat(),
+            "is_synthetic": (contexto.config.modo != "real"),
+            "segments": [
+                {
+                    "speaker": "medico",
+                    "text": "Olá, como você tem passado desde ontem à noite?",
+                    "offset_ms": 0,
+                    "duration_ms": 2500,
+                    "confidence": 0.98,
+                },
+                {
+                    "speaker": "paciente",
+                    "text": "Doutor, estou muito cansado, com muita falta de ar e um aperto no peito ao respirar.",
+                    "offset_ms": 3000,
+                    "duration_ms": 5000,
+                    "confidence": 0.95,
+                },
+            ],
+        }
+        transcricao = transcript_from_dict(dados_transcricao)
+
+        # Determina o cliente da Azure (real ou falso com o mesmo schema do SDK)
+        usar_real = (
+            contexto.config.modo == "real"
+            and os.getenv("AZURE_LANGUAGE_KEY")
+            and os.getenv("AZURE_LANGUAGE_ENDPOINT")
+        )
+
+        if usar_real:
+            try:
+                cliente = LanguageClient.from_env(cfg.azure)
+                detalhes["servico_azure"] = "Azure AI Language (produção)"
+                detalhes["modo"] = "azure_real"
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Falha ao inicializar LanguageClient real (%s); usando adaptador de teste", exc)
+                usar_real = False
+
+        if not usar_real:
+            from audio.tests.conftest import FakeTextAnalytics
+
+            fake_sdk = FakeTextAnalytics(
+                regras={
+                    "falta de ar": {
+                        "category": "SymptomOrSign",
+                        "certainty": "positive",
+                        "confidence": 0.98,
+                    },
+                    "aperto no peito": {
+                        "category": "SymptomOrSign",
+                        "certainty": "positive",
+                        "confidence": 0.95,
+                    },
+                },
+                palavras_negativas=("cansado", "falta de ar", "aperto"),
+            )
+            cliente = LanguageClient(fake_sdk, cfg.azure)
+            detalhes["servico_azure"] = "Azure AI Language (simulação determinística do SDK)"
+            detalhes["modo"] = "simulado"
 
         # Executa a análise pelo módulo oficial audio.text.analyze
         resultado = analyze_transcript(
