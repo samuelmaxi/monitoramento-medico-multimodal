@@ -59,6 +59,14 @@ class AudioLido:
         return self.sinal.shape[0] / self.taxa_hz
 
 
+def _sem_caminho(texto: str, caminho: Path) -> str:
+    """Tira de ``texto`` o caminho do arquivo (o libsndfile e o ffmpeg o repetem na mensagem).
+
+    O erro vai para o log e para a API, que só devem mostrar o nome do arquivo.
+    """
+    return texto.replace(str(caminho), caminho.name).replace(str(caminho.parent), "").strip()
+
+
 class _FalhaDeDecodificacao(Exception):
     pass
 
@@ -126,7 +134,9 @@ def _ler_com_ffmpeg(caminho: Path, extensao: str, cfg: ConfigIngestao) -> AudioL
             converter_para_wav(caminho, decodificado, timeout_s=cfg.validacao.ffmpeg_timeout_s)
             sinal, taxa = sf.read(str(decodificado), dtype="float32", always_2d=True)
         except ConversaoAudioError as erro:
-            raise AudioCorrompido(f"'{caminho.name}' não pôde ser decodificado: {erro}") from erro
+            raise AudioCorrompido(
+                f"'{caminho.name}' não pôde ser decodificado: {_sem_caminho(str(erro), caminho)}"
+            ) from erro
         except _ERROS_DO_LIBSNDFILE as erro:
             raise AudioCorrompido(
                 f"'{caminho.name}': saída do ffmpeg ilegível ({erro})"
@@ -161,7 +171,7 @@ def ler_audio(caminho: str | Path, cfg: ConfigIngestao) -> AudioLido:
     try:
         return _ler_com_libsndfile(caminho, extensao, cfg)
     except _FalhaDeDecodificacao as falha:
-        motivo = str(falha)
+        motivo = _sem_caminho(str(falha), caminho)
     log.debug("libsndfile não leu '%s' (%s); tentando ffmpeg", caminho.name, motivo)
 
     if shutil.which("ffmpeg") is None:
