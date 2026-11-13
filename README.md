@@ -27,6 +27,10 @@ sistema.
 │       ├── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
 │       └── fusao.py                # GET /fusao/pacientes[/{patient_id}], POST /fusao/risco (US18)
 ├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
+├── audio/
+│   ├── ingestao/              # US10: conversão para WAV 16 kHz mono, validação, cópia de features, metadados
+│   ├── vocal/                 # US12/US14: biomarcadores (Praat), YAMNet, baseline, regras e eventos de áudio
+│   └── text/                  # US13: termos críticos e sentimento na fala do paciente
 ├── dados/                     # MIMIC-IV Demo baixado por script (gitignored)
 │       └── prescricoes.py          # POST /prescricoes/analise, GET /prescricoes/mimic/{subject_id}, /config (US16)
 ├── tests/
@@ -119,6 +123,10 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `US07_CONFIG_PATH`                | Não                              | Config da US07 usada pela API quando o `POST` não informa `camera_id`. Padrão: `config/exemplo_us07.json`.                   | `config/exemplo_us07.json`                                                             |
 | `US07_CONFIG_DIR`                 | Não                              | Pasta das configs por câmera: `camera_id=X` lê `<US07_CONFIG_DIR>/X.json`. Padrão: `config`.                                 | `config`                                                                               |
 | `US07_OUTPUT_DIR`                 | Não                              | Onde a API da US07 grava `eventos.jsonl` e `job.json` de cada job. Padrão: `saida/video/api`.                                | `saida/video/api`                                                                      |
+| `AUDIO_SAIDA_DIR`                 | Não                              | Saída da ingestão e da análise vocal (US10, US12, US14). Padrão: `saida/audio`.                                              | `saida/audio`                                                                          |
+| `AUDIO_YAMNET_MODEL_PATH`         | Não                              | Modelo YAMNet em ONNX (`python scripts/baixar_modelos_audio.py`). Sem ele, a análise vocal segue sem eventos respiratórios.  | `models/audio/yamnet.onnx`                                                             |
+| `AUDIO_VOCAL_CONFIG_PATH`, `AUDIO_INGESTAO_CONFIG_PATH` | Não            | Configs de limiares e de conversão. Padrão: `audio/vocal/config.yaml` e `audio/ingestao/config.yaml`.                        | `audio/vocal/config.yaml`                                                              |
+| `AUDIO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do áudio aceito por `POST /audio/vocal`. Padrão: `100`.                                                       | `100`                                                                                  |
 
 O template pronto pode ser copiado de `.env.sample`:
 
@@ -1189,37 +1197,62 @@ de 0,80). Protocolo, exceções que vieram dos dados, anomalias reais
 documentadas e limitações estão em
 [`docs/relatorio_us16_dod.md`](docs/relatorio_us16_dod.md).
 
-## Fusão multimodal em score de risco (US18)
+## Áudio: ingestão, biomarcadores vocais e achados (US10, US12, US14)
 
-Combina os achados de vídeo, áudio, texto, sinais vitais, prescrições e
-movimentação de um paciente em um **score de risco de 0 a 1** e um nível
-(baixo < 0,4 ≤ médio < 0,7 ≤ alto), mostrando quanto cada modalidade contribuiu.
+Pacotes [`audio/ingestao`](audio/ingestao/) e [`audio/vocal`](audio/vocal/). Convertem a gravação para
+WAV PCM 16 kHz mono (formato recomendado pelo Azure Speech), medem os biomarcadores vocais do paciente
+com **Praat/parselmouth** e detectam tosse, respiração, sibilo e arfar com o **YAMNet** (AudioSet, em
+ONNX). Regras com limiares documentados classificam em `fadiga_vocal`, `dificuldade_respiratoria`,
+`possivel_disartria` ou `normal`, e cada achado lista os critérios que o explicam. Os eventos seguem o
+contrato `EventoAchado` (`modality="audio"`), vão ao barramento e, com severidade alta, ao motor de
+alertas (US19).
+
+**Todo resultado é um indicativo para avaliação clínica, não um diagnóstico.**
 
 ```bash
-uv run python scripts/demo_us18.py               # caso SpO2 em queda + dispneia, até o alerta
-uv run python -m fusao.run saida/eventos.jsonl   # risco por paciente a partir de um JSONL
-uv run python -m fusao.run saida/eventos.jsonl --janela-min 30 --saida saida/fusao/eventos.jsonl
-postman collection run postman/fusao.json        # com a API no ar: cálculo + fluxo ao vivo até o alerta
+uv run python scripts/baixar_modelos_audio.py            # YAMNet ONNX (opcional), SHA-256 conferido
+
+# converte uma pasta de áudios (um arquivo ruim não interrompe o lote)
+uv run python -m audio.ingestao.run --input gravacoes/ --origem "consulta simulada" --licenca "CC0"
+
+# áudio só do paciente (ex.: áudio de voz do WhatsApp); sem transcrição, segmentos por energia
+uv run --env-file .env python -m audio.vocal.run --audio voz.ogg --patient-id 10000032   --recorded-at 2026-10-01T13:00:00Z
+
+# consulta com médico e paciente: transcrição do Azure Speech (US11) com diarização
+uv run --env-file .env python -m audio.vocal.run --audio consulta.wav --patient-id 10000032   --recorded-at 2026-10-01T13:00:00Z --transcrever --medico-falante 1
+
+uv run python scripts/avaliar_us14.py                    # recall por classe em casos injetados
+uv run pytest tests/audio                                # sem rede, sem credenciais
 ```
 
-- **Estratégia:** *late fusion* com regras ponderadas. Cada achado vira uma força
-  (`peso da modalidade × severidade`, modulada pelo `score` e por decaimento no
-  tempo); a modalidade vale o seu achado mais forte; modalidades que concordam no
-  mesmo eixo clínico (respiratório, neurológico, queda) ganham um termo extra; e
-  tudo é combinado por noisy-OR (`1 − Π(1 − termo)`).
-- **Explicabilidade:** o score é repartido entre as modalidades (`contrib_*` em
-  `evidence.features`, somam o score) e `related_event_ids` aponta os achados usados.
-- **Modalidade ausente** não contribui e não falha; `modalidades_ausentes` diz quais faltaram.
-- **Tempo real:** no app, a fusão assina o mesmo barramento dos detectores e
-  publica `risco_multimodal`, que o motor de alertas (US19) trata como qualquer achado.
-- **Parâmetros** em `config/us18_fusao.yaml` (janela de 60 min, pesos, eixos,
-  níveis), todos justificados.
+Pela API: `POST /audio/vocal` (campos e códigos de erro em [`postman/README.md`](postman/README.md)).
+Por áudio, em `saida/audio/<audio_id>/`: `convertido.wav`, `features.wav` (volume normalizado e sem
+silêncios longos, só para as features), `metadados.json` (duração, taxa, canais, origem, licença),
+`eventos.jsonl` e `relatorio.json`. O original nunca é alterado.
 
-No caso de demonstração, SpO2 em queda (risco isolado 0,42), relato de falta de
-ar (0,41) e fala com dispneia (0,35) somam **0,82, risco alto**, e geram um
-alerta de prioridade alta para a equipe, enquanto cada achado sozinho gera só
-um alerta médio. Estratégia, pesos, resultados e rastreabilidade ao DoD em
-[`docs/relatorio_us18_dod.md`](docs/relatorio_us18_dod.md).
+| `event_type` | Quando |
+| --- | --- |
+| `dificuldade_respiratoria` | 2 de 4 critérios (eventos respiratórios, pausas altas, fala lenta, HNR baixo), com evento respiratório ou pausas; **alta com 3** |
+| `fadiga_vocal` | 2 de 4 (intensidade abaixo da baseline, F0 monótona, pausas altas, fala lenta) |
+| `possivel_disartria` | 3 de 5 (jitter, shimmer, HNR, articulação lenta, pausas altas), com articulação lenta ou pausas |
+| `evento_respiratorio` | Trecho do YAMNet com score ≥ 0,30 (tosse, respiração, sibilo, arfar) |
+| `desvio_baseline_vocal` | Biomarcador fora da baseline do próprio paciente (z robusto ≥ 3,5, com ≥ 3 áudios anteriores) |
+| `sem_achados` | Nenhuma das anteriores: é a classe "normal" |
+
+Limiares em [`audio/vocal/config.yaml`](audio/vocal/config.yaml): jitter local > 1,04 %, shimmer
+local > 3,81 % e HNR < 20 dB (normalidade MDVP, da US12); os demais são **experimentais**.
+
+**Ressalvas importantes.** Os limiares MDVP são de gravação de qualidade clínica: áudio comprimido
+(Opus do WhatsApp, MP3) os ultrapassa com facilidade, e o achado leva `audio_comprimido = true`. A
+avaliação em voz sintética é circular (mede a lógica das regras, não a validade clínica) e o YAMNet não
+foi medido em tosse ou respiração reais. Detalhes e rastreabilidade ao DoD:
+[`docs/arquitetura/us12_biomarcadores_vocais.md`](docs/arquitetura/us12_biomarcadores_vocais.md),
+[`docs/relatorio_us10_dod.md`](docs/relatorio_us10_dod.md),
+[`docs/relatorio_us12_dod.md`](docs/relatorio_us12_dod.md) e
+[`docs/relatorio_us14_dod.md`](docs/relatorio_us14_dod.md).
+
+Formatos WAV, FLAC e OGG/Opus são lidos sem ffmpeg; MP3, M4A, AAC, WMA e AMR precisam do `ffmpeg` no
+PATH. Nenhum áudio é versionado (o `.gitignore` bloqueia as extensões de áudio).
 
 ## Demo ponta a ponta
 

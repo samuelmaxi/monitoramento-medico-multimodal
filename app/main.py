@@ -13,6 +13,7 @@ from app.barramento import get_barramento  # noqa: E402
 from app.routers import (  # noqa: E402
     alertas,
     audio_analysis,
+    audio_vocal,
     fusao,
     prescricoes,
     sentiment,
@@ -50,6 +51,9 @@ app = FastAPI(
     title="Monitoramento Médico Multimodal - API",
     description=(
         "Endpoints locais para testar os fluxos Azure Speech e Language, a transcrição de "
+        "consultas (US11), os termos críticos e o sentimento na fala do paciente (US13), os "
+        "biomarcadores vocais e achados de áudio (US10, US12, US14), a análise de pose em vídeo "
+        "e os alertas automáticos para a equipe médica (US19)."
         "consultas (US11), os termos críticos e o sentimento na fala do paciente (US13), a "
         "análise de pose em vídeo, a fusão multimodal em score de risco por paciente (US18) e os "
         "alertas automáticos para a equipe médica (US19)."
@@ -61,6 +65,7 @@ app.include_router(transcription.router)
 app.include_router(sentiment.router)
 app.include_router(text_analysis.router)
 app.include_router(audio_analysis.router)
+app.include_router(audio_vocal.router)
 app.include_router(video_pose.router)
 app.include_router(video_areas.router)
 app.include_router(alertas.router)

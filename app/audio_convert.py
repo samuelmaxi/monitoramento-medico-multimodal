@@ -13,8 +13,15 @@ class ConversaoAudioError(Exception):
     """Falha ao converter o áudio, inclusive quando o ffmpeg não está instalado."""
 
 
-def converter_para_wav(origem: Path, destino: Path) -> Path:
-    """Gera `destino` (WAV PCM 16 kHz mono). O arquivo de origem não é alterado."""
+TIMEOUT_PADRAO_S = 300.0
+
+
+def converter_para_wav(origem: Path, destino: Path, *, timeout_s: float = TIMEOUT_PADRAO_S) -> Path:
+    """Gera `destino` (WAV PCM 16 kHz mono). O arquivo de origem não é alterado.
+
+    `timeout_s` evita que um arquivo malformado trave o lote: passado o prazo, o ffmpeg é
+    encerrado e a falha vira `ConversaoAudioError`.
+    """
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
         raise ConversaoAudioError(
@@ -28,7 +35,14 @@ def converter_para_wav(origem: Path, destino: Path) -> Path:
         "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
         str(destino),
     ]
-    resultado = subprocess.run(comando, capture_output=True, text=True, check=False)
+    try:
+        resultado = subprocess.run(
+            comando, capture_output=True, text=True, check=False, timeout=timeout_s
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ConversaoAudioError(
+            f"ffmpeg excedeu {timeout_s:g} s em '{origem.name}' e foi encerrado."
+        ) from exc
     if resultado.returncode != 0:
         raise ConversaoAudioError(f"ffmpeg falhou em '{origem.name}': {resultado.stderr.strip()}")
     return destino
