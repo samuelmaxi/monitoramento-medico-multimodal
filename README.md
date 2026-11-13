@@ -24,7 +24,8 @@ sistema.
 │       ├── sentiment.py            # POST /sentiment
 │       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
 │       ├── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
-│       └── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+│       ├── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+│       └── fusao.py                # GET /fusao/pacientes[/{patient_id}], POST /fusao/risco (US18)
 ├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
 ├── audio/
 │   ├── ingestao/              # US10: conversão para WAV 16 kHz mono, validação, cópia de features, metadados
@@ -50,6 +51,8 @@ sistema.
 │   └── avaliar_us16.py       # Recall da US16 em casos injetados no MIMIC-IV Demo
 ├── prescricoes/               # US16: anomalias na evolução de prescrições
 ├── config/us16_prescricoes.yaml  # Limiares e lista ISMP da US16 (versionados)
+├── fusao/                     # US18: fusão multimodal em score de risco por paciente
+├── config/us18_fusao.yaml     # Janela, pesos e eixos clínicos da fusão (versionados)
 ├── dados/mimic-iv-demo/       # Tabelas do MIMIC-IV Demo (gitignored)
 │   └── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
 ├── teste/
@@ -633,6 +636,9 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
 | `POST` | `/sinais-vitais/news2`           | Recebe um conjunto de sinais vitais e devolve os pontos NEWS2 por parâmetro, o total e o gatilho (US15).                                   |
 | `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados, os artefatos descartados e as medições fora de ordem descartadas. A baseline de cada paciente é mantida entre chamadas (US15).          |
+| `GET`  | `/fusao/pacientes`               | Último risco multimodal de cada paciente visto pelo barramento, do maior para o menor, com a contribuição de cada modalidade (US18). |
+| `GET`  | `/fusao/pacientes/{patient_id}`  | Risco atual de um paciente (404 sem achados na janela) (US18).                                                                         |
+| `POST` | `/fusao/risco`                   | Calcula o risco por paciente a partir de achados no contrato US04 enviados no corpo, com `janela_min` e `ate` opcionais. Sem estado (US18). |
 
 Exemplos com `curl`:
 
