@@ -1,0 +1,25 @@
+# US09 · Relatório automático de desvios no procedimento.
+#
+# Lido por video/relatorio/config.py. Nenhum número do relatório fica no código: mudou um
+# valor aqui, suba "versao" (ela vai dentro de cada relatório gerado).
+#
+# QUANDO ALGO É UM DESVIO continua em config/us08_padroes.yaml. Aqui ficam só os critérios de
+# como o relatório apresenta cada desvio.
+#
+#   [EXP]  experimental: valor de partida plausível, sem calibração com vídeos rotulados.
+versao: "1.0.0"
+
+confianca:
+  # Confiança (0 a 1) abaixo da qual o desvio é marcado "baixa confiança" e pede conferência
+  # no vídeo. Em desvios de pose é a média da confiança dos keypoints da medida; em presença
+  # em área crítica, a confiança da detecção do YOLOv8. [EXP]
+  minima: 0.5
+  # % mínima dos quadros do trecho em que TODOS os keypoints da medida foram vistos. Abaixo
+  # disso a medida foi feita sobre poucos quadros. Só vale para desvios de pose. [EXP]
+  cobertura_minima_pct: 50
+
+evidencia:
+  # O HTML é um arquivo único, sem depender de outras pastas: o quadro de evidência (JPG)
+  # vai embutido (base64), reduzido a esta largura. O JPG original fica em saida/.
+  largura_html_px: 640
+  qualidade_jpeg: 80

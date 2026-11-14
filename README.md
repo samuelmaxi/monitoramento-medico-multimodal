@@ -398,6 +398,39 @@ Rastreabilidade ao DoD, protocolo e resultados da avaliação:
 [`docs/relatorio_us08_dod.md`](docs/relatorio_us08_dod.md). Testes:
 `uv run pytest tests/video/test_desvios.py`.
 
+### US09 — relatório automático de desvios no procedimento
+
+Pacote [`video/relatorio/`](video/relatorio/). Ao final da análise de cada vídeo, em um
+comando e sem edição manual, aplica a US08, publica os eventos no barramento (os
+desvios de severidade **alta** chegam ao motor de alertas da US19) e grava o relatório:
+
+```bash
+uv run --env-file .env python -m video.relatorio.run --perfil internacao_leito \
+  --pose outputs/pose/<video>.json --eventos-areas saida/video/eventos_<video>.jsonl \
+  --patient-id pt_<24 hex>                  # --sem-alertas desliga o motor; --formato json|html
+```
+
+Saídas em `saida/video/desvios/`: `<fonte>_relatorio_desvios.json` e
+`<fonte>_relatorio_desvios.html` (arquivo único, sem script nem recurso externo, com os
+quadros de evidência embutidos; para PDF, imprima pelo navegador). O relatório traz a
+identificação do vídeo **sem dado pessoal** (só o `source_id` e o SHA-256), duração, tipo de
+procedimento, cada desvio com início, fim, tipo, severidade, **confiança** e quadro de
+evidência, o resumo (total por tipo e **% do tempo em desvio**), as **versões dos modelos**
+(OpenPose, YOLOv8) e os limiares usados. Vídeo sem desvios gera "Sem desvios detectados",
+nunca um relatório vazio; se a análise foi pouco confiável (pessoa pouco vista, sem pose), o
+relatório diz que a ausência de desvios não é conclusiva. Critérios de apresentação em
+[`config/us09_relatorio.yaml`](config/us09_relatorio.yaml).
+
+Rastreabilidade ao DoD, decisões e limitações:
+[`docs/relatorio_us09_dod.md`](docs/relatorio_us09_dod.md). Testes:
+`uv run pytest tests/video/test_relatorio.py`; sem `uv`, crie um ambiente leve com
+`python -m venv .venv` e `.venv\Scripts\python -m pip install -r video/requirements.txt` e use
+`.venv\Scripts\python -m pytest tests/video/test_relatorio.py`.
+
+Para **ver cada etapa funcionando** (entradas, desvios, confiança, alerta, JSON, HTML) e conferir o DoD
+automaticamente, abra [`notebooks/validacao_us09.ipynb`](notebooks/validacao_us09.ipynb) (precisa de
+`ipykernel` e `matplotlib`): ele usa dados sintéticos e termina com o esboço do relatório renderizado.
+
 ### US17 — anomalias nos padrões de movimentação durante a internação
 
 Pacote [`movimentacao/`](movimentacao/). Monta uma **série de movimentação por
