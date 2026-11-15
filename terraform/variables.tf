@@ -19,7 +19,7 @@ variable "environment" {
 variable "storage_account_name" {
   description = "Nome único da conta de storage Azure (máximo 24 caracteres, apenas letras e números)."
   type        = string
-  default     = "medicalmonitoring"
+  default     = "medicalmonitoringv1"
 }
 
 variable "container_name" {
@@ -42,7 +42,7 @@ variable "alert_email" {
 variable "subscription_id" {
   description = "ID da assinatura Azure onde os recursos serão provisionados."
   type        = string
-  default     = "14f9a7ae-f7b8-4f3c-8cb9-6ddc80cc1f22"
+  default     = "a8a736b3-9b79-4152-be46-fa407d4afa51"
 }
 variable "cosmos_throughput" {
   description = "Throughput (RU/s) do banco de alertas no Cosmos DB. 400 fica dentro do free tier (1000 RU/s)."

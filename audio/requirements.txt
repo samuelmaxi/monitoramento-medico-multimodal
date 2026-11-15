@@ -7,3 +7,12 @@ PyYAML==6.0.3
 python-dotenv==1.2.4
 pytest==9.1.1
 jsonschema==4.26.0
+
+# Ingestão de áudio (audio/ingestao, US10) e biomarcadores vocais (audio/vocal, US12/US14).
+# O ffmpeg (no PATH) só é preciso para MP3, M4A, AAC, WMA e AMR; WAV, FLAC e OGG/Opus não precisam.
+# O modelo YAMNet vem de: python scripts/baixar_modelos_audio.py
+numpy>=2.0
+scipy>=1.14
+soundfile>=0.13
+praat-parselmouth>=0.4.7
+onnxruntime>=1.20

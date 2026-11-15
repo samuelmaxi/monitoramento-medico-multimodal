@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY")
 AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION")
@@ -55,3 +56,13 @@ def require_blob_container_name() -> str:
 POSE_CONFIG_PATH = os.getenv("POSE_CONFIG_PATH", "video/pose/config.yaml")
 VIDEO_MAX_UPLOAD_MB = int(os.getenv("VIDEO_MAX_UPLOAD_MB", "500"))
 TEXT_CONFIG_PATH = os.getenv("TEXT_CONFIG_PATH", "audio/text/config.yaml")
+
+# Áudio: ingestão (US10), biomarcadores vocais (US12) e achados de áudio (US14)
+AUDIO_INGESTAO_CONFIG_PATH = os.getenv("AUDIO_INGESTAO_CONFIG_PATH", "audio/ingestao/config.yaml")
+AUDIO_VOCAL_CONFIG_PATH = os.getenv("AUDIO_VOCAL_CONFIG_PATH", "audio/vocal/config.yaml")
+AUDIO_YAMNET_MODEL_PATH = os.getenv("AUDIO_YAMNET_MODEL_PATH", "models/audio/yamnet.onnx")
+AUDIO_SAIDA_DIR = os.getenv("AUDIO_SAIDA_DIR", "saida/audio")
+AUDIO_MAX_UPLOAD_MB = int(os.getenv("AUDIO_MAX_UPLOAD_MB", "100"))
+
+# Pipeline ponta a ponta (US20): cada execução da API grava em <PIPELINE_API_SAIDA_DIR>/<id>/
+PIPELINE_API_SAIDA_DIR = Path(os.getenv("PIPELINE_API_SAIDA_DIR", "saida/pipeline_api"))

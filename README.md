@@ -29,8 +29,13 @@ editar o `.md`: `uv run --with weasyprint python scripts/gerar_relatorio_pdf.py`
 │       ├── sentiment.py            # POST /sentiment
 │       ├── video_pose.py           # POST /video/pose, GET /video/pose/{job_id}[/keypoints|/angles]
 │       ├── video_areas.py          # POST /video/areas-criticas, GET /video/areas-criticas/{job_id}[/eventos]
-│       └── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+│       ├── sinais_vitais.py        # POST /sinais-vitais/news2, POST /sinais-vitais/medicoes (US15)
+│       └── fusao.py                # GET /fusao/pacientes[/{patient_id}], POST /fusao/risco (US18)
 ├── sinais/                    # Anomalias em sinais vitais: NEWS2 + baseline do paciente (US15)
+├── audio/
+│   ├── ingestao/              # US10: conversão para WAV 16 kHz mono, validação, cópia de features, metadados
+│   ├── vocal/                 # US12/US14: biomarcadores (Praat), YAMNet, baseline, regras e eventos de áudio
+│   └── text/                  # US13: termos críticos e sentimento na fala do paciente
 ├── dados/                     # MIMIC-IV Demo baixado por script (gitignored)
 │       └── prescricoes.py          # POST /prescricoes/analise, GET /prescricoes/mimic/{subject_id}, /config (US16)
 ├── tests/
@@ -51,6 +56,8 @@ editar o `.md`: `uv run --with weasyprint python scripts/gerar_relatorio_pdf.py`
 │   └── avaliar_us16.py       # Recall da US16 em casos injetados no MIMIC-IV Demo
 ├── prescricoes/               # US16: anomalias na evolução de prescrições
 ├── config/us16_prescricoes.yaml  # Limiares e lista ISMP da US16 (versionados)
+├── fusao/                     # US18: fusão multimodal em score de risco por paciente
+├── config/us18_fusao.yaml     # Janela, pesos e eixos clínicos da fusão (versionados)
 ├── dados/mimic-iv-demo/       # Tabelas do MIMIC-IV Demo (gitignored)
 │   └── avaliar_us08.py       # Precisão/recall dos desvios (US08) em vídeos rotulados
 ├── teste/
@@ -121,6 +128,10 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `US07_CONFIG_PATH`                | Não                              | Config da US07 usada pela API quando o `POST` não informa `camera_id`. Padrão: `config/exemplo_us07.json`.                   | `config/exemplo_us07.json`                                                             |
 | `US07_CONFIG_DIR`                 | Não                              | Pasta das configs por câmera: `camera_id=X` lê `<US07_CONFIG_DIR>/X.json`. Padrão: `config`.                                 | `config`                                                                               |
 | `US07_OUTPUT_DIR`                 | Não                              | Onde a API da US07 grava `eventos.jsonl` e `job.json` de cada job. Padrão: `saida/video/api`.                                | `saida/video/api`                                                                      |
+| `AUDIO_SAIDA_DIR`                 | Não                              | Saída da ingestão e da análise vocal (US10, US12, US14). Padrão: `saida/audio`.                                              | `saida/audio`                                                                          |
+| `AUDIO_YAMNET_MODEL_PATH`         | Não                              | Modelo YAMNet em ONNX (`python scripts/baixar_modelos_audio.py`). Sem ele, a análise vocal segue sem eventos respiratórios.  | `models/audio/yamnet.onnx`                                                             |
+| `AUDIO_VOCAL_CONFIG_PATH`, `AUDIO_INGESTAO_CONFIG_PATH` | Não            | Configs de limiares e de conversão. Padrão: `audio/vocal/config.yaml` e `audio/ingestao/config.yaml`.                        | `audio/vocal/config.yaml`                                                              |
+| `AUDIO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do áudio aceito por `POST /audio/vocal`. Padrão: `100`.                                                       | `100`                                                                                  |
 
 O template pronto pode ser copiado de `.env.sample`:
 
@@ -630,6 +641,9 @@ A API sobe em `http://127.0.0.1:8000`. Documentação interativa (Swagger UI) em
 | `GET`  | `/video/areas-criticas/{job_id}/eventos` | Eventos `entrada_area_critica`/`saida_area_critica` no contrato US04 (ou um `sem_achados`), com timestamp.                           |
 | `POST` | `/sinais-vitais/news2`           | Recebe um conjunto de sinais vitais e devolve os pontos NEWS2 por parâmetro, o total e o gatilho (US15).                                   |
 | `POST` | `/sinais-vitais/medicoes`        | Recebe um lote de medições e devolve os eventos de anomalia gerados, os artefatos descartados e as medições fora de ordem descartadas. A baseline de cada paciente é mantida entre chamadas (US15).          |
+| `GET`  | `/fusao/pacientes`               | Último risco multimodal de cada paciente visto pelo barramento, do maior para o menor, com a contribuição de cada modalidade (US18). |
+| `GET`  | `/fusao/pacientes/{patient_id}`  | Risco atual de um paciente (404 sem achados na janela) (US18).                                                                         |
+| `POST` | `/fusao/risco`                   | Calcula o risco por paciente a partir de achados no contrato US04 enviados no corpo, com `janela_min` e `ate` opcionais. Sem estado (US18). |
 
 Exemplos com `curl`:
 
@@ -1188,41 +1202,220 @@ de 0,80). Protocolo, exceções que vieram dos dados, anomalias reais
 documentadas e limitações estão em
 [`docs/relatorio_us16_dod.md`](docs/relatorio_us16_dod.md).
 
-## Demo ponta a ponta
+## Áudio: ingestão, biomarcadores vocais e achados (US10, US12, US14)
 
-1. Configure as variáveis de ambiente:
+Pacotes [`audio/ingestao`](audio/ingestao/) e [`audio/vocal`](audio/vocal/). Convertem a gravação para
+WAV PCM 16 kHz mono (formato recomendado pelo Azure Speech), medem os biomarcadores vocais do paciente
+com **Praat/parselmouth** e detectam tosse, respiração, sibilo e arfar com o **YAMNet** (AudioSet, em
+ONNX). Regras com limiares documentados classificam em `fadiga_vocal`, `dificuldade_respiratoria`,
+`possivel_disartria` ou `normal`, e cada achado lista os critérios que o explicam. Os eventos seguem o
+contrato `EventoAchado` (`modality="audio"`), vão ao barramento e, com severidade alta, ao motor de
+alertas (US19).
 
-   ```bash
-   cp .env.sample .env
-   # edite .env e defina GOOGLE_DRIVE_FOLDER_URL com a pasta desejada
-   ```
+**Todo resultado é um indicativo para avaliação clínica, não um diagnóstico.**
 
-2. Instale as dependências:
+```bash
+uv run python scripts/baixar_modelos_audio.py            # YAMNet ONNX (opcional), SHA-256 conferido
+
+# converte uma pasta de áudios (um arquivo ruim não interrompe o lote)
+uv run python -m audio.ingestao.run --input gravacoes/ --origem "consulta simulada" --licenca "CC0"
+
+# áudio só do paciente (ex.: áudio de voz do WhatsApp); sem transcrição, segmentos por energia
+uv run --env-file .env python -m audio.vocal.run --audio voz.ogg --patient-id 10000032   --recorded-at 2026-10-01T13:00:00Z
+
+# consulta com médico e paciente: transcrição do Azure Speech (US11) com diarização
+uv run --env-file .env python -m audio.vocal.run --audio consulta.wav --patient-id 10000032   --recorded-at 2026-10-01T13:00:00Z --transcrever --medico-falante 1
+
+uv run python scripts/avaliar_us14.py                    # recall por classe em casos injetados
+uv run pytest tests/audio                                # sem rede, sem credenciais
+```
+
+Pela API: `POST /audio/vocal` (campos e códigos de erro em [`postman/README.md`](postman/README.md)).
+Por áudio, em `saida/audio/<audio_id>/`: `convertido.wav`, `features.wav` (volume normalizado e sem
+silêncios longos, só para as features), `metadados.json` (duração, taxa, canais, origem, licença),
+`eventos.jsonl` e `relatorio.json`. O original nunca é alterado.
+
+| `event_type` | Quando |
+| --- | --- |
+| `dificuldade_respiratoria` | 2 de 4 critérios (eventos respiratórios, pausas altas, fala lenta, HNR baixo), com evento respiratório ou pausas; **alta com 3** |
+| `fadiga_vocal` | 2 de 4 (intensidade abaixo da baseline, F0 monótona, pausas altas, fala lenta) |
+| `possivel_disartria` | 3 de 5 (jitter, shimmer, HNR, articulação lenta, pausas altas), com articulação lenta ou pausas |
+| `evento_respiratorio` | Trecho do YAMNet com score ≥ 0,30 (tosse, respiração, sibilo, arfar) |
+| `desvio_baseline_vocal` | Biomarcador fora da baseline do próprio paciente (z robusto ≥ 3,5, com ≥ 3 áudios anteriores) |
+| `sem_achados` | Nenhuma das anteriores: é a classe "normal" |
+
+Limiares em [`audio/vocal/config.yaml`](audio/vocal/config.yaml): jitter local > 1,04 %, shimmer
+local > 3,81 % e HNR < 20 dB (normalidade MDVP, da US12); os demais são **experimentais**.
+
+**Ressalvas importantes.** Os limiares MDVP são de gravação de qualidade clínica: áudio comprimido
+(Opus do WhatsApp, MP3) os ultrapassa com facilidade, e o achado leva `audio_comprimido = true`. A
+avaliação em voz sintética é circular (mede a lógica das regras, não a validade clínica) e o YAMNet não
+foi medido em tosse ou respiração reais. Detalhes e rastreabilidade ao DoD:
+[`docs/arquitetura/us12_biomarcadores_vocais.md`](docs/arquitetura/us12_biomarcadores_vocais.md),
+[`docs/relatorio_us10_dod.md`](docs/relatorio_us10_dod.md),
+[`docs/relatorio_us12_dod.md`](docs/relatorio_us12_dod.md) e
+[`docs/relatorio_us14_dod.md`](docs/relatorio_us14_dod.md).
+
+Formatos WAV, FLAC e OGG/Opus são lidos sem ffmpeg; MP3, M4A, AAC, WMA e AMR precisam do `ffmpeg` no
+PATH. Nenhum áudio é versionado (o `.gitignore` bloqueia as extensões de áudio).
+
+## Demo ponta a ponta (US20)
+
+Um único comando executa o fluxo completo: vídeo, áudio, sinais vitais, prescrições e
+movimentação geram achados, a fusão calcula o risco do paciente e o motor de alertas avisa a
+equipe.
+
+```bash
+uv run python scripts/rodar_demo.py
+```
+
+### Cenário da demonstração
+
+O mesmo usado na gravação do vídeo. O paciente do leito UTI-07 piora do ponto de vista
+respiratório, e cada modalidade enxerga uma parte disso:
+
+| Etapa | O que roda | Achados |
+|---|---|---|
+| `video` | Achado de leito de demonstração (no `--modo real` com `--video`, o YOLOv8 da US07) | `entrada_area_critica` |
+| `audio` | Azure Speech (transcrição) → Azure AI Language (termos críticos e sentimento, US13) → biomarcadores vocais (US12/US14) | 2 × `termo_critico` (falta de ar, aperto no peito), `sentimento_negativo`, `dificuldade_respiratoria` |
+| `sinais_vitais` | Replay das últimas 6 h de um paciente do MIMIC-IV Demo pelo detector da US15 | `news2_resposta_urgente`, `tendencia_deterioracao` |
+| `prescricoes` | Regras da US16 sobre morfina IV de 2 para 8 mg e heparina SC iniciada | `mudanca_abrupta_dose`, 2 × `medicamento_alta_vigilancia` |
+| `movimentacao` | Regras da US17 sobre 190 min em supino sem reposicionamento | `imobilidade_prolongada` |
+| `fusao` | Fusão multimodal da US18 | `risco_multimodal` |
+| `alertas` | Motor de alertas da US19 | alertas por severidade |
+
+Resultado esperado: **risco 0,92 (alto)**, 16 achados no barramento e 10 alertas. A execução
+leva menos de 1 s com `--rapido`. Sem o dataset do MIMIC (passo 3 abaixo) os sinais vêm de uma
+série sintética de 21 medições, e o resultado é risco 0,97, 13 achados e 8 alertas.
+
+### Como reproduzir
+
+1. Instale as dependências:
 
    ```bash
    uv sync
    ```
 
-3. Execute o download dos conteúdos:
+2. Configure o ambiente. A demo em modo simulado não precisa de chave nenhuma:
 
    ```bash
-   python scripts/get_content_script.py
+   cp .env.sample .env
    ```
 
-4. Confira que os arquivos foram baixados:
+3. Baixe o dataset de sinais vitais (acesso aberto, uma vez; fica fora do Git):
 
    ```bash
-   find conteudos -type f
+   uv run python scripts/baixar_sinais.py
    ```
 
-   Exemplo de resultado esperado:
-
-   ```
-   conteudos/videos/Samurai_Desembanha_Espada_Rapidamente.mp4
-   ```
-
-5. Execute o `main.py` como verificação final:
+4. Execute o fluxo. Com `--velocidade 30` (padrão) o replay dos sinais vitais é animado, para
+   mostrar a detecção em tempo real; com `--rapido` não há espera:
 
    ```bash
-   python main.py
+   uv run python scripts/rodar_demo.py              # replay animado (30x)
+   uv run python scripts/rodar_demo.py --rapido     # sem espera
+   uv run python scripts/rodar_demo.py -v           # também mostra o log JSON de cada etapa
    ```
+
+5. Confira os artefatos em `saida/demo_ponta_a_ponta/` (troque com `--saida`):
+
+   | Arquivo | Conteúdo |
+   |---|---|
+   | `eventos.jsonl` | Todos os achados publicados no barramento, no formato [`EventoAchado`](docs/arquitetura/contrato_eventos.md) |
+   | `relatorio_execucao.json` | Duração, status e detalhes de cada etapa |
+   | `log_execucao.jsonl` | Uma linha JSON no início e no fim de cada etapa, com o tempo de processamento |
+   | `alertas.jsonl` | Alertas disparados pelo motor da US19 |
+
+A saída do comando é a tabela de etapas (status, duração em ms, eventos e destaques), o painel
+de risco da fusão e os caminhos dos artefatos. O código de saída é 0 se todas as etapas deram
+certo e 2 se alguma falhou. Uma etapa com falha fica com `status: falha` no relatório e o fluxo
+segue com as demais; use `--abortar-na-falha` para interromper.
+
+### Pela API
+
+O mesmo fluxo está exposto em `POST /pipeline/executar`, o ponto de entrada que une todas as
+modalidades, funde os achados e dispara os alertas. Suba a API e abra `http://localhost:8000/docs`:
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+```bash
+# cenário de demonstração (sem arquivos): vídeo, áudio e prescrições simulados
+curl -X POST localhost:8000/pipeline/executar -F modo=simulado
+
+# com a consulta gravada; no modo real usa Azure Speech, Azure AI Language e o YOLO do servidor
+curl -X POST localhost:8000/pipeline/executar -F modo=real      -F audio_file=@consulta.wav -F video_file=@leito.mp4 -F medico_falante=1 -F publicar=true
+```
+
+| Campo | Padrão | Efeito |
+|---|---|---|
+| `audio_file`, `video_file` | vazios | Entradas opcionais; sem elas a etapa usa o cenário de demonstração |
+| `modo` | `simulado` | `real` usa as chaves Azure e o YOLO do servidor |
+| `patient_id`, `bed_id` | `demo-uti07`, `UTI-07` | Paciente (ID de origem ou `pt_...`) e leito |
+| `sinais_fonte` | `auto` | `mimic`, `sintetico` ou `auto` (MIMIC se o dataset existir) |
+| `velocidade` | `0` | Aceleração do replay dos sinais vitais; 0 = sem espera |
+| `publicar` | `false` | Envia os achados ao barramento da API: `GET /fusao/pacientes` e `GET /alerts` passam a refletir a execução |
+| `abortar_na_falha` | `false` | Uma etapa com falha interrompe as seguintes |
+| `notificar_email` | `false` | Envia os alertas médios e altos por e-mail e webhook (`SMTP_HOST`, `SMTP_REMETENTE`, `ALERTA_DESTINATARIOS`, `ALERTA_WEBHOOK_URL` do servidor). **Envia de verdade** |
+
+A resposta traz o `status` (`sucesso` ou `parcial`), o risco da fusão com a contribuição de cada
+modalidade, o total de achados e alertas, e o relatório de cada etapa (duração, eventos e
+`detalhes`, que dizem se o Azure usado foi o real ou o simulado). Cada execução fica em
+`saida/pipeline_api/<id>/` (`PIPELINE_API_SAIDA_DIR`), consultável por
+`GET /pipeline/execucoes/{id}` e `GET /pipeline/execucoes/{id}/eventos`.
+
+A chamada é síncrona: no `modo=real` com vídeo, o YOLO pode levar minutos. Com `publicar=true`, os
+alertas vão para o armazenamento configurado em `ALERTA_STORE` (`cosmos` grava no banco real).
+
+### Azure no fluxo
+
+O modo simulado usa o mesmo código do real, trocando só o cliente do serviço. Para chamar os
+serviços de verdade, preencha no `.env` as variáveis `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION`
+(ou `AZURE_SPEECH_ENDPOINT`), `AZURE_LANGUAGE_ENDPOINT` e `AZURE_LANGUAGE_KEY`
+(provisionamento em [Infraestrutura Azure](#infraestrutura-terraform)) e rode:
+
+```bash
+uv run python scripts/rodar_demo.py --modo real --audio consulta.wav --medico-falante 1
+```
+
+| Serviço | Onde roda | Sem chave ou sem arquivo |
+|---|---|---|
+| Azure Speech | Etapa `audio`, sobre `--audio` (transcrição rápida com diarização, US11) | Transcrição de demonstração |
+| Azure AI Language | Etapa `audio`, sobre a transcrição (US13) | SDK simulado, com o mesmo formato de resposta |
+| Biomarcadores vocais | Etapa `audio`, sobre `--audio` (US12/US14) | Achado vocal de demonstração |
+| YOLOv8 | Etapa `video`, sobre `--video` no `--modo real` | Achado de leito de demonstração |
+
+Cada etapa registra no relatório qual caminho usou (`servico_speech`, `servico_language`,
+`biomarcadores_vocais`, `modo`). Para o detector respiratório dos biomarcadores vocais, baixe o
+modelo com `uv run python scripts/baixar_modelos_audio.py`; sem ele a análise segue, sem eventos
+respiratórios. Com `--audio`, a `PSEUDONYM_KEY` precisa estar no `.env`.
+
+### O que é simulado
+
+- **Prescrições e movimentação:** as regras são as reais (US16 e US17), mas os dados de entrada
+  são cenários montados em relação ao instante atual. As datas do MIMIC são deslocadas por
+  paciente e a fusão só combina achados de uma janela de 60 min.
+- **Vídeo:** sem `--modo real` e `--video`, o achado de leito é de demonstração.
+- **Áudio:** sem `--audio`, a transcrição e o achado vocal são de demonstração.
+- Os eventos de demonstração saem com `is_synthetic: true`.
+
+### Testes
+
+```bash
+uv run pytest tests/pipeline    # integração do fluxo completo, em modo simulado
+uv run pytest tests audio/tests # suíte inteira (a mesma da CI)
+```
+
+A CI (`.github/workflows/ci.yml`) roda a suíte e a demo `--rapido` a cada push na `main` e a cada
+pull request, e guarda os artefatos da demo.
+
+### Download dos vídeos (opcional)
+
+Os vídeos de entrada do `--modo real` vêm de uma pasta do Google Drive:
+
+```bash
+# defina GOOGLE_DRIVE_FOLDER_URL no .env
+python scripts/get_content_script.py
+find conteudos -type f
+```

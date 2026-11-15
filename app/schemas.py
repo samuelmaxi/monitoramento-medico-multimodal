@@ -161,6 +161,37 @@ class AudioAnalysisResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
+# US10/US12/US14 · Biomarcadores vocais e achados de áudio
+# --------------------------------------------------------------------------- #
+
+
+class AudioVocalResponse(BaseModel):
+    """Biomarcadores vocais e achados de áudio (indicativo para avaliação clínica)."""
+
+    audio_id: str
+    patient_id: str = Field(description="Pseudônimo usado nos eventos")
+    classe: str = Field(
+        description="Classe de maior severidade: fadiga_vocal, dificuldade_respiratoria, "
+        "possivel_disartria ou normal"
+    )
+    classes: list[str] = Field(description="Todas as classes que dispararam (ou ['normal'])")
+    aviso: str
+    biomarcadores: dict[str, Any] = Field(
+        description="F0, jitter, shimmer, HNR, intensidade, pausas e taxa de fala do paciente"
+    )
+    eventos: list[EventoAchado]
+    publicados: int = Field(description="Eventos publicados no barramento (alimentam os alertas)")
+    metadados: dict[str, Any] = Field(
+        description="Ingestão (US10): duração, taxa de amostragem, canais, origem, licença"
+    )
+    detalhes: dict[str, Any] | None = Field(
+        default=None,
+        description="Relatório completo: segmentos, critérios, baseline e eventos respiratórios "
+        "(com ?detalhes=true)",
+    )
+
+
+# --------------------------------------------------------------------------- #
 # US16 · Anomalias na evolução de prescrições
 # --------------------------------------------------------------------------- #
 

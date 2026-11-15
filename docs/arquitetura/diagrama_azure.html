@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arquitetura: Monitoramento Médico Multimodal + Azure</title>
+<style>
+  body { margin:0; background:#fff; color:#1b2a3a; font-family:"Segoe UI",system-ui,sans-serif; }
+  main { max-width:1440px; margin:0 auto; padding:20px; }
+  h1 { font-size:1.25rem; margin:0 0 2px; }
+  p.sub { margin:0 0 12px; color:#5b6b7b; font-size:.9rem; }
+  svg { width:100%; height:auto; display:block; }
+  svg text { font-family:"Segoe UI",system-ui,sans-serif; fill:#1b2a3a; }
+  .t  { font-size:12px; text-anchor:middle; font-weight:600; }
+  .s  { font-size:10.5px; text-anchor:middle; fill:#5b6b7b !important; }
+  .tl { font-size:12px; font-weight:600; }
+  .sl { font-size:10.5px; fill:#5b6b7b !important; }
+  .box { fill:none; stroke:#2b9ad8; stroke-width:1.4; stroke-dasharray:8 5; }
+  .panel { fill:#e8f3fb; }
+  .ttl { font-size:12.5px; font-weight:600; fill:#4a5a6a !important; }
+  .ttlaz { font-size:13px; font-weight:700; fill:#0078d4 !important; }
+  .ar { stroke:#4a5a6a; stroke-width:1.6; stroke-dasharray:6 4; fill:none; marker-end:url(#ah); }
+  .bi { marker-start:url(#ah); }
+  .note { font-size:10.5px; fill:#4a5a6a !important; }
+  .lbl { font-size:10.5px; fill:#4a5a6a !important; font-style:italic; }
+  .gl { fill:none; stroke:#fff; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+  .gf { fill:#fff; stroke:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Monitoramento Médico Multimodal: arquitetura e integrações Azure</h1>
+  <p class="sub">Estado atual do código. Os módulos não se chamam entre si: só publicam e consomem <code>EventoAchado</code> pelo barramento.</p>
+
+<svg viewBox="0 0 1400 800" role="img" aria-label="Diagrama de arquitetura com integrações Azure">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10z" fill="#4a5a6a"/>
+    </marker>
+
+    <!-- Ícones: quadrado colorido (currentColor) + glifo branco -->
+    <symbol id="i-web" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <circle class="gl" cx="24" cy="24" r="13"/><ellipse class="gl" cx="24" cy="24" rx="6" ry="13"/><path class="gl" d="M11 24h26"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <circle class="gl" cx="24" cy="24" r="7"/><path class="gl" d="M24 9v6M24 33v6M9 24h6M33 24h6M13.4 13.4l4.2 4.2M30.4 30.4l4.2 4.2M34.6 13.4l-4.2 4.2M17.6 30.4l-4.2 4.2"/></symbol>
+    <symbol id="i-flow" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M10 17h24l-6-6M38 31H14l6 6"/></symbol>
+    <symbol id="i-video" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <rect class="gl" x="9" y="16" width="21" height="16" rx="3"/><path class="gf" d="M31 24l9-6v12z"/></symbol>
+    <symbol id="i-audio" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M12 20v8M18 14v20M24 10v28M30 16v16M36 21v6"/></symbol>
+    <symbol id="i-text" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M10 12h28v20H26l-8 7v-7h-8z"/><path class="gl" d="M16 19h16M16 25h9"/></symbol>
+    <symbol id="i-vitals" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M8 26h8l4-12 6 22 4-14 3 4h7"/></symbol>
+    <symbol id="i-pill" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <g transform="rotate(-45 24 24)"><rect class="gl" x="8" y="17" width="32" height="14" rx="7"/><path class="gl" d="M24 17v14"/></g></symbol>
+    <symbol id="i-move" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <circle class="gf" cx="26" cy="11" r="4"/><path class="gl" d="M26 17v10M17 21l9-3 8 3M26 27l-6 12M26 27l6 12"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M15 9h14l6 6v24H15zM29 9v6h6M20 24h10M20 30h10"/></symbol>
+    <symbol id="i-bus" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M24 24L12 12M24 24l12-12M24 24L12 36M24 24l12 12"/>
+      <circle class="gf" cx="24" cy="24" r="5"/><circle class="gf" cx="11" cy="11" r="3.5"/><circle class="gf" cx="37" cy="11" r="3.5"/><circle class="gf" cx="11" cy="37" r="3.5"/><circle class="gf" cx="37" cy="37" r="3.5"/></symbol>
+    <symbol id="i-rule" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M10 12h28L28 26v10l-8-4V26z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M9 22L39 9 31 39 22 29zM22 29L39 9"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <rect class="gl" x="9" y="14" width="30" height="22" rx="3"/><path class="gl" d="M9 17l15 11 15-11"/></symbol>
+    <symbol id="i-people" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <circle class="gl" cx="18" cy="17" r="5"/><circle class="gl" cx="31" cy="20" r="4"/><path class="gl" d="M8 38c0-7 5-11 10-11s10 4 10 11M29 28c5 0 11 3 11 9"/></symbol>
+    <symbol id="i-db" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <ellipse class="gl" cx="24" cy="14" rx="11" ry="5"/><path class="gl" d="M13 14v20c0 3 5 5 11 5s11-2 11-5V14M13 24c0 3 5 5 11 5s11-2 11-5"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <rect class="gl" x="20" y="9" width="8" height="18" rx="4"/><path class="gl" d="M14 24a10 10 0 0 0 20 0M24 34v6M18 40h12"/></symbol>
+    <symbol id="i-lang" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M9 11h30v21H26l-8 7v-7H9z"/><text x="24" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" stroke="none">Aa</text></symbol>
+    <symbol id="i-cosmos" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <circle class="gf" cx="24" cy="24" r="7"/><ellipse class="gl" cx="24" cy="24" rx="17" ry="6" transform="rotate(-25 24 24)"/></symbol>
+    <symbol id="i-blob" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M10 28h12v10H10zM26 28h12v10H26zM18 11h12v10H18z"/></symbol>
+    <symbol id="i-tf" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gf" d="M10 12l10 5v12l-10-5zM22 18l10 5v12l-10-5zM22 6l10 5v11l-10-5zM34 12l8 4v11l-8-4z"/></symbol>
+    <symbol id="i-code" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M19 16l-8 8 8 8M29 16l8 8-8 8M26 12l-4 24"/></symbol>
+    <symbol id="i-check" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M12 25l8 8 16-18"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 48 48"><rect width="48" height="48" rx="9" fill="currentColor"/>
+      <path class="gl" d="M20 10h8M22 10v10l-9 16c-1 2 0 3 2 3h18c2 0 3-1 2-3l-9-16V10M16 30h16"/></symbol>
+  </defs>
+
+  <!-- ============ Fontes de dados ============ -->
+  <path d="M28 195C6 195 4 166 28 164 30 142 64 138 72 158 94 152 110 176 92 195Z" fill="#1f3a93"/>
+  <text x="58" y="180" class="t" style="fill:#fff">Entradas</text>
+  <text x="60" y="218" class="t">Fontes de dados</text>
+  <text x="60" y="233" class="s">vídeo, áudio, texto,</text>
+  <text x="60" y="246" class="s">sinais vitais, MIMIC-IV</text>
+  <path class="ar" d="M114 178H170"/>
+
+  <!-- ============ Aplicação Python ============ -->
+  <rect class="box" x="150" y="20" width="1230" height="330" rx="4"/>
+  <text x="165" y="40" class="ttl">Aplicação Python (FastAPI · uv)</text>
+
+  <!-- API -->
+  <rect class="box" x="170" y="60" width="220" height="270" rx="4"/>
+  <text x="180" y="78" class="ttl">API (app/)</text>
+  <use href="#i-web"  x="184" y="100" width="44" height="44" style="color:#2b88d8"/>
+  <text x="238" y="118" class="tl">Routers REST</text><text x="238" y="132" class="sl">transcrição, texto, sinais…</text>
+  <use href="#i-gear" x="184" y="170" width="44" height="44" style="color:#2b88d8"/>
+  <text x="238" y="188" class="tl">Jobs assíncronos</text><text x="238" y="202" class="sl">vídeo: 202 + job_id</text>
+  <use href="#i-flow" x="184" y="240" width="44" height="44" style="color:#2b88d8"/>
+  <text x="238" y="258" class="tl">Pipeline US20</text><text x="238" y="272" class="sl">orquestrador (modo simulado)</text>
+  <path class="ar" d="M390 195H420"/>
+
+  <!-- Detectores -->
+  <rect class="box" x="420" y="60" width="380" height="270" rx="4"/>
+  <text x="430" y="78" class="ttl">Detectores locais (emitem EventoAchado)</text>
+  <use href="#i-video" x="463" y="100" width="44" height="44" style="color:#3aa675"/>
+  <text x="485" y="162" class="t">Vídeo</text><text x="485" y="176" class="s">US05 – US08</text>
+  <use href="#i-audio" x="588" y="100" width="44" height="44" style="color:#3aa675"/>
+  <text x="610" y="162" class="t">Áudio vocal</text><text x="610" y="176" class="s">US10 · US12 · US14</text>
+  <use href="#i-text"  x="713" y="100" width="44" height="44" style="color:#3aa675"/>
+  <text x="735" y="162" class="t">Texto clínico</text><text x="735" y="176" class="s">US13</text>
+  <use href="#i-vitals" x="463" y="205" width="44" height="44" style="color:#3aa675"/>
+  <text x="485" y="267" class="t">Sinais vitais</text><text x="485" y="281" class="s">US15 · NEWS2</text>
+  <use href="#i-pill" x="588" y="205" width="44" height="44" style="color:#3aa675"/>
+  <text x="610" y="267" class="t">Prescrições</text><text x="610" y="281" class="s">US16 · regras</text>
+  <use href="#i-move" x="713" y="205" width="44" height="44" style="color:#3aa675"/>
+  <text x="735" y="267" class="t">Movimentação</text><text x="735" y="281" class="s">US17</text>
+  <path class="ar" d="M800 195H830"/>
+
+  <!-- Contrato + alertas -->
+  <rect class="box" x="830" y="60" width="530" height="270" rx="4"/>
+  <text x="840" y="78" class="ttl">Contrato de eventos (contratos/) e motor de alertas (alertas/)</text>
+  <use href="#i-doc"  x="863"  y="100" width="44" height="44" style="color:#7a5fc0"/>
+  <text x="885" y="162" class="t">EventoAchado</text><text x="885" y="176" class="s">schema + HMAC</text>
+  <use href="#i-bus"  x="968"  y="100" width="44" height="44" style="color:#7a5fc0"/>
+  <text x="990" y="162" class="t">BarramentoLocal</text><text x="990" y="176" class="s">saida/eventos.jsonl</text>
+  <use href="#i-rule" x="1073" y="100" width="44" height="44" style="color:#e8832a"/>
+  <text x="1095" y="162" class="t">Motor de regras</text><text x="1095" y="176" class="s">dedup · escalonamento</text>
+  <use href="#i-send" x="1178" y="100" width="44" height="44" style="color:#e8832a"/>
+  <text x="1200" y="162" class="t">Despachante</text><text x="1200" y="176" class="s">fila + retries</text>
+  <use href="#i-mail" x="1283" y="100" width="44" height="44" style="color:#e8832a"/>
+  <text x="1305" y="162" class="t">Notificadores</text><text x="1305" y="176" class="s">SMTP · webhook · ack</text>
+  <path class="ar" d="M910 122H964M1015 122H1069M1120 122H1174M1225 122H1279"/>
+  <use href="#i-db" x="1073" y="215" width="44" height="44" style="color:#e8832a"/>
+  <text x="1095" y="277" class="t">Armazenamento</text><text x="1095" y="291" class="s">jsonl · memória · cosmos</text>
+  <path class="ar bi" d="M1095 186V212"/>
+  <use href="#i-people" x="1283" y="215" width="44" height="44" style="color:#d9534f"/>
+  <text x="1305" y="277" class="t">Equipe assistencial</text><text x="1305" y="291" class="s">recebe e confirma o alerta</text>
+  <path class="ar" d="M1305 186V212"/>
+
+  <!-- ============ Setas para o Azure ============ -->
+  <path class="ar bi" d="M605 332L565 424"/>
+  <text x="585" y="362" class="lbl" text-anchor="end">áudio WAV 16 kHz ⇄ transcrição</text>
+  <path class="ar bi" d="M738 332L778 424"/>
+  <text x="755" y="362" class="lbl">fala do paciente ⇄ entidades e sentimento</text>
+  <path class="ar bi" d="M1095 296V424"/>
+  <text x="1105" y="362" class="lbl">ALERTA_STORE=cosmos</text>
+
+  <!-- ============ Microsoft Azure ============ -->
+  <rect class="panel" x="150" y="380" width="1230" height="200" rx="4"/>
+  <text x="165" y="402" class="ttlaz">Microsoft Azure</text>
+  <use href="#i-mic"    x="533" y="428" width="54" height="54" style="color:#0078d4"/>
+  <text x="560" y="502" class="t">Azure AI Speech</text><text x="560" y="516" class="s">Fast Transcription (REST) · US11</text>
+  <use href="#i-lang"   x="753" y="428" width="54" height="54" style="color:#0078d4"/>
+  <text x="780" y="502" class="t">Azure AI Language</text>
+  <text x="780" y="516" class="s">Text Analytics for Health (pt)</text><text x="780" y="529" class="s">Sentiment (pt-BR)</text>
+  <use href="#i-blob"   x="923" y="428" width="54" height="54" style="color:#0078d4; opacity:.55"/>
+  <text x="950" y="502" class="t">Blob Storage</text><text x="950" y="516" class="s">opcional (previsto no .env.sample)</text>
+  <use href="#i-cosmos" x="1068" y="428" width="54" height="54" style="color:#0078d4"/>
+  <text x="1095" y="502" class="t">Cosmos DB</text><text x="1095" y="516" class="s">alertas e auditoria</text>
+  <text x="165" y="566" class="note">Autenticação por chave (.env: AZURE_SPEECH_KEY, AZURE_LANGUAGE_KEY…) · respostas cacheadas em saida/cache_azure/ (SHA-256)</text>
+
+  <!-- ============ Desenvolvimento e provisionamento ============ -->
+  <rect class="panel" x="150" y="610" width="1230" height="125" rx="4"/>
+  <text x="165" y="630" class="ttl">Desenvolvimento e provisionamento</text>
+  <use href="#i-code"  x="376" y="645" width="48" height="48" style="color:#5b6b7b"/>
+  <text x="400" y="710" class="t">Código</text><text x="400" y="723" class="s">git · uv sync</text>
+  <use href="#i-check" x="576" y="645" width="48" height="48" style="color:#5b6b7b"/>
+  <text x="600" y="710" class="t">Lint</text><text x="600" y="723" class="s">ruff</text>
+  <use href="#i-flask" x="776" y="645" width="48" height="48" style="color:#5b6b7b"/>
+  <text x="800" y="710" class="t">Testes</text><text x="800" y="723" class="s">pytest (fakes, sem rede)</text>
+  <use href="#i-tf"    x="976" y="645" width="48" height="48" style="color:#7a5fc0"/>
+  <text x="1000" y="710" class="t">Terraform</text><text x="1000" y="723" class="s">terraform/</text>
+  <path class="ar" d="M430 669H572M630 669H772M830 669H972"/>
+  <path class="ar" d="M1000 641V584"/>
+  <text x="1012" y="618" class="lbl">provisiona Speech, Language e Cosmos</text>
+
+  <!-- ============ Legenda ============ -->
+  <g transform="translate(150,762)">
+    <rect width="12" height="12" rx="3" fill="#2b88d8"/><text x="18" y="10" class="sl">API</text>
+    <rect x="70" width="12" height="12" rx="3" fill="#3aa675"/><text x="88" y="10" class="sl">Detectores locais</text>
+    <rect x="200" width="12" height="12" rx="3" fill="#7a5fc0"/><text x="218" y="10" class="sl">Contrato / infraestrutura</text>
+    <rect x="360" width="12" height="12" rx="3" fill="#e8832a"/><text x="378" y="10" class="sl">Alertas</text>
+    <rect x="440" width="12" height="12" rx="3" fill="#0078d4"/><text x="458" y="10" class="sl">Serviços Azure</text>
+    <path d="M560 6h30" stroke="#2b9ad8" stroke-width="1.4" stroke-dasharray="8 5"/><text x="596" y="10" class="sl">Fronteira de módulo</text>
+    <path class="ar" d="M730 6h30"/><text x="768" y="10" class="sl">Fluxo de dados / eventos</text>
+  </g>
+</svg>
+</main>
+</body>
+</html>

@@ -277,3 +277,17 @@ runs/
 /dados/
 saida/prescricoes/*
 !saida/prescricoes/avaliacao_us16.json
+
+# Áudio (US10/US12/US14): nunca versionar gravações de pacientes (dado pessoal, LGPD)
+# Os testes geram áudio sintético em tmp_path; entradas reais ficam fora do Git.
+tratamento_audio/
+*.wav
+*.ogg
+*.oga
+*.opus
+*.m4a
+*.mp3
+*.flac
+*.aac
+*.wma
+*.amr

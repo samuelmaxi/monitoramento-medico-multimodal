@@ -62,11 +62,16 @@ EXEMPLOS: dict[str, dict] = {
         window=dict(start=t("17:05:12"), end=t("17:05:41")),
         score=0.78, severity="alta",
         evidence=dict(
-            summary="Pausas respiratórias frequentes e HNR baixo na fala do paciente; indicativo para avaliação clínica",
-            features={"hnr_db": 14.2, "jitter_local_pct": 1.31, "shimmer_local_pct": 4.6,
-                      "proporcao_pausas": 0.41, "yamnet_breathing": 0.83},
-            thresholds={"hnr_db_min": 20, "jitter_local_pct_max": 1.04, "shimmer_local_pct_max": 3.81},
-            models={"opensmile": "eGeMAPSv02", "yamnet": "tfhub-1"},
+            summary=("Indicativo para avaliação clínica, não é diagnóstico: padrão compatível com "
+                     "dificuldade respiratória (3 de 4 critérios): 2 evento(s) respiratório(s); pausas "
+                     "ocupam 0.41 da fala; HNR 14.20 dB (mínimo 20 dB)"),
+            features={"aviso": "Indicativo para avaliação clínica; não é diagnóstico.",
+                      "regras_acionadas": "eventos_respiratorios, pausas_altas, hnr_baixo",
+                      "hnr_db": 14.2, "jitter_local_pct": 1.31, "shimmer_local_pct": 4.6,
+                      "proporcao_pausas": 0.41, "eventos_respiratorios": 2, "yamnet_score_max": 0.83},
+            thresholds={"versao_limiares": "1.0.0", "hnr_db_min": 20, "jitter_local_pct_max": 1.04,
+                        "shimmer_local_pct_max": 3.81, "proporcao_pausas_max": 0.4},
+            models={"praat": "6.1.38", "parselmouth": "0.4.7", "yamnet": "yamnet-onnx"},
             artifacts=[dict(kind="audio_segment", media_type="audio/wav", start_ms=192000, end_ms=221000,
                             uri="saida/audio/consulta-0042/seg-0192000.wav")],
         ),

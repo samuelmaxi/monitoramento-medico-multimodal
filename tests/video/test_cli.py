@@ -127,7 +127,8 @@ def test_cli_video_unico_sobrescreve_fonte(monkeypatch, tmp_path):
             return fake_resultado(5)
 
     instalar_fakes(monkeypatch, PipelineFalso)
-    alvo = Path("conteudos/videos/B_D_0001.mp4")
+    alvo = tmp_path / "B_D_0001.mp4"
+    alvo.touch()
     assert main([CONFIG, "--video", str(alvo)]) == 0
     config, _, emissor = chamadas["init"]
     assert config.fonte.video == alvo.resolve()

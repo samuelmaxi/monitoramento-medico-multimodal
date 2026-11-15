@@ -32,6 +32,32 @@ def test_comando_do_ffmpeg_usa_16khz_mono_pcm(tmp_path, monkeypatch):
     assert comando[comando.index("-c:a") + 1] == "pcm_s16le"
 
 
+def test_timeout_e_repassado_ao_ffmpeg(tmp_path, monkeypatch):
+    capturado = {}
+
+    def executar(comando, **kwargs):
+        capturado.update(kwargs)
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(audio_convert.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(audio_convert.subprocess, "run", executar)
+
+    converter_para_wav(tmp_path / "a.m4a", tmp_path / "a.wav", timeout_s=12.5)
+
+    assert capturado["timeout"] == 12.5
+
+
+def test_ffmpeg_que_estoura_o_prazo_vira_erro_de_conversao(tmp_path, monkeypatch):
+    def executar(comando, **kwargs):
+        raise subprocess.TimeoutExpired(comando, kwargs["timeout"])
+
+    monkeypatch.setattr(audio_convert.shutil, "which", lambda _: "/usr/bin/ffmpeg")
+    monkeypatch.setattr(audio_convert.subprocess, "run", executar)
+
+    with pytest.raises(ConversaoAudioError, match="excedeu 5 s"):
+        converter_para_wav(tmp_path / "trava.m4a", tmp_path / "trava.wav", timeout_s=5)
+
+
 def test_falha_do_ffmpeg_levanta_erro_com_mensagem(tmp_path, monkeypatch):
     monkeypatch.setattr(audio_convert.shutil, "which", lambda _: "/usr/bin/ffmpeg")
     monkeypatch.setattr(
