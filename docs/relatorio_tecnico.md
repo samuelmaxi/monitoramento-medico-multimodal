@@ -35,7 +35,9 @@ achados num contrato único, que alimenta um motor de alertas para a equipe:
 | Sinais vitais | NEWS2, desvio da baseline do paciente, tendência de piora | US15 |
 | Prescrições | mudança abrupta de dose, duplicidade, suspensão abrupta, alta vigilância | US16 |
 | Movimentação na internação | imobilidade > 2 h, saída do leito à noite, queda, agitação ou redução de mobilidade | US17 |
+| Fusão multimodal | risco por paciente (0 a 1, baixo/médio/alto) com a contribuição de cada modalidade | US18 |
 | Alertas | prioridade, deduplicação, escalonamento, entrega e auditoria | US19 |
+| Orquestração | um comando (ou `POST /pipeline/executar`) roda todas as modalidades, a fusão e os alertas | US20 |
 
 ## 2. Fluxo multimodal (US04)
 
@@ -58,7 +60,8 @@ O fluxo tem cinco passos:
    ([contrato](arquitetura/contrato_eventos.md), JSON Schema em
    `contratos/schema/evento_achado.v1.schema.json`) no `BarramentoLocal`. O barramento valida cada
    evento e grava em `saida/eventos.jsonl`.
-4. **Fusão** (US18, *late fusion* por paciente). Foi planejada e não está implementada (seção 7).
+4. **Fusão** (US18). A `FusaoMultimodal` assina o barramento, alinha os achados de cada paciente
+   numa janela de 60 min e publica `risco_multimodal` (seção 3.4).
 5. **Alerta.** O motor da US19 assina o barramento com `severity ≥ baixa`, aplica prioridade,
    deduplicação e escalonamento e envia por e-mail (SMTP) ou webhook (Teams/Slack). Grava log
    auditável em JSONL ou Azure Cosmos DB.
@@ -66,7 +69,10 @@ O fluxo tem cinco passos:
 Os módulos não se chamam entre si; cada um só publica no contrato. Assim cada US é
 desenvolvida e testada sozinha, e o motor de alertas funciona com qualquer combinação de
 modalidades presentes. Os serviços Azure ficam só onde o desafio pede IA gerenciada (fala e NLP
-clínico). Rodam em `brazilsouth`, então áudio e texto clínico não saem do país. O restante roda
+clínico) e no armazenamento opcional dos alertas (Cosmos DB). O Terraform do repositório
+(`terraform/`) provisiona esses recursos em `eastus`, no nível gratuito, e o código autentica com
+as chaves do `.env`. A arquitetura alvo, em [`arquitetura/README.md`](arquitetura/README.md), muda
+a região para `brazilsouth` e a autenticação para `DefaultAzureCredential` (seção 6). O restante roda
 local, com custo próximo de zero (≈ US$ 0,30 a 2 por rodada completa, com cache obrigatório das
 respostas Azure em `saida/cache_azure/`).
 
@@ -75,6 +81,25 @@ Cada evento carrega `patient_id` pseudonimizado, `modality`, `event_type`, `time
 em português, `features` (valores observados), `thresholds` (limiares aplicados, com a versão) e
 `artifacts` (quadro, trecho de áudio ou transcrição, por referência). Com isso, quem recebe o
 alerta vê o valor que disparou a regra e a versão do limiar usado.
+
+A visão da implantação na Azure está em [`arquitetura/diagrama_azure.html`](arquitetura/diagrama_azure.html).
+
+### Execução ponta a ponta (US20)
+
+Um comando roda o fluxo inteiro, de cada modalidade até o alerta:
+
+```bash
+uv run python scripts/rodar_demo.py --rapido      # sem espera; sem --rapido o replay é animado (30x)
+```
+
+O cenário é o do vídeo de demonstração: o paciente do leito UTI-07 piora do ponto de vista
+respiratório, e cada modalidade enxerga uma parte disso. O vídeo, o áudio e as prescrições usam
+achados de demonstração no modo simulado; os sinais vitais são o replay das últimas 6 h de um
+paciente do MIMIC-IV Demo pelo detector real da US15; movimentação, fusão e alertas rodam os
+módulos reais. Cada etapa grava início, fim e duração em `log_execucao.jsonl`, e uma etapa que falha
+fica com `status: falha` sem parar as demais. O mesmo fluxo está em `POST /pipeline/executar`, e
+`modo=real` troca os clientes simulados pelo Azure Speech, pelo Azure AI Language e pelo YOLOv8.
+O resultado medido está na seção 4 e o risco calculado, na seção 5.7.
 
 ## 3. Modelos por tipo de dado
 
@@ -210,7 +235,32 @@ US07, caixa do YOLOv8) e registro de enfermagem do MIMIC-IV (`Position`, `Turn`,
 | `queda` | sempre alta. Pelo vídeo: centro da caixa `person` desce ≥ **0,065** da altura do quadro em ≤ 1,5 s e fica embaixo 0,5 s |
 | `agitacao_subita` / `reducao_mobilidade` | taxa de 6 h ≥ 2× ou ≤ 0,5× a baseline de 24 h do paciente (mínimo 12 h e 3 eventos de histórico) |
 
-### 3.4 Motor de alertas (US19)
+### 3.4 Fusão multimodal (US18)
+
+Detalhes no [relatório US18](relatorio_us18_dod.md); parâmetros em `config/us18_fusao.yaml`.
+A fusão é *late fusion* com regras ponderadas: combina as **decisões** de cada detector, não os
+dados brutos. Um modelo aprendido sobre features concatenadas (*early fusion*) precisaria de
+pacientes com vídeo, áudio, texto e sinais vitais sincronizados e com desfecho rotulado, e os
+datasets do projeto não são do mesmo paciente. Com regras, a modalidade ausente simplesmente não
+contribui e cada parcela do score aponta para um achado concreto.
+
+| Passo | Como | Parâmetros |
+| --- | --- | --- |
+| Alinhamento | achados do mesmo `patient_id` (pseudônimo) cujo intervalo cruza a janela | janela **60 min** (o NEWS2 pede ao menos uma medição por hora em resposta urgente) |
+| Força do achado | peso(modalidade) × valor da severidade × ajuste pelo score × decaimento | severidade info 0 · baixa 0,3 · média 0,6 · alta 0,9; o score ajusta ±15% (α = 0,3); meia-vida **60 min** |
+| Sinal da modalidade | a maior força entre os achados dela | máximo, não soma: achados do mesmo sensor são correlacionados |
+| Concordância | duas ou mais modalidades no mesmo eixo clínico (respiratório, neurológico, queda) | 0,5 × a 2ª maior força do eixo |
+| Combinação | noisy-OR: risco = 1 − Π(1 − termo) | modalidade ausente vira fator 1; o risco com dois sinais é sempre maior que o maior isolado |
+| Nível | baixo < **0,4** ≤ médio < **0,7** ≤ alto | NEWS2 urgente sozinho dá 0,46 (médio); NEWS2 de emergência, 0,74 (alto) |
+
+Os pesos seguem a força da evidência: sinais vitais **1,0** (NEWS2 é escore validado),
+movimentação **0,85** (queda tem dano direto; `mudanca_brusca_ou_queda` do vídeo também usa 0,85),
+texto **0,7** (relato do paciente, com negação tratada), áudio **0,65** (biomarcador sem
+validação clínica), prescrições e vídeo **0,6** (sinais indiretos). As contribuições por modalidade
+somam exatamente o score, e o evento traz os pesos e a versão em `evidence.thresholds`. Com achado
+em uma modalidade só, o risco sai com severidade `info`: aquele achado já gerou o próprio alerta.
+
+### 3.5 Motor de alertas (US19)
 
 [Relatório US19](relatorio_us19_dod.md), `config/alertas_regras.yaml`. O motor conhece só o
 contrato, então aceita qualquer `event_type` do catálogo sem mudar código.
@@ -239,8 +289,8 @@ a própria linha da tabela registra.
 | US07 | mAP@0.5 por classe médica após fine-tuning | ≥ 0,50 | não medido | ✘ | Sem rótulos clínicos no repositório. O gate (`scripts/dataset_us07.py treinar`) está pronto |
 | US08 | Precision por evento (teste) | ≥ 0,70 | **0,71** | ✔ | 35 eventos, `scripts/avaliar_us08.py` |
 | US08 | Recall por evento (teste) | ≥ 0,80 | **0,52** | ✘ | Queda só por pose tem recall 0,23 no FallVision. Abdução e agachamento ficam em 0,64 |
-| US11 | WER (Azure Speech) | ≤ 20% | não medido | ✘ | Rodada de 06/11/2026: os 10 áudios do Eka voltaram HTTP 401. A assinatura Azure do grupo está desativada (seção abaixo). Reproduzir: `python scripts/avaliar_wer.py --baixar 10` |
-| US13 | Precision / Recall / F1 de termos críticos | sem meta fixa | não medido | n/a | Mesma assinatura desativada; `AZURE_LANGUAGE_KEY` também está vazia no `.env`. Reproduzir: `python scripts/eval_us13.py` |
+| US11 | WER (Azure Speech, 10 áudios, 162 palavras) | ≤ 20% | **10,5%** (médio por áudio 14,4%) | ✔ | `en-IN`, sem *phrase list*. Um áudio de 5 palavras teve 80%. `saida/transcricao/avaliacao/en-IN_sem_frases/relatorio_wer.md` |
+| US13 | Precision / Recall / F1 de termos críticos (15 consultas) | sem meta fixa | **0,842** / **0,941** / **0,889** | n/a | VP 16 · FP 3 · FN 1. 37 entidades descartadas pelo filtro de asserção. `outputs/text_analysis/eval.md` |
 | US10 | Conversão para WAV PCM 16 kHz mono; arquivo ruim não para o lote; original preservado | todos | atendido: cada conversão é relida e validada; erro por arquivo em log e em `metadados.csv`; sha256 do original inalterado | ✔ | `tests/audio/test_ingestao_*.py` |
 | US12 | Biomarcadores por segmento do paciente (F0, jitter, shimmer, HNR, intensidade, pausas, taxa de fala) e eventos respiratórios (YAMNet) | todos | implementados. Em voz sintética: F0 148,8 Hz contra 148,35 Hz esperados (0,3 %); jitter injetado de 2 % medido em 1,96 % | ✔ | YAMNet verificado só em silêncio e em tons, **não** em tosse ou respiração reais |
 | US14 | Recall por classe (casos injetados, 60 por classe) | ≥ 0,80 | fadiga **1,00** · dificuldade respiratória **1,00** · disartria **1,00** (IC95 0,94 a 1,00) | ✔ | **Circular**: limiares e casos injetados são dos mesmos autores; mede a lógica das regras, não a validade clínica. FP em voz normal sintética 0/60. `saida/audio/avaliacao_us14.json` |
@@ -253,6 +303,9 @@ a própria linha da tabela registra.
 | US16 | Recall (modo controlado) | ≥ 0,80 | **1,000** | ✔ | FP 0,4% |
 | US17 | Recall de queda em vídeo real (teste) | ≥ 0,80 | **0,875** (14/16, IC95 0,64 a 0,97) | ✔ (pontual) | O limite inferior do IC fica abaixo de 0,80. Alarme falso 1/5 |
 | US17 | Recall nos casos injetados no MIMIC | n/a | queda 1,00 · saída noturna 1,00 · imobilidade 1,00 · agitação 0,988 · redução 0,822 | n/a | Verifica a lógica, não a percepção |
+| US18 | Caso de demonstração (SpO2 em queda + fala com dispneia) | combinado > maior isolado | **0,82** (alto) contra 0,42 / 0,41 / 0,35 isolados | ✔ | `scripts/demo_us18.py` |
+| US18 | Testes de alinhamento, score, configuração, API e integração com a US19 | n/a | 100 testes | ✔ | `tests/fusao/`; inclui os 15 pares de modalidades e a modalidade ausente |
+| US20 | Fluxo ponta a ponta em um comando | sem falha | 7 de 7 etapas, risco **0,92** (alto), 16 achados, 10 alertas, **738 ms** | ✔ | `scripts/rodar_demo.py --rapido`, MIMIC-IV Demo nos sinais vitais |
 | US19 | Latência ingestão → envio, p95, canal local | ≤ 10 s | **0,004 s** (p50 0,002 · máx 0,026) | ✔ | 100 achados, webhook HTTP local: mede só o overhead do motor |
 | US19 | Latência ingestão → envio, p95, **e-mail SMTP real** | ≤ 10 s | **54,97 s** (p50 34,99 · máx 54,97) | ✘ | 10 achados simultâneos, 9 enviados. `saida/latencia_us19_smtp.json` |
 
@@ -265,14 +318,16 @@ a própria linha da tabela registra.
   FallVision a pessoa aparece em menos de 50% dos quadros, ou o clipe acaba logo após o impacto.
   Na abdução, uma referência contaminada (PM_039 começa com repetição incorreta) derruba o recall.
   A US17 mostrou a correção: com a descida da caixa do YOLOv8, o recall de queda vai a 0,875.
-- **US11 e US13, não medidos.** Na rodada de 06/11/2026 com o `.env` do grupo, o Speech
-  respondeu HTTP 401 aos 10 áudios, em `eastus` e em `brazilsouth`. O Cosmos DB, na mesma
-  assinatura, respondeu `Forbidden: Subscription owning the database account is disabled`. A
-  assinatura Azure está desativada (o crédito do Azure for Students para os recursos quando
-  acaba). A US13 também não tem `AZURE_LANGUAGE_KEY`. Os scripts estão prontos e testados com a
-  API simulada (`pytest audio/tests`). Reativada a assinatura, basta rodá-los e copiar os números.
-  Não há dataset de referência em pt-BR, por isso o WER usa o Eka Medical ASR em inglês indiano.
-  Esse desvio do DoD fica registrado.
+- **US11, WER medido em inglês indiano.** O DoD cita pt-BR, mas não há dataset de referência em
+  português, então o WER usa o Eka Medical ASR (`en-IN`). Esse desvio fica registrado. A amostra é
+  pequena (162 palavras): o áudio de 5 palavras com 80% de erro pesa no WER médio por áudio
+  (14,4%), mas pouco no global (10,5%).
+- **US13, erros vêm de asserções que o serviço não devolveu.** Os 3 falsos positivos são terceiros
+  ("minha irmã tem convulsões", "meu filho teve convulsão") e uma hipótese ("se a falta de ar
+  piorar") que o Text Analytics for health em português não marcou como `associacao=other` nem
+  `hypothetical`; frases parecidas em outras consultas foram marcadas e descartadas. O falso negativo
+  é "dor no peito" na consulta 1, que o serviço não extraiu como entidade. As 15 consultas são
+  simuladas pelo grupo.
 - **US19, latência com e-mail real (p95 55 s).** O motor leva 4 ms. O tempo vem da entrega: o
   `Despachante` (`alertas/despachante.py`) envia um alerta por vez, e o `NotificadorEmail` abre
   uma conexão SMTP nova a cada e-mail (STARTTLS + login, ~5,5 s no provedor). Com 10 alertas
@@ -284,8 +339,7 @@ a própria linha da tabela registra.
   Faltam gravações rotuladas por fonoaudiólogo, que o projeto não tem, para validar os limiares
   `[EXP]` e para medir o YAMNet em tosse e respiração reais. Nenhum dos 3 áudios reais disparou uma
   classe, então o exemplo documentado é sintético e **falta uma gravação real alterada** para o
-  vídeo. O caminho com transcrição real (`--transcrever`) também não foi exercitado, pela mesma
-  assinatura Azure desativada. Detalhes no [Apêndice A.12](#a12-resultados-detalhados).
+  vídeo. O caminho com transcrição real (`--transcrever`) não foi exercitado nesta entrega. Detalhes no [Apêndice A.12](#a12-resultados-detalhados).
 
 ## 5. Exemplos de anomalias detectadas
 
@@ -312,23 +366,24 @@ Entrada e saída de área crítica (US07, `B_D_0016`, 10 eventos pareados):
 
 ### 5.2 Áudio: termo crítico afirmado e negação descartada (US13)
 
-Consulta simulada `data/text_samples/consulta-01.json`, anotada em
-`data/text_samples/annotations.csv`. O paciente diz "estou com uma dor no peito muito forte". O
-médico pergunta "você sente falta de ar?" e o paciente nega febre. Saída esperada: um
-`termo_critico` para dor torácica e nenhum achado para a pergunta do médico nem para a febre
-negada.
+Consulta simulada `data/text_samples/consulta-01.json`, analisada pelo Azure AI Language na rodada
+de `scripts/eval_us13.py` (`outputs/text_analysis/eval.md`). O médico pergunta "Você sente falta de
+ar?" e o paciente responde "Estou com falta de ar até para falar e piora quando subo escada." Só a
+fala do paciente foi ao serviço; a pergunta do médico entra apenas como contexto:
 
 ```json
-{"modality": "texto", "event_type": "termo_critico", "severity": "alta",
- "evidence": {"summary": "Paciente relata dor torácica: “dor no peito” (afirmado, sem negação)",
-   "features": {"termo": "dor torácica", "nome_normalizado": "Chest Pain", "certeza": "positive",
-                "associacao": "subject", "falante": "paciente", "offset_ms": 6512},
-   "artifacts": [{"kind": "transcricao", "uri": "data/text_samples/consulta-01.json", "start_ms": 3615, "end_ms": 11675}]}}
+{"modality": "texto", "event_type": "termo_critico", "severity": "alta", "score": 0.78,
+ "evidence": {"summary": "Paciente relata falta de ar: “falta de ar até para falar” (afirmado, sem negação)",
+   "features": {"termo": "falta de ar", "categoria": "SymptomOrSign", "confianca": 0.78,
+                "casou_por": "sinonimo:falta de ar", "falante": "paciente", "offset_ms": 15500,
+                "pergunta_medico": "Você sente falta de ar?", "lista_termos_versao": "1.0.0"},
+   "models": {"azure-text-analytics-for-health": "2023-12-01", "idioma-health": "pt", "idioma-sentimento": "pt-BR"},
+   "artifacts": [{"kind": "transcricao", "uri": "data/text_samples/consulta-01.json", "start_ms": 14070, "end_ms": 19010}]}}
 ```
 
-> Este evento mostra o formato com valores ilustrativos (o score do serviço não está nele). A
-> rodada real com o Azure AI Language grava o exemplo medido em `outputs/text_analysis/eval.md`,
-> que deve substituir este bloco.
+Na mesma consulta o paciente disse "Não tive febre." O serviço extraiu `febre` (confiança 0,98,
+nome normalizado *Fever*) com `certeza=negative`, e o filtro de asserção descartou a entidade sem
+gerar evento. A consulta também saiu com `sentimento_negativo` (4 de 6 sentenças negativas).
 
 ### 5.3 Sinais vitais: NEWS2 de emergência (MIMIC-IV Demo, replay)
 
@@ -399,6 +454,31 @@ rodada dispararam também `fadiga_vocal` e `possivel_disartria` (média): as cla
 três áudios reais de voz (OGG/Opus) saíram `normal` com `audio_comprimido`; ver o
 [Apêndice A.13](#a13-áudio-real-e-um-defeito-encontrado).
 
+### 5.7 Fusão: risco multimodal alto sem nenhum sinal isolado alto (US18, US20)
+
+Na execução ponta a ponta da US20 (`scripts/rodar_demo.py --rapido`), o paciente UTI-07 teve achados
+nas seis modalidades. A maior força isolada foi a do texto (0,53, médio); a fusão chegou a **0,92
+(alto)** e gerou um alerta de prioridade alta com o resumo:
+
+> Risco alto (0,92); contribuições: texto 0,27 (termo critico), movimentação 0,23 (imobilidade
+> prolongada), áudio 0,14 (dificuldade respiratoria), sinais vitais 0,10 (tendencia deterioracao),
+> vídeo 0,07 (entrada area critica), prescrições 0,06 (medicamento alta vigilancia); concordância no
+> eixo respiratório (texto + áudio + sinais vitais)
+
+| Modalidade | Força isolada | Contribuição no risco |
+| --- | ---: | ---: |
+| texto | 0,53 | 0,27 |
+| movimentação | 0,48 | 0,23 |
+| áudio | 0,32 | 0,14 |
+| sinais vitais | 0,23 | 0,10 |
+| vídeo | 0,17 | 0,07 |
+| prescrições | 0,15 | 0,06 |
+| concordância (eixo respiratório) | | 0,06 |
+| **combinado** | | **0,92** |
+
+As contribuições somam o score, e `related_event_ids` aponta os achados usados. No caso menor do
+relatório US18 (sinais vitais, texto e áudio), os isolados de 0,42, 0,41 e 0,35 combinam em 0,82.
+
 ## 6. Datasets, licenças e LGPD
 
 ### Datasets
@@ -434,8 +514,8 @@ Dados de saúde são dados pessoais sensíveis (LGPD, art. 5º, II). As medidas:
 | Anonimização de imagem | rostos tarjados antes de qualquer gravação (YuNet). Nos quadros de evidência, a cabeça é tarjada pelos keypoints do rosto |
 | Voz (US10, US12, US14) | `patient_id` pseudonimizado antes de qualquer cálculo; a baseline vocal é indexada só pelo pseudônimo e a transcrição é gravada com ele. Praat, YAMNet e regras rodam localmente; só a transcrição opcional envia áudio ao Azure. Metadados com `origem` e `licenca` e o nome do arquivo, nunca o caminho absoluto. `audio_id` validado, porque vira nome de pasta |
 | Minimização | só as falas do paciente vão ao NLP. Evidência por referência: o evento guarda o caminho, não o conteúdo. Alertas não trazem nome |
-| Localização dos dados (art. 33) | Azure Speech e Language em `brazilsouth`, então áudio e texto não saem do país. A transcrição rápida não guarda o áudio em armazenamento na nuvem |
-| Segredos | sem chave no Git. A arquitetura alvo usa `DefaultAzureCredential` com função RBAC mínima ([`azure-funcao-minima.json`](arquitetura/azure-funcao-minima.json)); em produção, a chave HMAC iria para o Key Vault |
+| Localização dos dados (art. 33) | Hoje os recursos de Speech, Language e Cosmos DB estão em `eastus` (Terraform do repositório), então o áudio e o texto do paciente saem do país: com dados reais isso exigiria a análise de transferência internacional. A arquitetura alvo usa `brazilsouth`, onde todos esses serviços existem. A transcrição rápida não guarda o áudio em armazenamento na nuvem |
+| Segredos | sem chave no Git: o código lê as chaves do `.env`, que fica fora do controle de versão. A arquitetura alvo troca as chaves por `DefaultAzureCredential` com função RBAC mínima ([`azure-funcao-minima.json`](arquitetura/azure-funcao-minima.json)); em produção, a chave HMAC iria para o Key Vault |
 | Base dos dados | só dados públicos e desidentificados na origem (MIMIC) ou simulados. MIMIC desloca as datas para o futuro |
 | Auditoria | barramento e alertas em JSONL append-only, com reconhecimento por token HMAC |
 
@@ -459,8 +539,9 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
   repetições forem corretas. Câmera vista de cima não mostra queda como descida. A US07 não separa
   paciente de profissional. Sem fine-tuning, não há classes cirúrgicas. Rostos pequenos, inclinados
   ou cobertos podem escapar da anonimização.
-- **Áudio.** WER e US13 sem rodada real nesta entrega. Não há dataset de referência em pt-BR.
-  O Text Analytics for health é mais maduro em inglês. A API GA não devolve temporalidade, então o
+- **Áudio.** O WER foi medido em inglês indiano, com 10 áudios curtos; não há dataset de referência
+  em pt-BR. A US13 foi medida em 15 consultas simuladas, e o Text Analytics for health em português
+  deixou de marcar alguns terceiros e hipóteses. A API GA não devolve temporalidade, então o
   passado é inferido por marcadores locais.
 - **Áudio vocal (US10, US12, US14).** Os limiares `[EXP]` não têm validação clínica, e a avaliação
   em voz sintética é circular. Os limiares MDVP são de gravação de qualidade clínica: áudio com perdas
@@ -474,22 +555,32 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
 - **Tempo real.** Só os sinais vitais são streaming (replay). Vídeo e áudio são processados por
   arquivo.
 - **Alertas.** Com SMTP real, a entrega em série estoura a meta de 10 s em rajadas. Teams e
-  Slack reais não foram testados (sem `ALERTA_WEBHOOK_URL`). O armazenamento no Cosmos DB não foi
-  validado contra a conta real, por causa da assinatura desativada. Azure Communication Services
-  Email não foi implementado.
+  Slack reais não foram testados (sem `ALERTA_WEBHOOK_URL`). O armazenamento no Cosmos DB passou nos
+  11 testes contra a conta real. Azure Communication Services Email não foi implementado.
+- **Fusão.** Os pesos são decisão de projeto, não ajuste estatístico, e precisam de validação
+  clínica. O buffer da fusão fica em memória: some quando a API reinicia e não é compartilhado entre
+  *workers*. Para o NEWS2, o eixo respiratório não distingue se a pontuação veio da SpO2 ou da
+  frequência cardíaca.
+- **Integração pela API.** Só as rotas de texto (US13), áudio vocal, fusão e pipeline publicam no
+  barramento que o motor de alertas e a fusão assinam. A rota de prescrições usa um barramento
+  próprio, e as de sinais vitais e de áreas críticas devolvem os eventos na resposta sem publicá-los.
+  O fluxo completo é garantido pela US20, que liga todos os módulos ao mesmo barramento.
 - **Dependência da assinatura Azure.** Transcrição, NLP clínico e Cosmos param juntos quando a
-  assinatura é desativada. Vídeo, sinais vitais, prescrições, movimentação e alertas por SMTP
+  assinatura é desativada, como aconteceu na rodada de 06/11/2026 (em 14/11 a assinatura já estava ativa de novo). Vídeo, sinais vitais, prescrições, movimentação e alertas por SMTP
   continuam funcionando, porque rodam local.
 
 **Trabalhos futuros**
 
-1. **Fusão multimodal (US18):** *late fusion* ponderada por paciente e janela, publicando
-   `risco_multimodal` com `related_event_ids`.
+1. **Ajustar os pesos da fusão (US18)** por regressão logística sobre as forças por modalidade,
+   quando houver desfechos rotulados, e mover o estado da fusão para Redis ou Azure Stream
+   Analytics, com janela deslizante.
 2. **Calibrar e validar os biomarcadores vocais (US12, US14):** limiares `[EXP]` com gravações
    rotuladas por fonoaudiólogo, YAMNet medido em tosse e respiração reais, estimativa de SNR e
    supressão de ruído, e openSMILE (eGeMAPS) para comparar com o Praat.
-3. **Rodar WER e US13 com os recursos Azure** e, se o WER passar de 20%, Custom Speech em pt-BR
-   (treino em `eastus`, cópia para `brazilsouth`).
+3. **Medir o WER em pt-BR** com gravações próprias transcritas à mão e, se passar de 20%, treinar
+   um Custom Speech. Na US13, ampliar as consultas anotadas e tratar terceiros e hipóteses que o
+   serviço não marca (pronome possessivo de parente, "se" condicional) com uma regra local.
+   Mover os recursos para `brazilsouth`.
 4. **Fine-tuning do YOLOv8** em classes médicas (instrumentos, monitores) com o gate por classe
    ≥ 0,50 já implementado.
 5. **Calibrar postura pela pose** em vídeo real de leito e confirmar pelo fisioterapeuta a série
@@ -546,6 +637,8 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
 22. Teixeira, J. P.; Oliveira, C.; Lopes, C. Vocal acoustic analysis: jitter, shimmer and HNR
     parameters. *Procedia Technology*, 9, 1112-1122, 2013.
 23. Microsoft. *Fast transcription* (Azure AI Speech). Microsoft Learn.
+24. Pearl, J. *Probabilistic Reasoning in Intelligent Systems: Networks of Plausible Inference.*
+    Morgan Kaufmann, 1988 (modelo noisy-OR).
 
 ## Apêndice A. Módulo de áudio vocal (US10, US12, US14)
 
@@ -614,8 +707,8 @@ paciente fica em `saida/audio/baseline/<pt_...>.json`.
 #### Qual sinal alimenta cada medida
 
 A US10 manda normalizar o volume e remover silêncios longos **só na cópia usada para as features**.
-Isso decide o desenho: a remoção de silêncio apagaria justamente as pausas, e a normalização apagaria a
-diferença entre gravações altas e baixas. Por isso cada medida usa o sinal que não a distorce.
+Como a remoção de silêncio apagaria as pausas e a normalização apagaria a diferença entre gravações
+altas e baixas, cada medida usa o sinal que não a distorce.
 
 | Medida | Sinal | Por quê |
 | --- | --- | --- |
@@ -860,7 +953,7 @@ A publicação vai ao **barramento compartilhado** (`app.barramento.get_barramen
 do módulo para ser substituível nos testes). Um evento de severidade alta vira alerta sem mudar o
 motor, com prioridade `alta` e origem `padrao:alta`.
 
-**Não há regra de áudio em `config/alertas_regras.yaml`, de propósito.** Uma regra por tipo
+Não há regra de áudio em `config/alertas_regras.yaml`, de propósito: uma regra por tipo
 *substituiria* a prioridade e anularia a lógica de "2 critérios = média, 3 = alta".
 
 ### A.11 Interfaces
@@ -927,7 +1020,7 @@ descrevem a alteração pretendida e **não foram ajustadas até as regras acert
 - **O YAMNet não é avaliado.** Os eventos respiratórios entram como scores injetados
   (`sessao_sintetica`), então só a lógica das regras é testada.
 - **As classes se sobrepõem.** Fadiga e dificuldade respiratória compartilham fala lenta e pausada, e
-  voz soprosa parece disártrica na acústica. É a leitura mais útil da tabela.
+  voz soprosa parece disártrica na acústica.
 
 #### Rodada com áudio real
 
@@ -955,8 +1048,8 @@ indicam **artefato**, não três alterações (A.13).
   score mínimo de 0,30 é experimental, e o TensorFlow avisa que os scores do YAMNet não são
   probabilidades calibradas entre classes.
 - **Transcrição real com o Azure Speech.** O caminho com `--transcrever` não foi exercitado contra o
-  serviço real nesta entrega: a assinatura Azure do grupo está desativada (ver a seção 4). Os testes usam uma transcrição sintética no
-  formato da US11 e um transcritor substituível.
+  serviço real nesta entrega. O Speech foi medido à parte (WER 10,5%, seção 4). Os testes usam uma
+  transcrição sintética no formato da US11 e um transcritor substituível.
 - **Alertas.** Na rodada do exemplo da seção 5.6, o alerta foi registrado no painel mas ficou `failed`
   ao enviar, porque nenhum canal (SMTP ou webhook) estava configurado no ambiente.
 
@@ -981,8 +1074,8 @@ Na primeira avaliação com casos injetados, **60 de 60 casos de disartria tamb�
 "dificuldade respiratória"**: voz alterada (HNR baixo) mais fala lenta bastava, sem nenhum sinal
 respiratório. A regra passou a exigir um evento respiratório (YAMNet) ou pausas frequentes (fala
 entrecortada para respirar), o parâmetro `exigir_um_de`, e a sobreposição caiu a 0/60 sem perder recall.
-Como a medição seguinte usa os mesmos dados, essa melhora também é circular. O motivo da regra é
-clínico, não o número: dificuldade respiratória precisa de sinal respiratório ou de fala entrecortada.
+Como a medição seguinte usa os mesmos dados, essa melhora também é circular. A regra se apoia num
+critério clínico: dificuldade respiratória precisa de sinal respiratório ou de fala entrecortada.
 
 ### A.14 Dados, licenças e LGPD do áudio
 
@@ -1023,10 +1116,9 @@ A voz de um paciente é dado pessoal sensível (LGPD, art. 5º, II). As medidas 
 - **Áudio comprimido e fala encadeada.** Os limiares MDVP são de gravação de qualidade clínica. Em
   formatos com perdas (Opus do WhatsApp, MP3), os três limiares estouram juntos (A.13). O achado
   leva `audio_comprimido`, mas o sistema **não corrige** o efeito.
-- **Sem supressão de ruído.** O módulo só se protege do ruído (ganho máximo, piso de nível, HNR; A.4). Ruído de fundo reduz o HNR e pode ser lido como voz alterada. É o comportamento esperado da
-  medida; não foi quantificado.
-- **Limiares `[EXP]` sem validação.** E a origem primária dos limiares `[MDVP]` (1,04 %, 3,81 %, 20 dB)
-  vem do texto da US12; este relatório não a conferiu em uma fonte primária.
+- **Sem supressão de ruído.** O módulo só se protege do ruído (ganho máximo, piso de nível, HNR; A.4). Ruído de fundo reduz o HNR e pode ser lido como voz alterada; o efeito não foi quantificado.
+- **Limiares sem validação.** Os limiares `[EXP]` não têm validação clínica, e os valores `[MDVP]`
+  (1,04 %, 3,81 %, 20 dB) vêm do texto da US12, sem conferência numa fonte primária.
 - **Avaliação circular e sintética.** A US14 mede a lógica das regras em voz sintética com alterações
   injetadas por quem escolheu os limiares. Não mede validade clínica nem o YAMNet.
 - **Sobreposição de classes.** Fala lenta e pausada é comum a fadiga e dificuldade respiratória, e voz
@@ -1060,8 +1152,9 @@ A voz de um paciente é dado pessoal sensível (LGPD, art. 5º, II). As medidas 
 4. **Rodar a transcrição real** (Azure Speech) quando a assinatura for reativada, e medir o efeito da
    taxa de fala nas classes.
 5. **Biomarcadores adicionais** (openSMILE, conjunto eGeMAPS) para comparar com o Praat.
-6. **Fusão multimodal (US18):** usar os eventos de áudio com sinais vitais e vídeo em
-   `risco_multimodal`.
+6. **Eixos clínicos da fusão (US18):** hoje `fadiga_vocal`, `dificuldade_respiratoria` e
+   `evento_respiratorio` contam no eixo respiratório e `possivel_disartria` no neurológico; validar
+   esses vínculos com a equipe clínica.
 7. **Baseline em banco de dados** e processamento assíncrono para suportar vários *workers* e
    gravações longas.
 8. **Estudo retrospectivo** com eventos reais rotulados e revisão dos limiares e prioridades pela
