@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 
-from contratos import EventoAchado, agora_utc
+from contratos import EventoAchado, Severidade, agora_utc
 
 from .armazenamento import AlertStore, gravar
 from .dedup import chave_dedup, motivo_escalonamento, proxima_prioridade
@@ -55,7 +55,7 @@ class MotorAlertas:
             aberto = self._armazenamento.buscar_aberto(chave_dedup(evento))
             if aberto is not None and agora - aberto.last_seen_at <= decisao.janela_dedup:
                 alerta = aberto
-                precisa_enviar = self._agregar(alerta, evento, agora)
+                precisa_enviar = self._agregar(alerta, evento, decisao, agora)
             else:
                 alerta = self._criar(evento, decisao, agora)
                 gravar(self._armazenamento, alerta, TipoAuditoria.CRIADO, agora, decisao.origem)
@@ -91,7 +91,9 @@ class MotorAlertas:
             gravar(self._armazenamento, alerta, TipoAuditoria.RECONHECIDO, agora, f"por {por}")
             return alerta
 
-    def _agregar(self, alerta: Alerta, evento: EventoAchado, agora: datetime) -> bool:
+    def _agregar(
+        self, alerta: Alerta, evento: EventoAchado, decisao: Decisao, agora: datetime
+    ) -> bool:
         """Soma o achado ao alerta aberto. Devolve True se o alerta precisa ser reenviado."""
         alerta.occurrences += 1
         alerta.occurrences_since_escalation += 1
@@ -99,6 +101,18 @@ class MotorAlertas:
         if len(alerta.source_event_ids) < MAX_EVENTOS_ORIGEM:
             alerta.source_event_ids.append(evento.event_id)
 
+        if (
+            alerta.status is not StatusAlerta.RECONHECIDO
+            and decisao.prioridade.peso > alerta.priority.peso
+        ):
+            # Mesmo tipo de achado, agora mais grave (ex.: risco_multimodal médio → alto).
+            # Sem isto, a piora ficaria suprimida como ocorrência até a janela de dedup acabar.
+            alerta.summary = evento.evidence.summary
+            alerta.suggested_action = decisao.acao_sugerida
+            alerta.rule_origin = decisao.origem
+            alerta.evidence = _evidencia(evento)
+            self._subir_prioridade(alerta, decisao.prioridade, agora, "achado mais grave")
+            return True
         if self._escalar_se_preciso(alerta, agora):
             return True
         gravar(
@@ -112,9 +126,14 @@ class MotorAlertas:
         motivo = motivo_escalonamento(alerta, politica, agora)
         if motivo is None:
             return False
+        self._subir_prioridade(alerta, proxima_prioridade(alerta.priority), agora, motivo)
+        return True
 
+    def _subir_prioridade(
+        self, alerta: Alerta, nova: Severidade, agora: datetime, motivo: str
+    ) -> None:
         anterior = alerta.priority
-        alerta.priority = proxima_prioridade(anterior)
+        alerta.priority = nova
         alerta.pending_channels = list(self._regras.politica(alerta.priority).canais)
         alerta.status = StatusAlerta.PENDENTE
         alerta.escalation_level += 1
@@ -127,7 +146,6 @@ class MotorAlertas:
             f"{anterior.value} → {alerta.priority.value} por {motivo}",
         )
         log.info("alerta %s escalonado: %s → %s", alerta.id, anterior.value, alerta.priority.value)
-        return True
 
     def _criar(self, evento: EventoAchado, decisao: Decisao, agora: datetime) -> Alerta:
         contexto = evento.context
@@ -142,11 +160,7 @@ class MotorAlertas:
             bed_id=contexto.bed_id if contexto else None,
             summary=evento.evidence.summary,
             suggested_action=decisao.acao_sugerida,
-            evidence={
-                "summary": evento.evidence.summary,
-                "features": dict(evento.evidence.features),
-                "thresholds": dict(evento.evidence.thresholds),
-            },
+            evidence=_evidencia(evento),
             rule_origin=decisao.origem,
             is_synthetic=evento.is_synthetic,
             occurrences=1,
@@ -161,3 +175,11 @@ class MotorAlertas:
             latency_base="ingested_at" if evento.ingested_at else "detected_at",
             pending_channels=list(decisao.canais),
         )
+
+
+def _evidencia(evento: EventoAchado) -> dict:
+    return {
+        "summary": evento.evidence.summary,
+        "features": dict(evento.evidence.features),
+        "thresholds": dict(evento.evidence.thresholds),
+    }

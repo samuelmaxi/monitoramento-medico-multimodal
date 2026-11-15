@@ -1,0 +1,99 @@
+# US18 · Fusão dos achados multimodais em score de risco por paciente.
+#
+# Lido por fusao/config.py. Nenhum número da fusão fica no código: mudou algo
+# aqui, suba "versao" (vai em evidence.thresholds do risco_multimodal, então
+# todo score diz com que parâmetros foi calculado).
+#
+# Estratégia: late fusion. Cada módulo já decidiu o próprio achado; a fusão só
+# combina as decisões. Justificativas completas em docs/relatorio_us18_dod.md.
+
+versao: "1.0.0"
+
+# Alinhamento temporal: entra no score todo achado do paciente cujo intervalo
+# [window.start ou timestamp, window.end ou timestamp] cruza [ate - janela, ate].
+# 60 min porque o NEWS2 (RCP 2017) pede no mínimo 1 medição por hora para
+# pacientes com score 5–6: a janela sempre contém ao menos uma leitura de
+# sinais vitais de quem está em resposta urgente.
+janela_min: 60
+# Achado mais antigo pesa menos: fator 0,5 ** (idade / meia_vida). A idade conta
+# do FIM do intervalo do achado até "ate"; achado em curso tem idade zero.
+# 0 desliga o decaimento.
+meia_vida_min: 60
+
+# Força de um achado = valor da severidade × (1 - influencia_score + influencia_score × score).
+# A severidade é a base porque é o único campo comparável entre módulos: cada um
+# a define pela própria regra clínica, no mesmo padrão IEC 60601-1-8. O score
+# não é comparável (NEWS2 total/20 nos sinais, confiança do modelo no texto e no
+# vídeo), então só modula a força dentro da faixa da severidade.
+# Valores no centro das faixas de contratos.catalogo.severidade_sugerida.
+valor_severidade:
+  info: 0.0     # sem_achados e informativos: marcam a modalidade como presente, sem risco
+  baixa: 0.3
+  media: 0.6
+  alta: 0.9
+influencia_score: 0.3
+
+# Peso de cada modalidade (0–1): quanto um achado dela, sozinho, indica
+# deterioração do paciente. Prioridade: medida fisiológica validada > evento com
+# dano direto > relato do paciente > biomarcador sem validação clínica isolada.
+pesos:
+  sinais_vitais: 1.0   # NEWS2 é escore validado de deterioração clínica; medida fisiológica direta
+  movimentacao: 0.85   # queda e saída do leito são eventos com dano direto (registro + vídeo)
+  texto: 0.7           # relato do paciente (Azure Text Analytics for health, negação tratada)
+  audio: 0.65          # biomarcador vocal: sensível a microfone e ambiente, sem validação isolada
+  prescricoes: 0.6     # mudança de tratamento costuma ser intencional; sinal indireto
+  video: 0.6           # postura/área crítica falam do procedimento mais que da piora do paciente
+
+# Exceções por tipo, "<modalidade>/<event_type>": peso próprio do achado.
+pesos_por_tipo:
+  video/mudanca_brusca_ou_queda: 0.85   # queda no vídeo tem o mesmo peso da queda registrada
+
+# Concordância clínica: quando 2+ modalidades diferentes apontam para o mesmo
+# eixo, entra um termo extra no score = fator × (2ª maior força entre elas).
+# Usa a 2ª maior porque a concordância só é tão forte quanto o sinal mais fraco
+# que a confirma. Vale o eixo de maior termo (sem somar eixos).
+concordancia:
+  fator: 0.5
+  eixos:
+    respiratorio:
+      - modalidade: sinais_vitais
+        tipos: [news2_resposta_urgente, news2_emergencia, desvio_baseline, tendencia_deterioracao]
+      - modalidade: audio
+        tipos: [dificuldade_respiratoria, evento_respiratorio, fadiga_vocal]
+      - modalidade: texto
+        tipos: [termo_critico]
+        termos: [falta de ar, dor torácica]   # features.termo do evento da US13
+    neurologico:
+      - modalidade: audio
+        tipos: [possivel_disartria]
+      - modalidade: texto
+        tipos: [termo_critico]
+        termos: [AVC, confusão mental, convulsão, síncope, tontura]
+      - modalidade: video
+        tipos: [assimetria_movimento]
+      - modalidade: movimentacao
+        tipos: [reducao_mobilidade, agitacao_subita]
+    queda:
+      - modalidade: video
+        tipos: [mudanca_brusca_ou_queda]
+      - modalidade: movimentacao
+        tipos: [queda, saida_do_leito, agitacao_subita]
+      - modalidade: prescricoes
+        tipos: [medicamento_alta_vigilancia]   # opioide/sedativo novo aumenta risco de queda
+      - modalidade: texto
+        tipos: [termo_critico]
+        termos: [tontura, síncope]
+
+# Score → nível. Severidade do risco_multimodal: baixo → baixa, medio → media, alto → alta.
+niveis:
+  medio: 0.4
+  alto: 0.7
+
+emissao:
+  # Com achado em uma modalidade só, a fusão não acrescenta informação e o
+  # próprio achado já gerou alerta (US19). false: publica o risco com severidade
+  # info (fica no painel e na API, não alerta de novo).
+  alertar_com_uma_modalidade: false
+  # O serviço republica o risco do paciente quando o nível muda ou o score
+  # varia ao menos isto desde a última publicação.
+  variacao_minima: 0.05

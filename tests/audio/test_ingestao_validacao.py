@@ -157,3 +157,17 @@ def test_erros_carregam_codigo_estavel():
     assert AudioCorrompido.codigo == "audio_corrompido"
     assert FormatoNaoSuportado.codigo == "formato_nao_suportado"
     assert AudioCurto.codigo == "audio_curto"
+
+
+def test_sem_caminho_troca_o_caminho_absoluto_pelo_nome_do_arquivo():
+    from pathlib import Path
+
+    from audio.ingestao.leitura import _sem_caminho
+
+    arquivo = Path("/tmp/pytest-0/entrada/corrompido.wav")
+    mensagem = f"Error opening '{arquivo}': Format not recognised. Pasta: {arquivo.parent}"
+
+    limpa = _sem_caminho(mensagem, arquivo)
+
+    assert "corrompido.wav" in limpa
+    assert str(arquivo.parent) not in limpa

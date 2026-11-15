@@ -65,9 +65,10 @@ Detectores (qualquer modalidade) ─► BarramentoLocal ─► MotorAlertas.rece
   (`tests/alertas/test_motor.py::TestAgnosticismoDeModalidade`).
 - Hoje só o texto (US13, `termo_critico`) e o vídeo (US07/US08) publicam no
   barramento. Os outros módulos entram quando o detector for mesclado, sem mudar o motor.
-- O `risco_multimodal` da fusão (US18) precisa de `related_event_ids`. O motor
-  aceita o achado como qualquer outro; o alerta ainda não referencia os eventos
-  de origem, porque a US18 não existe.
+- O `risco_multimodal` da fusão (US18) entra no motor como qualquer outro achado,
+  com a prioridade do nível de risco. O resumo e `evidence.features` do alerta
+  trazem a contribuição de cada modalidade. Um risco que piora com alerta aberto
+  (médio → alto) sobe a prioridade e reenvia (ver `docs/relatorio_us18_dod.md`).
 
 ### 3. Prioridade em 3 níveis, alinhada à IEC 60601-1-8
 

@@ -29,25 +29,30 @@ flowchart LR
 
     subgraph D["3 · Detecção de anomalias — local, Python"]
         direction TB
-        DV["video/<br/>postura · assimetria · área crítica"]
+        DV["video/<br/>postura · assimetria · queda · área crítica"]
         DA["audio/<br/>fadiga · respiração · disartria"]
-        DT["audio/ (texto)<br/>termos críticos · sentimento"]
-        DS["anomalias/sinais<br/>NEWS2 + Isolation Forest"]
-        DP["anomalias/prescricoes<br/>dose · duplicidade · ISMP"]
-        DM["anomalias/movimentacao<br/>imobilidade · saída do leito"]
+        DT["audio/text<br/>termos críticos · sentimento"]
+        DS["sinais/<br/>NEWS2 + z-score robusto · tendência"]
+        DP["prescricoes/<br/>dose · duplicidade · suspensão · ISMP"]
+        DM["movimentacao/<br/>imobilidade · saída do leito · queda"]
     end
 
     BUS{{"Barramento local<br/>EventoAchado v1<br/>→ saida/eventos.jsonl"}}
 
-    subgraph U["4 · Fusão — local"]
-        LFU["fusao_alertas/fusao<br/>assina: modality ≠ fusao<br/>late fusion ponderada por paciente"]
+    subgraph U["4 · Fusão multimodal (US18) — local"]
+        direction TB
+        LAL["fusao/alinhamento<br/>por patient_id · janela 60 min<br/>assina: modality ≠ fusao"]
+        LFU["fusao/score · late fusion<br/>força = peso × severidade<br/>noisy-OR + concordância clínica"]
+        LEX["risco 0–1 · baixo/médio/alto<br/>contribuição por modalidade<br/>modalidade ausente = 0"]
+        API["API /fusao<br/>GET /pacientes · POST /risco"]
     end
 
-    subgraph A["5 · Alerta à equipe médica — Azure: Communication Services"]
+    subgraph A["5 · Alerta à equipe médica — Azure: Cosmos DB"]
         direction TB
-        MAL["fusao_alertas/alertas<br/>assina: severity ≥ media<br/>prioridade · dedup · escalonamento"]
-        ACS["Azure Communication Services<br/>e-mail da equipe"]
-        LOG[("saida/alertas.jsonl<br/>log auditável")]
+        MAL["alertas/ (US19)<br/>assina: severity ≥ baixa<br/>prioridade · dedup · escalonamento"]
+        ACS["E-mail SMTP · webhook Teams/Slack<br/>link de reconhecimento"]
+        COS[("Azure Cosmos DB<br/>alerts · alert_events")]
+        LOG[("saida/alertas.jsonl<br/>alternativa local")]
     end
 
     FV --> DIR
@@ -78,10 +83,12 @@ flowchart LR
     DP --> BUS
     DM --> BUS
 
-    BUS --> LFU
-    LFU -->|"risco_multimodal"| BUS
+    BUS --> LAL --> LFU --> LEX
+    LEX --> API
+    LEX -->|"risco_multimodal"| BUS
     BUS --> MAL
     MAL --> ACS
+    MAL --> COS
     MAL --> LOG
 
     classDef fonte fill:#f4f4f5,stroke:#71717a,color:#18181b
@@ -89,8 +96,8 @@ flowchart LR
     classDef azure fill:#eff6ff,stroke:#0078d4,color:#0c2d57,stroke-width:2px
     classDef bus fill:#ede9fe,stroke:#7c3aed,color:#3b0764,stroke-width:2px
     class FV,FA,FS,FP fonte
-    class DIR,REP,PV,PA,PS,PP,DV,DA,DT,DS,DP,DM,LFU,MAL,LOG local
-    class TRN,CMD,CMP,ACS azure
+    class DIR,REP,PV,PA,PS,PP,DV,DA,DT,DS,DP,DM,LAL,LFU,LEX,API,MAL,ACS,LOG local
+    class TRN,CMD,CMP,COS azure
     class BUS bus
     style F fill:#fafafa,stroke:#d4d4d8
     style I fill:#f8fafc,stroke:#cbd5e1
