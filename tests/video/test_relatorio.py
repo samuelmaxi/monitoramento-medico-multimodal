@@ -393,6 +393,33 @@ def test_presenca_em_area_critica_usa_a_confianca_da_deteccao_e_registra_o_yolov
     assert r.relatorio["resumo"]["pct_tempo_em_desvio"] <= 100
 
 
+def test_fim_video_s_fecha_a_presenca_no_trecho_analisado_e_nao_no_arquivo(tmp_path):
+    """O pipeline da US20 limita os quadros do YOLO: o relatório vale para o trecho lido."""
+    video = criar_video_teste(tmp_path / "leito.avi", quadros=150)  # 15 s a 10 fps
+    areas = tmp_path / "areas.jsonl"
+    EmissorJsonl(areas).emitir_varios([_evento_area("entrada_area_critica", 0.5)])  # sem saída
+    comum = {
+        "perfil_id": "internacao_leito",
+        "config": CONFIG,
+        "config_relatorio": CONFIG_RELATORIO,
+        "eventos_areas_path": areas,
+        "video": video,
+        "patient_id": PACIENTE,
+        "source_id": "leito",
+        "pose_config": POSE_CONFIG,
+        "evidencias": False,
+    }
+
+    arquivo = gerar(saida=Path("inteiro"), **comum)
+    trecho = gerar(saida=Path("trecho"), fim_video_s=5.0, **comum)
+
+    assert arquivo.relatorio["video"]["duracao_s"] == pytest.approx(15.0)
+    assert arquivo.relatorio["desvios"][0]["fim_s"] == pytest.approx(15.0)
+    assert trecho.relatorio["video"]["duracao_s"] == pytest.approx(5.0)
+    assert trecho.relatorio["desvios"][0]["fim_s"] == pytest.approx(5.0)
+    assert trecho.relatorio["resumo"]["pct_tempo_em_desvio"] == pytest.approx(90.0)
+
+
 def test_sem_duracao_conhecida_o_percentual_e_indisponivel_mas_o_relatorio_sai(tmp_path):
     """Perfil só de áreas, sem pose e sem o arquivo do vídeo: não há como saber a duração."""
     areas = _eventos_areas(tmp_path, entrada=1.0, saida=4.0, area="area_restrita")

@@ -22,6 +22,11 @@ class ContextoPipeline:
     eventos_publicados: list[EventoAchado] = field(default_factory=list)
     dados: dict[str, Any] = field(default_factory=dict)
 
+    @property
+    def modo_real(self) -> bool:
+        """Modo real: só as entradas enviadas viram achados; o que falta fica ausente."""
+        return self.config.modo == "real"
+
 
 class EtapaPipeline(Protocol):
     """Protocolo que cada etapa do pipeline implementa."""

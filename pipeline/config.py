@@ -21,14 +21,14 @@ class ConfigPipeline:
     notificar_smtp: bool = False
     video_path: Path | None = None
     audio_path: Path | None = None
-    max_frames_video: int = 50
+    max_frames_video: int | None = 50  # quadros lidos pelo YOLO; None = o vídeo inteiro
     sinais_fonte: str = "auto"  # "auto" | "mimic" | "sintetico"
     mimic_path: Path = Path("dados/mimic-iv-demo/chartevents.csv.gz")
     mimic_subject_id: int = 10002428
     mimic_janela_horas: float = 6.0  # trecho final do registro que passa pelo replay
     modelo_yamnet: Path = Path("models/audio/yamnet.onnx")
     abortar_na_falha: bool = False  # True: uma etapa com falha interrompe as seguintes
-    medico_falante: int = 1  # falante (diarização do Speech) que é o médico
+    medico_falante: int = 1  # falante (diarização do Speech) que é o médico; 0 = não há médico
     chave_pseudonimizacao: str = "chave-padrao-demonstracao-us20-32bytes-000000"
 
     @classmethod
@@ -62,7 +62,7 @@ class ConfigPipeline:
             notificar_smtp=bool(sobrescritas.get("notificar_smtp", False)),
             video_path=sobrescritas.get("video_path"),
             audio_path=sobrescritas.get("audio_path"),
-            max_frames_video=int(sobrescritas.get("max_frames_video", 50)),
+            max_frames_video=_quadros(sobrescritas.get("max_frames_video", 50)),
             sinais_fonte=str(sobrescritas.get("sinais_fonte") or os.getenv("PIPELINE_SINAIS", "auto")),
             mimic_path=Path(sobrescritas.get("mimic_path") or cls.mimic_path),
             mimic_subject_id=int(
@@ -80,3 +80,7 @@ class ConfigPipeline:
             medico_falante=int(sobrescritas.get("medico_falante", 1)),
             chave_pseudonimizacao=chave,
         )
+
+
+def _quadros(valor: object) -> int | None:
+    return None if valor is None else int(valor)

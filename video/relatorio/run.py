@@ -110,11 +110,14 @@ def gerar(
     relogio: Callable[[], datetime] = agora_utc,
     raiz: Path | None = None,
     falhas_previas: Sequence[str] = (),
+    fim_video_s: float | None = None,
 ) -> ResultadoRelatorio:
     """Analisa o vídeo (US08), publica os eventos e grava o relatório (US09).
 
     ``falhas_previas`` são falhas de etapas anteriores à publicação (por exemplo, o motor de
     alertas que não pôde ser construído): entram em ``alertas.falhas`` do relatório.
+    ``fim_video_s`` é o fim do trecho analisado pela US07 (ver ``video.desvios.run.executar``);
+    vira também a duração do relatório e a base do % do tempo em desvio.
 
     Levanta ``ErroDeConfiguracao`` ou ``ValueError``/``OSError`` se a entrada for inválida
     (perfil que não existe, pose ilegível). Depois que a análise roda, nada impede o relatório.
@@ -143,6 +146,7 @@ def gerar(
         saida=saida,
         pose_config=pose_config,
         evidencias=evidencias,
+        fim_video_s=fim_video_s,
     )
     publicacao = publicar(execucao.eventos, emissor)
     if falhas_previas:

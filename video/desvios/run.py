@@ -113,7 +113,14 @@ def executar(
     saida: Path = Path("saida/video/desvios"),
     pose_config: Path = Path("video/pose/config.yaml"),
     evidencias: bool = True,
+    fim_video_s: float | None = None,
 ) -> Execucao:
+    """Aplica o padrão do perfil e grava eventos e relatório da US08.
+
+    ``fim_video_s`` é o fim do trecho que a US07 analisou. Informe-o quando a detecção parou
+    antes do fim do vídeo (o pipeline da US20 limita os quadros): sem ele, uma presença sem
+    ``saida`` seria fechada na duração do arquivo inteiro, um desvio que ninguém viu.
+    """
     cfg = carregar_config(config)
     perfil = cfg.perfil(perfil_id)
     pose = PoseSequence.load_json(pose_path) if pose_path is not None else None
@@ -124,7 +131,8 @@ def executar(
         )
     if video is None and pose is not None:
         video = Path(pose.source_path)
-    fim_video_s = None if pose is not None or video is None else _duracao_video(video)
+    if fim_video_s is None and pose is None and video is not None:
+        fim_video_s = _duracao_video(video)
 
     resultado = analisar(
         perfil, cfg, pose=pose, eventos_areas=eventos_areas, fim_video_s=fim_video_s

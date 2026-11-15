@@ -89,8 +89,23 @@ falhou. Critérios de apresentação em [`config/us09_relatorio.yaml`](../config
   sem JavaScript nem recurso externo (abre offline), com os quadros de evidência embutidos, e o
   navegador o imprime em PDF. Gerar PDF direto exigiria uma dependência nova (WeasyPrint,
   wkhtmltopdf) só para isso.
-- **Não há rota na API**, como na US08: o vídeo enviado à API é apagado ao fim do job, e sem ele
-  não há quadro de evidência.
+- **Na API, o relatório sai pelo pipeline ponta a ponta (US20).** O job assíncrono de áreas
+  (`POST /video/areas-criticas`) continua sem relatório: o vídeo enviado é apagado ao fim do job,
+  e sem ele não há quadro de evidência. Já no `POST /pipeline/executar` com `modo=real` e
+  `video_file`, o vídeo fica na pasta da execução e a etapa `relatorio_video`
+  ([`pipeline/etapas/relatorio_video.py`](../pipeline/etapas/relatorio_video.py)) roda logo depois
+  do YOLO:
+  - aplica o perfil `internacao_leito` da US08 aos eventos de área (as ROIs dele são as de
+    `config/leito_uti_07.json`);
+  - publica os desvios no barramento **da execução**: a fusão (US18) e o motor de alertas (US19)
+    os recebem;
+  - grava `<execução>/video/video_leito_relatorio_desvios.{json,html}`.
+
+  A resposta traz `relatorio_video` (mensagem, total, severidades, % do tempo e as URLs). O
+  relatório é servido por `GET /pipeline/execucoes/{id}/relatorio-video` (JSON) e
+  `.../relatorio-video/html` (página com `Content-Security-Policy` restrita). O `source_id` é fixo
+  (`video_leito`), nunca o nome do arquivo enviado. Sem vídeo real (modo simulado, sem arquivo ou
+  YOLO que falhou), a etapa não gera relatório e diz o motivo; as rotas respondem 404.
 
 ### 2. Conteúdo: identificação sem dado pessoal, duração, tipo de procedimento e lista de desvios
 
@@ -251,7 +266,20 @@ borda do leito, em um vídeo de 12 s).
 
 - Só vale para vídeos que passaram pela US06 e/ou pela US07; a US09 não extrai pose nem detecta
   objetos.
-- Sem rota na API e sem geração direta de PDF (ver o item 1).
+- Sem geração direta de PDF (ver o item 1). Na API, só pelo pipeline da US20.
+- **No pipeline, só áreas críticas.** O pipeline não roda o OpenPose (minutos por vídeo em CPU e
+  pesos fora do repositório), então queda e mudança brusca não entram no relatório gerado por ele.
+  O próprio relatório avisa ("Sem pose da US06…") e trata a ausência de desvios como não
+  conclusiva. No pipeline, a queda do vídeo vem da etapa `movimentacao` (US17, pela caixa da
+  pessoa no YOLO), não deste relatório.
+- **No pipeline, só o trecho lido pelo YOLO.** Pela API o vídeo é lido inteiro, a menos que
+  `max_quadros_video` limite. A CLI `scripts/rodar_demo.py` aceita `--max-quadros-video`, e o
+  `ConfigPipeline` usa 50 quadros por padrão. A etapa passa `fim_video_s = quadros lidos / fps` à
+  US08: uma presença sem `saida` termina no fim do trecho lido, e a duração e o % do tempo do
+  relatório se referem a esse trecho, não ao arquivo inteiro.
+- **As áreas críticas são as da cena de exemplo.** As ROIs de `config/leito_uti_07.json` foram
+  desenhadas para um vídeo de exemplo (1920×1080). Num vídeo de outra câmera elas não batem com o
+  leito, e "sem desvios" não diz nada. Para avaliar um vídeo seu, ajuste os polígonos.
 - A confiança de uma regra de pose usa só os keypoints da medida, e a de repetições usa os da
   medida mais mal ajustada e os da referência; não há calibração entre a confiança do OpenPose e a
   probabilidade de o desvio ser real.
@@ -263,8 +291,14 @@ borda do leito, em um vídeo de 12 s).
 
 ## Testes
 
-`uv run pytest tests/video/test_relatorio.py` — 52 testes, com pose, eventos e vídeo sintéticos
+`uv run pytest tests/video/test_relatorio.py` — 53 testes, com pose, eventos e vídeo sintéticos
 (sem OpenPose nem YOLOv8): configuração (inclusive recusas), união de intervalos, confiança por
-fonte, cada item do DoD, os três casos "sem desvios", duração desconhecida, falha na publicação, o
-motor de alertas real com canais falsos, privacidade, HTML (escape, arquivo único, evidência
-embutida, linha do tempo), todos os perfis da US08 e a CLI.
+fonte, cada item do DoD, os três casos "sem desvios", duração desconhecida, fim do trecho analisado
+(`fim_video_s`), falha na publicação, o motor de alertas real com canais falsos, privacidade, HTML
+(escape, arquivo único, evidência embutida, linha do tempo), todos os perfis da US08 e a CLI.
+
+Integração com o pipeline: `uv run pytest tests/pipeline/test_relatorio_video.py` (YOLO falso).
+Cobre: modo simulado sem relatório; desvio publicado no barramento da execução e visto pela fusão;
+nome do arquivo fora do relatório; presença fechada no trecho lido; vídeo sem transições; falha da
+análise e da publicação. Os testes de `tests/pipeline/test_api.py` cobrem `relatorio_video` na
+resposta e as duas rotas GET (200, 404 e CSP).

@@ -6,7 +6,7 @@ import pytest
 
 from pipeline import ConfigPipeline, OrquestradorPipeline
 
-ETAPAS = ["video", "audio", "sinais_vitais", "prescricoes", "movimentacao", "fusao", "alertas"]
+ETAPAS = ["video", "relatorio_video", "audio", "sinais_vitais", "prescricoes", "movimentacao", "fusao", "alertas"]
 
 
 @pytest.fixture(autouse=True)
@@ -71,12 +71,13 @@ def test_streaming_de_sinais_detecta_deterioracao_gradual(execucao):
     assert sinais["detalhes"]["eventos_detectados"]
 
 
-def test_modo_real_sem_credenciais_cai_na_transcricao_de_demonstracao(tmp_path):
+def test_modo_real_sem_audio_deixa_a_etapa_de_audio_ausente(tmp_path):
+    """Sem áudio enviado, nada de transcrição de demonstração: a etapa não roda."""
     config = ConfigPipeline.from_env(modo="real", fator_velocidade=0.0, saida_dir=tmp_path)
     resumo = OrquestradorPipeline(config).executar()
     relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
-    audio = next(e for e in relatorio["etapas"] if e["etapa"] == "audio")
-    assert "demonstração" in audio["detalhes"]["servico_speech"]
+    assert "audio" not in [e["etapa"] for e in relatorio["etapas"]]
+    assert {"etapa": "audio", "motivo": "sem áudio enviado"} in relatorio["etapas_ausentes"]
 
 
 def test_modo_real_com_audio_chama_azure_speech(tmp_path, monkeypatch):
@@ -99,6 +100,15 @@ def test_modo_real_com_audio_chama_azure_speech(tmp_path, monkeypatch):
         }
 
     monkeypatch.setattr("app.transcription_service.transcrever_e_salvar", falso_transcrever)
+    # Azure AI Language "real" com o SDK de demonstração por baixo (sem rede).
+    from audio.text.language_client import LanguageClient
+    from pipeline.simulacao_azure import LanguageSdkSimulado
+
+    monkeypatch.setenv("AZURE_LANGUAGE_KEY", "chave")
+    monkeypatch.setenv("AZURE_LANGUAGE_ENDPOINT", "https://language.exemplo")
+    monkeypatch.setattr(
+        LanguageClient, "from_env", classmethod(lambda cls, cfg: cls(LanguageSdkSimulado(), cfg))
+    )
     config = ConfigPipeline.from_env(
         modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida", audio_path=audio
     )
