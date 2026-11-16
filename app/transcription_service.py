@@ -31,6 +31,11 @@ def sha256_arquivo(caminho: Path) -> str:
     return digest.hexdigest()
 
 
+def caminho_transcricao(audio_path: Path, saida_dir: Path) -> Path:
+    """Onde `transcrever_e_salvar` grava o JSON de `audio_path`."""
+    return saida_dir / f"{audio_path.stem}.json"
+
+
 def transcrever_e_salvar(
     audio_path: Path,
     saida_dir: Path,
@@ -55,7 +60,7 @@ def transcrever_e_salvar(
     """
     recorded_at = validar_metadados(audio_id, recorded_at)
     sha256 = sha256_arquivo(audio_path)
-    destino = saida_dir / f"{audio_path.stem}.json"
+    destino = caminho_transcricao(audio_path, saida_dir)
 
     existente = _ler_se_compativel(
         destino, sha256, usar_frases, max_speakers, medico_falante, locale

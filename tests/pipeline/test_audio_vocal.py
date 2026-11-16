@@ -154,6 +154,38 @@ def test_gravacao_so_do_paciente_com_medico_falante_0_analisa_as_falas(tmp_path,
     assert detalhes["falas_do_paciente"] == 2
     assert detalhes["biomarcadores_vocais"].startswith("audio.vocal")
     assert any(e["event_type"] == "termo_critico" and not e["is_synthetic"] for e in _eventos(resumo))
+    assert detalhes["armazenamento_transcricao"].startswith("desligado")  # sem connection string
+
+
+def test_transcricao_do_pipeline_e_copiada_para_o_blob_storage(tmp_path, monkeypatch, blob_falso):
+    _speech_falso(monkeypatch, FALAS_SO_PACIENTE)
+    _language_falso(monkeypatch)
+
+    _, etapa = _executar(
+        tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path), medico_falante=0
+    )
+
+    # Nome fixo: o do arquivo enviado (paciente.wav) não vai para a nuvem.
+    assert etapa["detalhes"]["armazenamento_transcricao"] == (
+        "enviado: audio-transcripts/pipeline/saida/consulta.json"
+    )
+    (envio,) = blob_falso.envios
+    gravado = tmp_path / "saida" / "transcricao" / "paciente.json"
+    assert envio["dados"] == gravado.read_bytes()
+
+
+def test_falha_no_blob_storage_nao_derruba_a_etapa_de_audio(tmp_path, monkeypatch, blob_falso):
+    _speech_falso(monkeypatch, FALAS_SO_PACIENTE)
+    _language_falso(monkeypatch)
+    blob_falso.erro = ConnectionError("storage fora do ar")
+
+    _, etapa = _executar(
+        tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path), medico_falante=0
+    )
+
+    assert etapa["status"] == "sucesso"
+    assert etapa["detalhes"]["armazenamento_transcricao"].startswith("falhou: ConnectionError")
+    assert etapa["detalhes"]["falas_do_paciente"] == 2
 
 
 def test_gravacao_so_do_paciente_com_medico_falante_1_falha_sem_inventar_achado(

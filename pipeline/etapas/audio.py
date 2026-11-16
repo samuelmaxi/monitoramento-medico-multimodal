@@ -245,12 +245,14 @@ class EtapaAudio:
             )
             return None
 
-        from app.transcription_service import transcrever_e_salvar
+        from app.armazenamento_transcricoes import arquivar_transcricao
+        from app.transcription_service import caminho_transcricao, transcrever_e_salvar
 
+        pasta = cfg.saida_dir / "transcricao"
         try:
             documento = transcrever_e_salvar(
                 cfg.audio_path,
-                cfg.saida_dir / "transcricao",
+                pasta,
                 endpoint=endpoint,
                 chave=chave,
                 usar_frases=True,
@@ -264,6 +266,11 @@ class EtapaAudio:
             detalhes["servico_speech"] = f"falhou: {type(exc).__name__}: {exc}"
             return None
 
+        # Cópia no Blob Storage; o nome do blob é fixo, nunca o do arquivo enviado.
+        detalhes["armazenamento_transcricao"] = arquivar_transcricao(
+            caminho_transcricao(cfg.audio_path, pasta),
+            f"pipeline/{cfg.saida_dir.name}/consulta.json",
+        )
         falas = documento.get("falas", [])
         detalhes["servico_speech"] = "Azure AI Speech (transcrição rápida, real)"
         detalhes["audio_origem"] = cfg.audio_path.name

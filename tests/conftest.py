@@ -45,3 +45,16 @@ def client():
     if app is None:
         pytest.skip(f"a API não pôde ser importada neste ambiente ({_ERRO_DA_API}); rode uv sync")
     return TestClient(app)
+
+
+@pytest.fixture
+def blob_falso(monkeypatch):
+    """Liga a cópia das transcrições no Blob Storage com um container falso e o devolve."""
+    from app.armazenamento_transcricoes import ArquivadorBlob
+    from tests.blob_falso import ContainerFalso
+
+    container = ContainerFalso()
+    monkeypatch.setattr(
+        ArquivadorBlob, "do_ambiente", classmethod(lambda cls, ambiente=None: cls(container))
+    )
+    return container

@@ -144,7 +144,8 @@ def test_audio_analysis_transcreve_e_analisa_so_a_fala_do_paciente(api, tmp_path
     corpo = resp.json()
     assert corpo["audio_id"] == "consulta-07"
     assert corpo["patient_id"].startswith("pt_")
-    assert corpo["transcricao"]["patient_id"] == "10000032"
+    # A transcrição gravada (disco e Blob Storage) já sai com o pseudônimo, nunca com o ID cru.
+    assert corpo["transcricao"]["patient_id"] == corpo["patient_id"]
     assert [f["papel"] for f in corpo["transcricao"]["falas"]] == ["medico", "paciente"]
     assert len(chamadas_speech) == 1
     assert [d["text"] for c in fake.health_calls for d in c["documents"]] == [

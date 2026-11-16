@@ -11,8 +11,9 @@ sistema.
 .
 ├── app/                        # API FastAPI que chama Azure Speech/Language
 │   ├── main.py                 # Cria o app, carrega .env, inclui routers, GET /health
-│   ├── config.py                # Leitura de variáveis Azure (Speech, Language, Storage)
-│   ├── azure_clients.py          # Clientes Azure SDK (Speech, Language, Blob Storage)
+│   ├── config.py                # Leitura de variáveis Azure (Speech, Language)
+│   ├── azure_clients.py          # Cliente Azure SDK (Language)
+│   ├── armazenamento_transcricoes.py  # Cópia do JSON das transcrições no Blob Storage
 │   ├── errors.py                 # Tradução de erros Azure em HTTPException (401/403/429)
 │   ├── schemas.py                 # Modelos Pydantic de request/response
 │   ├── pose_jobs.py               # Fila em processo dos jobs de pose (US06)
@@ -115,9 +116,9 @@ pip install "gdown>=6.4.0" "python-dotenv>=1.2.3"
 | `AZURE_LANGUAGE_KEY`              | Sim (sentimento e US13)          | Chave da API do serviço Azure Language. Obtida via `terraform output language_key`.                                          | `a1b2c3d4e5f6...`                                                                      |
 | `AZURE_SPEECH_ENDPOINT`           | Não                              | Endpoint do recurso Speech. Padrão: `https://<AZURE_SPEECH_REGION>.api.cognitive.microsoft.com`.                             | `https://spc-tc4-multimodal.cognitiveservices.azure.com`                               |
 | `TRANSCRIPTION_OUTPUT_DIR`        | Não                              | Pasta das transcrições (JSON e áudio de origem). Padrão: `saida/transcricao`.                                                | `saida/transcricao`                                                                    |
-| `AZURE_STORAGE_CONNECTION_STRING` | Não (não usada pela transcrição) | Connection string do Azure Blob Storage. Não é mais usada pela transcrição (US11), que envia o áudio direto na requisição.  | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
-| `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Nome do container Blob Storage para arquivos de áudio. Padrão: `audio-transcripts`.                                          | `audio-transcripts`                                                                    |
-| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose`, `POST /video/areas-criticas` e `POST /sinais-vitais/medicoes` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
+| `AZURE_STORAGE_CONNECTION_STRING` | Não (para a cópia na nuvem)      | Connection string do Azure Blob Storage (`terraform output -raw storage_connection_string`). Com ela, a API e o pipeline copiam o JSON de cada transcrição (US11) para o container; sem ela, a transcrição fica só no disco. Falha no envio só gera aviso no log. | `DefaultEndpointsProtocol=https;AccountName=...`                                       |
+| `AZURE_BLOB_CONTAINER_NAME`       | Não                              | Container das transcrições (JSON). Padrão: `audio-transcripts`.                                                              | `audio-transcripts`                                                                    |
+| `PSEUDONYM_KEY`                   | Só para enviar IDs de origem     | Chave HMAC (≥ 32 bytes) de `contratos/pseudonimizacao.py`. Usada por `POST /video/pose`, `POST /video/areas-criticas`, `POST /sinais-vitais/medicoes`, `POST /transcription` e `POST /audio/analysis` quando `patient_id`/`encounter_id` não chegam já pseudonimizados. | `python -c "import secrets; print(secrets.token_hex(32))"`                             |
 | `POSE_CONFIG_PATH`                | Não                              | `config.yaml` usado pela API de pose. Padrão: `video/pose/config.yaml`.                                                      | `video/pose/config.yaml`                                                               |
 | `VIDEO_MAX_UPLOAD_MB`             | Não                              | Tamanho máximo do vídeo aceito por `POST /video/pose` e `POST /video/areas-criticas`. Padrão: `500`.                         | `500`                                                                                  |
 | `US07_CONFIG_PATH`                | Não                              | Config da US07 usada pela API quando o `POST` não informa `camera_id`. Padrão: `config/exemplo_us07.json`.                   | `config/exemplo_us07.json`                                                             |
@@ -499,6 +500,19 @@ Cada JSON traz `audio_id`, `patient_id`, `recorded_at`, `texto_completo` e
 com `--medico-falante`), `offset_ms`, `duracao_ms`, `confianca` (por frase; a
 API não dá confiança por palavra) e `palavras`.
 
+**Cópia no Azure Blob Storage.** Com `AZURE_STORAGE_CONNECTION_STRING` no `.env`, o JSON
+de cada transcrição feita pela API (`POST /transcription`, `POST /audio/analysis` e
+`POST /audio/vocal` com transcrição) vai para `api/<job_id ou audio_id>/<arquivo>.json`
+no container `AZURE_BLOB_CONTAINER_NAME`, e o do pipeline (US20) para
+`pipeline/<execução>/consulta.json` (a situação fica em
+`detalhes.armazenamento_transcricao` da etapa `audio`). Só o JSON vai, nunca o áudio. Os
+nomes no container são IDs gerados ou fixos, nunca o nome do arquivo enviado, e o
+`patient_id` já sai pseudonimizado (`pt_…`, exige `PSEUDONYM_KEY`). Os CLIs
+(`scripts/transcrever.py`, `scripts/avaliar_wer.py`, `audio.vocal.run --transcrever`)
+não enviam. Uma falha no envio só gera aviso no log: a transcrição local continua valendo.
+Os blobs expiram depois de `blob_retention_days` (padrão 30) dias, por uma política de
+ciclo de vida do Terraform.
+
 `audio_id` (padrão: nome do arquivo no script, `job_id` na API), `patient_id` e
 `recorded_at` (ISO-8601 UTC, início da gravação) usam os nomes do contrato de
 eventos. São o que a US13 precisa para ler o JSON direto. Eles não mudam a
@@ -541,7 +555,7 @@ análise de sentimento, aproveitando a tier gratuita (F0) disponível no Azure:
 
 - **Azure Speech Service** — transcrição de áudio em pt-BR (Speech-to-Text).
 - **Azure AI Language** — análise de sentimento de texto em `pt`.
-- **Azure Blob Storage** — armazenamento de arquivos de áudio.
+- **Azure Blob Storage** — cópia do JSON das transcrições (US11), com expiração automática.
 
 A infraestrutura é provisionada via Terraform, na região **`eastus`** (região com melhor
 suporte a tier gratuita), e fica em [`terraform/`](terraform/).
