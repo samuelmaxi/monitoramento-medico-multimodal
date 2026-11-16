@@ -1,9 +1,24 @@
 import os
+from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
+try:
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+except ModuleNotFoundError as erro:
+    # Ambiente leve (pip install -r video/requirements.txt, sem uv sync): a API não importa,
+    # mas os testes que não a usam rodam. Só tolera dependência de TERCEIROS ausente; um módulo
+    # do próprio projeto que falte continua sendo erro (senão um import quebrado viraria skip).
+    _PACOTES_DO_PROJETO = {
+        pasta.name for pasta in Path(__file__).resolve().parents[1].iterdir()
+        if (pasta / "__init__.py").is_file()
+    }
+    if (erro.name or "").split(".")[0] in _PACOTES_DO_PROJETO:
+        raise
+    TestClient = app = None
+    _ERRO_DA_API = erro
 
 _REQUIRED_ENV_VARS = [
     "AZURE_SPEECH_KEY",
@@ -27,4 +42,6 @@ def _require_azure_env():
 
 @pytest.fixture
 def client():
+    if app is None:
+        pytest.skip(f"a API não pôde ser importada neste ambiente ({_ERRO_DA_API}); rode uv sync")
     return TestClient(app)

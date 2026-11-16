@@ -38,7 +38,8 @@ def test_etapa_com_falha_e_registrada_e_o_fluxo_segue(tmp_path, monkeypatch):
     assert status["sinais_vitais"] == "falha"
     assert all(v == "sucesso" for k, v in status.items() if k != "sinais_vitais")
     assert list(status) == [
-        "video", "audio", "sinais_vitais", "prescricoes", "movimentacao", "fusao", "alertas"
+        "video", "relatorio_video", "audio", "sinais_vitais", "prescricoes", "movimentacao",
+        "fusao", "alertas",
     ]
     assert resumo.etapas_com_falha == ("sinais_vitais",)
     assert relatorio["etapas_com_falha"] == ["sinais_vitais"]
@@ -50,13 +51,15 @@ def test_abortar_na_falha_interrompe_as_etapas_seguintes(tmp_path, monkeypatch):
     _quebrar_sinais(monkeypatch)
     resumo = OrquestradorPipeline(_config(tmp_path, abortar_na_falha=True)).executar()
     relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
-    assert [e["etapa"] for e in relatorio["etapas"]] == ["video", "audio", "sinais_vitais"]
+    assert [e["etapa"] for e in relatorio["etapas"]] == [
+        "video", "relatorio_video", "audio", "sinais_vitais"
+    ]
 
 
 def test_log_jsonl_tem_uma_linha_json_por_inicio_e_fim_de_etapa(tmp_path):
     resumo = OrquestradorPipeline(_config(tmp_path)).executar()
     linhas = [json.loads(x) for x in resumo.caminho_log.read_text(encoding="utf-8").splitlines()]
-    assert [x["evento"] for x in linhas] == ["etapa_iniciada", "etapa_concluida"] * 7
+    assert [x["evento"] for x in linhas] == ["etapa_iniciada", "etapa_concluida"] * 8
     concluidas = [x for x in linhas if x["evento"] == "etapa_concluida"]
     assert all(x["duracao_ms"] >= 0 and x["status"] == "sucesso" for x in concluidas)
 
@@ -84,6 +87,6 @@ def test_configurar_logging_envia_o_json_das_etapas_ao_stderr(tmp_path, capsys):
 def test_log_jsonl_e_reescrito_a_cada_execucao_mas_sobrevive_a_um_novo_logger(tmp_path):
     OrquestradorPipeline(_config(tmp_path)).executar()
     resumo = OrquestradorPipeline(_config(tmp_path)).executar()
-    assert len(resumo.caminho_log.read_text(encoding="utf-8").splitlines()) == 14
+    assert len(resumo.caminho_log.read_text(encoding="utf-8").splitlines()) == 16
     LoggerPipeline(tmp_path)  # o demo recria o logger só para exibir a tabela
     assert resumo.caminho_log.is_file()

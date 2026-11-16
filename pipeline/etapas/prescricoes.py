@@ -50,6 +50,12 @@ class EtapaPrescricoes:
     nome = "prescricoes"
 
     def executar(self, contexto: ContextoPipeline) -> list[EventoAchado]:
+        if contexto.modo_real:
+            # O pipeline não recebe prescrições do paciente; o cenário abaixo é de demonstração.
+            contexto.logger.ausentar_etapa(
+                self.nome, "sem prescrições do paciente (o pipeline não recebe essa entrada)"
+            )
+            return []
         contexto.logger.iniciar_etapa(self.nome)
         detalhes: dict[str, Any] = {}
         agora = agora_utc()

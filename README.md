@@ -398,6 +398,39 @@ Rastreabilidade ao DoD, protocolo e resultados da avaliação:
 [`docs/relatorio_us08_dod.md`](docs/relatorio_us08_dod.md). Testes:
 `uv run pytest tests/video/test_desvios.py`.
 
+### US09 — relatório automático de desvios no procedimento
+
+Pacote [`video/relatorio/`](video/relatorio/). Ao final da análise de cada vídeo, em um
+comando e sem edição manual, aplica a US08, publica os eventos no barramento (os
+desvios de severidade **alta** chegam ao motor de alertas da US19) e grava o relatório:
+
+```bash
+uv run --env-file .env python -m video.relatorio.run --perfil internacao_leito \
+  --pose outputs/pose/<video>.json --eventos-areas saida/video/eventos_<video>.jsonl \
+  --patient-id pt_<24 hex>                  # --sem-alertas desliga o motor; --formato json|html
+```
+
+Saídas em `saida/video/desvios/`: `<fonte>_relatorio_desvios.json` e
+`<fonte>_relatorio_desvios.html` (arquivo único, sem script nem recurso externo, com os
+quadros de evidência embutidos; para PDF, imprima pelo navegador). O relatório traz a
+identificação do vídeo **sem dado pessoal** (só o `source_id` e o SHA-256), duração, tipo de
+procedimento, cada desvio com início, fim, tipo, severidade, **confiança** e quadro de
+evidência, o resumo (total por tipo e **% do tempo em desvio**), as **versões dos modelos**
+(OpenPose, YOLOv8) e os limiares usados. Vídeo sem desvios gera "Sem desvios detectados",
+nunca um relatório vazio; se a análise foi pouco confiável (pessoa pouco vista, sem pose), o
+relatório diz que a ausência de desvios não é conclusiva. Critérios de apresentação em
+[`config/us09_relatorio.yaml`](config/us09_relatorio.yaml).
+
+Rastreabilidade ao DoD, decisões e limitações:
+[`docs/relatorio_us09_dod.md`](docs/relatorio_us09_dod.md). Testes:
+`uv run pytest tests/video/test_relatorio.py`; sem `uv`, crie um ambiente leve com
+`python -m venv .venv` e `.venv\Scripts\python -m pip install -r video/requirements.txt` e use
+`.venv\Scripts\python -m pytest tests/video/test_relatorio.py`.
+
+Para **ver cada etapa funcionando** (entradas, desvios, confiança, alerta, JSON, HTML) e conferir o DoD
+automaticamente, abra [`notebooks/validacao_us09.ipynb`](notebooks/validacao_us09.ipynb) (precisa de
+`ipykernel` e `matplotlib`): ele usa dados sintéticos e termina com o esboço do relatório renderizado.
+
 ### US17 — anomalias nos padrões de movimentação durante a internação
 
 Pacote [`movimentacao/`](movimentacao/). Monta uma **série de movimentação por
@@ -1271,7 +1304,8 @@ respiratório, e cada modalidade enxerga uma parte disso:
 
 | Etapa | O que roda | Achados |
 |---|---|---|
-| `video` | Achado de leito de demonstração (no `--modo real` com `--video`, o YOLOv8 da US07) | `entrada_area_critica` |
+| `video` | Achado de leito de demonstração | `entrada_area_critica` |
+| `relatorio_video` | Nada no modo simulado (não há vídeo real): a etapa diz o motivo | — |
 | `audio` | Azure Speech (transcrição) → Azure AI Language (termos críticos e sentimento, US13) → biomarcadores vocais (US12/US14) | 2 × `termo_critico` (falta de ar, aperto no peito), `sentimento_negativo`, `dificuldade_respiratoria` |
 | `sinais_vitais` | Replay das últimas 6 h de um paciente do MIMIC-IV Demo pelo detector da US15 | `news2_resposta_urgente`, `tendencia_deterioracao` |
 | `prescricoes` | Regras da US16 sobre morfina IV de 2 para 8 mg e heparina SC iniciada | `mudanca_abrupta_dose`, 2 × `medicamento_alta_vigilancia` |
@@ -1282,6 +1316,22 @@ respiratório, e cada modalidade enxerga uma parte disso:
 Resultado esperado: **risco 0,92 (alto)**, 16 achados no barramento e 10 alertas. A execução
 leva menos de 1 s com `--rapido`. Sem o dataset do MIMIC (passo 3 abaixo) os sinais vêm de uma
 série sintética de 21 medições, e o resultado é risco 0,97, 13 achados e 8 alertas.
+
+### Modo real: só o que você enviar
+
+Com `--modo real` (ou `modo=real` na API) **nada do cenário acima entra**. Só as entradas
+enviadas viram achados. Uma etapa sem entrada do paciente não roda: fica fora da resposta e
+aparece só em `etapas_ausentes` do `relatorio_execucao.json` e em `risco.modalidades_ausentes`. O
+risco da fusão é calculado só com o que é real, e uma falha nunca é trocada por um achado de
+demonstração.
+
+| Entrada | Etapas que rodam | O que precisa |
+|---|---|---|
+| áudio | `audio`: Azure Speech (transcrição com diarização) → Azure AI Language (termos críticos e sentimento) + biomarcadores vocais | `AZURE_SPEECH_*` e `AZURE_LANGUAGE_*` no `.env`. Sem o Speech não há texto; a voz só é medida com `medico_falante=0` (gravação só do paciente) |
+| vídeo | `video` (YOLOv8, áreas críticas) → `relatorio_video` (US08/US09) → `movimentacao` (US17: queda pela caixa da pessoa e saída do leito) | `yolov8n.pt` (já no repositório). As áreas críticas são as de `config/leito_uti_07.json`: ajuste os polígonos para a sua câmera |
+| — | `sinais_vitais`, `prescricoes` | Sempre ausentes: o pipeline não recebe sinais vitais nem prescrições do paciente (o replay do MIMIC é de outra pessoa) |
+
+O vídeo é lido inteiro; `max_quadros_video` (API) ou `--max-quadros-video` (CLI) limita.
 
 ### Como reproduzir
 
@@ -1320,6 +1370,7 @@ série sintética de 21 medições, e o resultado é risco 0,97, 13 achados e 8 
    | `relatorio_execucao.json` | Duração, status e detalhes de cada etapa |
    | `log_execucao.jsonl` | Uma linha JSON no início e no fim de cada etapa, com o tempo de processamento |
    | `alertas.jsonl` | Alertas disparados pelo motor da US19 |
+   | `video/video_leito_relatorio_desvios.{json,html}` | Relatório de desvios do vídeo (US09); só com `--modo real` e `--video` |
 
 A saída do comando é a tabela de etapas (status, duração em ms, eventos e destaques), o painel
 de risco da fusão e os caminhos dos artefatos. O código de saída é 0 se todas as etapas deram
@@ -1339,17 +1390,22 @@ uv run uvicorn app.main:app --reload
 # cenário de demonstração (sem arquivos): vídeo, áudio e prescrições simulados
 curl -X POST localhost:8000/pipeline/executar -F modo=simulado
 
-# com a consulta gravada; no modo real usa Azure Speech, Azure AI Language e o YOLO do servidor
+# modo real: só o que for enviado (Azure Speech, Azure AI Language e o YOLO do servidor)
 curl -X POST localhost:8000/pipeline/executar -F modo=real      -F audio_file=@consulta.wav -F video_file=@leito.mp4 -F medico_falante=1 -F publicar=true
+
+# modo real, gravação só do paciente e vídeo de uma queda
+curl -X POST localhost:8000/pipeline/executar -F modo=real      -F audio_file=@paciente.mp3 -F medico_falante=0 -F video_file=@queda.mp4
 ```
 
 | Campo | Padrão | Efeito |
 |---|---|---|
-| `audio_file`, `video_file` | vazios | Entradas opcionais; sem elas a etapa usa o cenário de demonstração |
-| `modo` | `simulado` | `real` usa as chaves Azure e o YOLO do servidor |
+| `audio_file`, `video_file` | vazios | Entradas opcionais. No `simulado`, sem elas a etapa usa o cenário de demonstração; no `real`, a etapa fica ausente |
+| `modo` | `simulado` | `real`: só as entradas enviadas, com as chaves Azure e o YOLO do servidor (ver "Modo real" acima) |
+| `max_quadros_video` | vazio | Quadros do vídeo lidos pelo YOLO; vazio = o vídeo inteiro |
 | `patient_id`, `bed_id` | `demo-uti07`, `UTI-07` | Paciente (ID de origem ou `pt_...`) e leito |
-| `sinais_fonte` | `auto` | `mimic`, `sintetico` ou `auto` (MIMIC se o dataset existir) |
-| `velocidade` | `0` | Aceleração do replay dos sinais vitais; 0 = sem espera |
+| `medico_falante` | `1` | Falante da diarização que é o médico; as outras vozes são do paciente. **`0` = não há médico** (gravação só do paciente): toda fala é analisada como dele. Com o padrão `1`, um áudio só do paciente vira todo "médico" e a análise de texto e de voz não tem o que medir |
+| `sinais_fonte` | `auto` | Só no `simulado`: `mimic`, `sintetico` ou `auto` (MIMIC se o dataset existir) |
+| `velocidade` | `0` | Só no `simulado`: aceleração do replay dos sinais vitais; 0 = sem espera |
 | `publicar` | `false` | Envia os achados ao barramento da API: `GET /fusao/pacientes` e `GET /alerts` passam a refletir a execução |
 | `abortar_na_falha` | `false` | Uma etapa com falha interrompe as seguintes |
 | `notificar_email` | `false` | Envia os alertas médios e altos por e-mail e webhook (`SMTP_HOST`, `SMTP_REMETENTE`, `ALERTA_DESTINATARIOS`, `ALERTA_WEBHOOK_URL` do servidor). **Envia de verdade** |
@@ -1360,7 +1416,21 @@ modalidade, o total de achados e alertas, e o relatório de cada etapa (duraçã
 `saida/pipeline_api/<id>/` (`PIPELINE_API_SAIDA_DIR`), consultável por
 `GET /pipeline/execucoes/{id}` e `GET /pipeline/execucoes/{id}/eventos`.
 
-A chamada é síncrona: no `modo=real` com vídeo, o YOLO pode levar minutos. Com `publicar=true`, os
+Com `modo=real` e `video_file`, a resposta também traz `relatorio_video`: o resumo do relatório de
+desvios da US09 (mensagem, total, severidades e % do tempo em desvio) e as URLs para abri-lo:
+
+```bash
+curl localhost:8000/pipeline/execucoes/<id>/relatorio-video        # JSON completo
+# no navegador (imprima para PDF): http://localhost:8000/pipeline/execucoes/<id>/relatorio-video/html
+```
+
+O relatório no pipeline cobre só a presença em área crítica (o pipeline não roda o OpenPose); a
+queda vem da etapa `movimentacao` (US17, pela caixa da pessoa). Sem vídeo real, `relatorio_video`
+vem `null` e as duas rotas dão 404. Detalhes:
+[`docs/relatorio_us09_dod.md`](docs/relatorio_us09_dod.md).
+
+A chamada é síncrona: no `modo=real` com vídeo, o YOLO passa duas vezes pelo vídeo (áreas e
+movimentação) e pode levar minutos. Com `publicar=true`, os
 alertas vão para o armazenamento configurado em `ALERTA_STORE` (`cosmos` grava no banco real).
 
 ### Azure no fluxo

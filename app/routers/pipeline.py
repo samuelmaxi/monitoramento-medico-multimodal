@@ -1,14 +1,23 @@
 """US20: pipeline ponta a ponta. Vídeo, áudio, sinais vitais e prescrições viram achados, a fusão
 calcula o risco do paciente e o motor de alertas avisa a equipe.
 
-- ``POST /pipeline/executar``: roda o fluxo completo. Áudio e vídeo são opcionais (sem eles, as
-  etapas usam o cenário de demonstração). Cada execução tem o seu diretório e o seu barramento;
+- ``POST /pipeline/executar``: roda o fluxo completo. Com ``modo=simulado`` é a demo: as etapas
+  usam o cenário de demonstração. Com ``modo=real`` só as entradas enviadas viram achados: o áudio
+  vai ao Speech/Language e aos biomarcadores vocais; o vídeo ao YOLO (áreas críticas), ao relatório
+  de desvios (US09) e à movimentação (queda e saída do leito, US17). Etapa sem entrada do
+  paciente (sinais vitais e prescrições sempre; áudio e vídeo se não enviados) não roda e fica
+  fora de ``etapas``; a fusão a lista em ``risco.modalidades_ausentes``. Nada é substituído por
+  demonstração no modo real. Cada execução tem o seu diretório e o seu barramento;
   com ``publicar=true`` os achados também entram no barramento da API, e então
   ``GET /fusao/pacientes`` e ``GET /alerts`` passam a refletir a execução.
 - ``GET /pipeline/execucoes/{id}``: resposta da execução (resumo, risco e relatório por etapa).
 - ``GET /pipeline/execucoes/{id}/eventos``: achados publicados no barramento da execução.
+- ``GET /pipeline/execucoes/{id}/relatorio-video`` (JSON) e ``.../relatorio-video/html``: o
+  relatório de desvios do vídeo (US09). Só existe com ``modo=real`` e vídeo enviado: o vídeo fica
+  na pasta da execução, então há quadro de evidência. Sem vídeo real, as duas respondem 404.
 
-A chamada é síncrona: com ``modo=real`` e vídeo, o YOLO pode levar minutos.
+A chamada é síncrona: com ``modo=real`` e vídeo, o YOLO lê o vídeo inteiro (``max_quadros_video``
+limita) duas vezes (áreas e movimentação) e pode levar minutos.
 """
 
 from __future__ import annotations
@@ -22,6 +31,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app import config as app_config
@@ -30,6 +40,7 @@ from app.routers.audio_vocal import get_config_ingestao
 from app.routers.fusao import RiscoResposta, resposta
 from contratos import BarramentoLocal, EventoAchado, Modalidade
 from pipeline import ConfigPipeline, OrquestradorPipeline
+from pipeline.etapas.relatorio_video import caminhos_relatorio
 from video.nomes_video import extensao_video_suportada
 
 log = logging.getLogger("app.pipeline")
@@ -38,6 +49,9 @@ router = APIRouter(prefix="/pipeline", tags=["pipeline ponta a ponta (US20)"])
 
 PADRAO_ID = re.compile(r"^[0-9a-f]{12}$")
 NOME_RESPOSTA = "resposta.json"
+# O HTML da US09 é um arquivo único, sem script, com CSS embutido e quadros em data URI: nada
+# além disso precisa carregar.
+CSP_RELATORIO = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
 
 
 class EtapaResposta(BaseModel):
@@ -48,6 +62,17 @@ class EtapaResposta(BaseModel):
     detalhes: dict[str, Any] = Field(
         description="O que a etapa usou (serviço Azure real ou simulado, fonte dos dados, erro)"
     )
+
+
+class RelatorioVideoResposta(BaseModel):
+    mensagem: str
+    total_desvios: int
+    por_severidade: dict[str, int]
+    pct_tempo_em_desvio: float | None = Field(
+        description="% do trecho analisado com algum desvio (união dos intervalos)"
+    )
+    json_url: str
+    html_url: str
 
 
 class ExecucaoResposta(BaseModel):
@@ -67,6 +92,11 @@ class ExecucaoResposta(BaseModel):
     )
     etapas: list[EtapaResposta]
     publicado_no_barramento: bool
+    relatorio_video: RelatorioVideoResposta | None = Field(
+        None,
+        description="Relatório de desvios do vídeo (US09); vazio sem vídeo real analisado "
+        "(modo simulado, sem vídeo ou falha do YOLO)",
+    )
 
 
 def _pasta(execucao_id: str) -> Path:
@@ -103,15 +133,31 @@ def executar(
     audio_file: UploadFile | None = File(None, description="Áudio da consulta (Speech + voz)"),
     video_file: UploadFile | None = File(None, description="Vídeo do leito (YOLO, só no modo real)"),
     modo: Literal["simulado", "real"] = Form(
-        "simulado", description="real usa as chaves Azure e o YOLO do servidor"
+        "simulado",
+        description="real: só as entradas enviadas, com as chaves Azure e o YOLO do servidor; "
+        "o que não foi enviado fica ausente. simulado: o cenário de demonstração",
+    ),
+    max_quadros_video: int | None = Form(
+        None,
+        ge=1,
+        description="Quadros do vídeo lidos pelo YOLO (modo real); vazio = o vídeo inteiro",
     ),
     patient_id: str | None = Form(None, description="ID de origem ou pseudônimo (pt_...)"),
     bed_id: str = Form("UTI-07"),
-    medico_falante: int = Form(1, ge=1, description="Falante que é o médico, na diarização"),
-    velocidade: float = Form(
-        0.0, ge=0, description="Aceleração do replay dos sinais vitais; 0 = sem espera"
+    medico_falante: int = Form(
+        1,
+        ge=0,
+        description="Falante que é o médico, na diarização. 0 = não há médico na gravação "
+        "(só o paciente fala): todas as falas são analisadas como do paciente",
     ),
-    sinais_fonte: Literal["auto", "mimic", "sintetico"] = Form("auto"),
+    velocidade: float = Form(
+        0.0,
+        ge=0,
+        description="Aceleração do replay dos sinais vitais (só no modo simulado); 0 = sem espera",
+    ),
+    sinais_fonte: Literal["auto", "mimic", "sintetico"] = Form(
+        "auto", description="Sinais vitais da demo (só no modo simulado)"
+    ),
     abortar_na_falha: bool = Form(False),
     notificar_email: bool = Form(
         False,
@@ -163,6 +209,7 @@ def executar(
             audio_path=audio_path,
             video_path=video_path,
             medico_falante=medico_falante,
+            max_frames_video=max_quadros_video,
             abortar_na_falha=abortar_na_falha,
             notificar_smtp=notificar_email,
         )
@@ -194,9 +241,25 @@ def executar(
         risco=resposta(resumo.risco, resumo.config_fusao) if resumo.risco else None,
         etapas=[EtapaResposta(**e) for e in relatorio["etapas"]],
         publicado_no_barramento=publicar,
+        relatorio_video=_relatorio_video(execucao_id, resumo.caminho_relatorio_video_json),
     )
     (pasta / NOME_RESPOSTA).write_text(corpo.model_dump_json(indent=2), encoding="utf-8")
     return corpo
+
+
+def _relatorio_video(execucao_id: str, caminho: Path | None) -> RelatorioVideoResposta | None:
+    if caminho is None or not caminho.is_file():
+        return None
+    resumo = json.loads(caminho.read_text(encoding="utf-8"))["resumo"]
+    base = f"{router.prefix}/execucoes/{execucao_id}/relatorio-video"
+    return RelatorioVideoResposta(
+        mensagem=resumo["mensagem"],
+        total_desvios=resumo["total_desvios"],
+        por_severidade=resumo["por_severidade"],
+        pct_tempo_em_desvio=resumo["pct_tempo_em_desvio"],
+        json_url=base,
+        html_url=f"{base}/html",
+    )
 
 
 @router.get("/execucoes/{execucao_id}", response_model=ExecucaoResposta)
@@ -210,6 +273,33 @@ def detalhar(execucao_id: str) -> ExecucaoResposta:
 @router.get("/execucoes/{execucao_id}/eventos", response_model=list[EventoAchado])
 def eventos(execucao_id: str) -> list[EventoAchado]:
     return _ler_eventos(_pasta(execucao_id) / "eventos.jsonl")
+
+
+def _arquivo_relatorio_video(execucao_id: str, indice: int) -> Path:
+    arquivo = caminhos_relatorio(_pasta(execucao_id))[indice]
+    if not arquivo.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Execução sem relatório de vídeo (só é gerado com modo=real e vídeo enviado)",
+        )
+    return arquivo
+
+
+@router.get("/execucoes/{execucao_id}/relatorio-video")
+def relatorio_video(execucao_id: str) -> dict[str, Any]:
+    """Relatório de desvios do vídeo (US09) em JSON: desvios, confiança, % do tempo, modelos."""
+    arquivo = _arquivo_relatorio_video(execucao_id, 0)
+    return json.loads(arquivo.read_text(encoding="utf-8"))
+
+
+@router.get("/execucoes/{execucao_id}/relatorio-video/html", response_class=FileResponse)
+def relatorio_video_html(execucao_id: str) -> FileResponse:
+    """O mesmo relatório em página única, com os quadros de evidência (imprima para PDF)."""
+    return FileResponse(
+        _arquivo_relatorio_video(execucao_id, 1),
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Security-Policy": CSP_RELATORIO},
+    )
 
 
 def _ler_eventos(caminho: Path) -> list[EventoAchado]:

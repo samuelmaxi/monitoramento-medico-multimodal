@@ -1,7 +1,17 @@
-# Dependências do módulo de análise postural (US06). Python 3.14.
-# Instalação: pip install -r video/requirements.txt
+# Dependências dos módulos de vídeo: análise postural (US06), desvios (US08) e relatório (US09).
+# Python 3.14. Instalação, sem uv:
+#   python -m venv .venv
+#   .venv\Scripts\python -m pip install -r video/requirements.txt      (Windows)
+#   .venv/bin/python -m pip install -r video/requirements.txt          (Linux e macOS)
+# Testes desses módulos:  .venv\Scripts\python -m pytest tests/video/test_relatorio.py
 opencv-python-headless==4.14.0.94
 numpy==2.4.4
 pandas==2.3.3
 PyYAML==6.0.3
 pytest==9.1.1
+# Contrato de eventos (contratos/), usado pelas US07 a US09, e leitura do .env nas CLIs.
+pydantic>=2.9
+python-dotenv>=1.2.3
+# Só para o notebook de validação da US09 (notebooks/validacao_us09.ipynb); descomente para instalar:
+# ipykernel
+# matplotlib

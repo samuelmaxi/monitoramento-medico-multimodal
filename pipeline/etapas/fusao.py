@@ -24,8 +24,12 @@ class EtapaFusao:
         fusao: FusaoMultimodal = contexto.dados.get("fusao")
         eventos_fusao: list[EventoAchado] = []
 
-        if fusao is not None:
-            risco = fusao.risco(contexto.paciente_id)
+        risco = fusao.risco(contexto.paciente_id) if fusao is not None else None
+        if risco is None:
+            # Modo real sem nenhuma entrada (ou nenhuma etapa com achado): não há o que fundir.
+            detalhes["nivel_risco"] = "indisponivel"
+            detalhes["motivo"] = "nenhum achado chegou à fusão"
+        else:
             detalhes["score_risco_final"] = round(risco.score, 4)
             detalhes["nivel_risco"] = risco.nivel
             detalhes["severidade"] = risco.severidade.value

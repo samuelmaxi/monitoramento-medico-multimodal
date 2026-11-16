@@ -18,6 +18,7 @@ from pipeline.etapas.base import ContextoPipeline
 from pipeline.etapas.fusao import EtapaFusao
 from pipeline.etapas.movimentacao import EtapaMovimentacao
 from pipeline.etapas.prescricoes import EtapaPrescricoes
+from pipeline.etapas.relatorio_video import CHAVE_RELATORIO, EtapaRelatorioVideo
 from pipeline.etapas.sinais import EtapaSinaisVitais
 from pipeline.etapas.video import EtapaVideo
 from pipeline.logger import LoggerPipeline
@@ -43,6 +44,11 @@ class ResumoExecucao:
     caminho_log: Path | None = None
     risco: Any = None  # fusao.Risco do paciente (None se nenhum achado chegou à fusão)
     config_fusao: Any = None
+    # Relatório de desvios do vídeo (US09); None sem vídeo real analisado.
+    caminho_relatorio_video_json: Path | None = None
+    caminho_relatorio_video_html: Path | None = None
+    # Modo real: etapas sem entrada do paciente, que não rodaram (fora de ``relatorio_execucao``).
+    etapas_ausentes: tuple[str, ...] = ()
 
 
 def config_alertas(config: ConfigPipeline, saida_dir: Path) -> ConfigAlertas:
@@ -101,6 +107,7 @@ class OrquestradorPipeline:
         # 4. Sequência orquestrada de etapas
         etapas = [
             EtapaVideo(),
+            EtapaRelatorioVideo(),
             EtapaAudio(),
             EtapaSinaisVitais(),
             EtapaPrescricoes(),
@@ -129,6 +136,8 @@ class OrquestradorPipeline:
         if not caminho_alertas.is_file():
             caminho_alertas = None
 
+        relatorio_video = contexto.dados.get(CHAVE_RELATORIO)
+
         return ResumoExecucao(
             paciente_id=contexto.paciente_id,
             leito_id=contexto.leito_id,
@@ -144,5 +153,8 @@ class OrquestradorPipeline:
             caminho_log=logger.caminho_log,
             risco=risco_paciente,
             config_fusao=config_fusao,
+            caminho_relatorio_video_json=relatorio_video.caminho_json if relatorio_video else None,
+            caminho_relatorio_video_html=relatorio_video.caminho_html if relatorio_video else None,
+            etapas_ausentes=tuple(a["etapa"] for a in logger.ausentes),
         )
 
