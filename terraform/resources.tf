@@ -10,7 +10,8 @@ resource "azurerm_resource_group" "main" {
   }
 }
 
-# Storage Account para armazenar arquivos de áudio
+# Storage Account com a cópia do JSON das transcrições (US11), enviada pela API e pelo pipeline
+# (app/armazenamento_transcricoes.py). O áudio não é enviado.
 resource "azurerm_storage_account" "media" {
   name                     = var.storage_account_name
   resource_group_name      = azurerm_resource_group.main.name
@@ -26,11 +27,33 @@ resource "azurerm_storage_account" "media" {
   }
 }
 
-# Container Blob para arquivos de áudio
+# Container Blob das transcrições (JSON): api/<job>/... e pipeline/<execução>/...
 resource "azurerm_storage_container" "audio" {
   name                  = var.container_name
   storage_account_name  = azurerm_storage_account.media.name
   container_access_type = "private"
+}
+
+# Retenção: as transcrições (fala do paciente) são apagadas blob_retention_days dias depois
+# da última gravação.
+resource "azurerm_storage_management_policy" "retencao" {
+  storage_account_id = azurerm_storage_account.media.id
+
+  rule {
+    name    = "expira-transcricoes"
+    enabled = true
+
+    filters {
+      blob_types   = ["blockBlob"]
+      prefix_match = ["${var.container_name}/"]
+    }
+
+    actions {
+      base_blob {
+        delete_after_days_since_modification_greater_than = var.blob_retention_days
+      }
+    }
+  }
 }
 
 

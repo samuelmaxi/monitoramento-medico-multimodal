@@ -23,13 +23,13 @@ variable "storage_account_name" {
 }
 
 variable "container_name" {
-  description = "Nome do container Blob Storage para arquivos de áudio."
+  description = "Nome do container Blob Storage com o JSON das transcrições (US11)."
   type        = string
   default     = "audio-transcripts"
 }
 
 variable "blob_retention_days" {
-  description = "Número de dias para retenção de blobs no storage (controle de custo)."
+  description = "Dias até as transcrições serem apagadas da storage (política de ciclo de vida; dado de paciente)."
   type        = number
   default     = 30
 }

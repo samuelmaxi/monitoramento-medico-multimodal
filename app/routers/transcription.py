@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile
 
+from app.armazenamento_transcricoes import arquivar_transcricao
 from app.config import (
     TRANSCRIPTION_OUTPUT_DIR,
     require_azure_speech_endpoint,
@@ -12,7 +13,9 @@ from app.config import (
 from app.schemas import TranscricaoResponse
 from app.transcription_client import FORMATOS_SUPORTADOS, TranscricaoError
 from app.transcription_format import validar_metadados
-from app.transcription_service import transcrever_e_salvar
+from app.transcription_service import caminho_transcricao, transcrever_e_salvar
+from audio.text.events import patient_pseudonym
+from contratos import ChavePseudonimizacaoAusente
 
 router = APIRouter()
 
@@ -20,13 +23,16 @@ router = APIRouter()
 @router.post("/transcription", response_model=TranscricaoResponse)
 def transcrever_audio(
     audio_file: UploadFile,
-    patient_id: str | None = Form(None, description="ID de origem ou pseudônimo pt_… do paciente"),
+    patient_id: str | None = Form(
+        None, description="ID de origem ou pseudônimo pt_…; pseudonimizado antes de sair"
+    ),
     recorded_at: str | None = Form(None, description="Início da gravação, ISO-8601 UTC (ex.: 2026-10-01T13:00:00Z)"),
     audio_id: str | None = Form(None, description="ID curto da consulta, sem dados pessoais. Padrão: o job_id"),
     medico_falante: int | None = Form(None, description="Número do falante que é o médico; os demais viram paciente"),
 ) -> dict:
     extension = validar_formato(audio_file)
     recorded_at = validar_metadados_form(audio_id, recorded_at)
+    patient_id = pseudonimo_form(patient_id)
     job_id, caminho_audio = salvar_audio(audio_file, extension)
 
     try:
@@ -62,6 +68,16 @@ def validar_metadados_form(audio_id: str | None, recorded_at: str | None) -> str
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def pseudonimo_form(patient_id: str | None) -> str | None:
+    """Pseudônimo ``pt_…`` do paciente: o ID de origem não vai para o disco nem para a nuvem."""
+    if patient_id is None or not patient_id.strip():
+        return None
+    try:
+        return patient_pseudonym(patient_id)
+    except ChavePseudonimizacaoAusente as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 def salvar_audio(audio_file: UploadFile, extension: str) -> tuple[str, Path]:
     """Grava o áudio em `<TRANSCRIPTION_OUTPUT_DIR>/<job_id>/` e devolve (job_id, caminho)."""
     job_id = f"transcription-{uuid4().hex[:12]}"
@@ -80,9 +96,13 @@ def salvar_audio(audio_file: UploadFile, extension: str) -> tuple[str, Path]:
 
 
 def transcrever(caminho_audio: Path, **opcoes) -> dict:
-    """Transcreve e grava `audio.json` ao lado do áudio. `TranscricaoError` sobe."""
+    """Transcreve e grava `audio.json` ao lado do áudio. `TranscricaoError` sobe.
+
+    O JSON também é copiado para o Blob Storage em `api/<pasta do job>/<arquivo>.json` (se
+    `AZURE_STORAGE_CONNECTION_STRING` existir). Falha na cópia só gera aviso no log.
+    """
     try:
-        return transcrever_e_salvar(
+        documento = transcrever_e_salvar(
             caminho_audio,
             caminho_audio.parent,
             endpoint=require_azure_speech_endpoint(),
@@ -91,6 +111,9 @@ def transcrever(caminho_audio: Path, **opcoes) -> dict:
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    caminho_json = caminho_transcricao(caminho_audio, caminho_audio.parent)
+    arquivar_transcricao(caminho_json, f"api/{caminho_audio.parent.name}/{caminho_json.name}")
+    return documento
 
 
 def erro_transcricao(exc: TranscricaoError, caminho_audio: Path) -> HTTPException:

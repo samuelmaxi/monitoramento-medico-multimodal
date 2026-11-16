@@ -1,5 +1,5 @@
 output "storage_account_name" {
-  description = "Nome da conta de storage Azure para armazenar áudio e transcripts."
+  description = "Nome da conta de storage Azure com o JSON das transcrições (US11)."
   value       = azurerm_storage_account.media.name
 }
 
@@ -42,7 +42,7 @@ output "resource_group_name" {
 }
 
 output "container_name" {
-  description = "Nome do container Blob Storage para arquivos de áudio."
+  description = "Nome do container Blob Storage com o JSON das transcrições (US11)."
   value       = azurerm_storage_container.audio.name
 }
 
