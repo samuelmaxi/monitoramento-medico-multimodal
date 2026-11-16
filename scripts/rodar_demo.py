@@ -97,7 +97,13 @@ def main(argv: list[str] | None = None) -> int:
         "--medico-falante",
         type=int,
         default=1,
-        help="número do falante (diarização) que é o médico",
+        help="número do falante (diarização) que é o médico; 0 = não há médico (só o paciente)",
+    )
+    parser.add_argument(
+        "--max-quadros-video",
+        type=int,
+        default=None,
+        help="quadros do vídeo lidos pelo YOLO no --modo real (padrão: o vídeo inteiro)",
     )
 
     parser.add_argument(
@@ -127,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         video_path=args.video,
         audio_path=args.audio,
         medico_falante=args.medico_falante,
+        max_frames_video=args.max_quadros_video,
         abortar_na_falha=args.abortar_na_falha,
     )
 
@@ -183,6 +190,11 @@ def main(argv: list[str] | None = None) -> int:
         f"  • Relatório de etapas (DoD 4): {resumo.caminho_relatorio}\n"
         f"  • Log estruturado por etapa: {resumo.caminho_log}\n"
         + (f"  • Alertas disparados: {resumo.caminho_alertas}\n" if resumo.caminho_alertas else "")
+        + (
+            f"  • Relatório de desvios do vídeo (US09): {resumo.caminho_relatorio_video_html}\n"
+            if resumo.caminho_relatorio_video_html
+            else ""
+        )
     )
     if resumo.etapas_com_falha:
         console.print(f"[bold red]Etapas com falha: {', '.join(resumo.etapas_com_falha)}[/bold red]")

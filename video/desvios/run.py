@@ -39,9 +39,10 @@ from contratos import (
 from video.pose.config import load_config as carregar_config_pose
 from video.pose.sequence import PoseSequence
 
-from .config import CAMINHO_PADRAO, carregar_config
+from .config import CAMINHO_PADRAO, ConfigDesvios, Perfil, carregar_config
 from .eventos import ContextoEmissao, montar_evento, montar_sem_achados, relatorio
 from .evidencia import salvar_evidencias
+from .modelos import ResultadoAnalise
 from .regras import analisar
 
 log = logging.getLogger("video.desvios.run")
@@ -53,6 +54,15 @@ class Execucao:
     relatorio: dict[str, Any]
     caminho_eventos: Path
     caminho_relatorio: Path
+    # O que a análise usou e produziu: o relatório da US09 (video.relatorio) reaproveita
+    # estes objetos em vez de refazer a análise.
+    resultado: ResultadoAnalise | None = None
+    perfil: Perfil | None = None
+    config: ConfigDesvios | None = None
+    pose: PoseSequence | None = None
+    eventos_areas: tuple[EventoAchado, ...] = ()
+    video: Path | None = None
+    source_id: str | None = None
 
 
 def ler_eventos_jsonl(caminho: Path) -> list[EventoAchado]:
@@ -103,7 +113,14 @@ def executar(
     saida: Path = Path("saida/video/desvios"),
     pose_config: Path = Path("video/pose/config.yaml"),
     evidencias: bool = True,
+    fim_video_s: float | None = None,
 ) -> Execucao:
+    """Aplica o padrão do perfil e grava eventos e relatório da US08.
+
+    ``fim_video_s`` é o fim do trecho que a US07 analisou. Informe-o quando a detecção parou
+    antes do fim do vídeo (o pipeline da US20 limita os quadros): sem ele, uma presença sem
+    ``saida`` seria fechada na duração do arquivo inteiro, um desvio que ninguém viu.
+    """
     cfg = carregar_config(config)
     perfil = cfg.perfil(perfil_id)
     pose = PoseSequence.load_json(pose_path) if pose_path is not None else None
@@ -114,7 +131,8 @@ def executar(
         )
     if video is None and pose is not None:
         video = Path(pose.source_path)
-    fim_video_s = None if pose is not None or video is None else _duracao_video(video)
+    if fim_video_s is None and pose is None and video is not None:
+        fim_video_s = _duracao_video(video)
 
     resultado = analisar(
         perfil, cfg, pose=pose, eventos_areas=eventos_areas, fim_video_s=fim_video_s
@@ -184,7 +202,19 @@ def executar(
     )
     caminho_relatorio = saida / f"{source_id}_relatorio.json"
     caminho_relatorio.write_text(json.dumps(rel, ensure_ascii=False, indent=2), encoding="utf-8")
-    return Execucao(eventos, rel, caminho_eventos, caminho_relatorio)
+    return Execucao(
+        eventos,
+        rel,
+        caminho_eventos,
+        caminho_relatorio,
+        resultado=resultado,
+        perfil=perfil,
+        config=cfg,
+        pose=pose,
+        eventos_areas=tuple(eventos_areas),
+        video=video,
+        source_id=source_id,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

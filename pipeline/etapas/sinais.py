@@ -80,6 +80,13 @@ class EtapaSinaisVitais:
     nome = "sinais_vitais"
 
     def executar(self, contexto: ContextoPipeline) -> list[EventoAchado]:
+        if contexto.modo_real:
+            # O pipeline não recebe sinais vitais do paciente. O replay do MIMIC é de outra pessoa:
+            # atribuí-lo a este paciente seria um achado falso.
+            contexto.logger.ausentar_etapa(
+                self.nome, "sem sinais vitais do paciente (o pipeline não recebe essa entrada)"
+            )
+            return []
         contexto.logger.iniciar_etapa(self.nome)
         eventos: list[EventoAchado] = []
         detalhes: dict[str, Any] = {}

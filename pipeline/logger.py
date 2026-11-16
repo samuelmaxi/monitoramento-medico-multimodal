@@ -37,6 +37,9 @@ class LoggerPipeline:
         self.saida_dir.mkdir(parents=True, exist_ok=True)
         self.console = console or Console(highlight=False)
         self.registros: list[RegistroEtapa] = []
+        # Etapas sem entrada real (modo real): não rodam, não entram em ``registros`` nem na
+        # resposta da API; ficam só no log e em ``etapas_ausentes`` do relatório em disco.
+        self.ausentes: list[dict[str, str]] = []
         self.caminho_log = saida_dir / "log_execucao.jsonl"
         self._etapa_ativa: str | None = None
         self._inicio_perf: float = 0.0
@@ -78,6 +81,16 @@ class LoggerPipeline:
         self._etapa_ativa = None
         return registro
 
+    def ausentar_etapa(self, nome: str, motivo: str) -> None:
+        """Registra que a etapa não rodou por falta de entrada real do paciente."""
+        self.ausentes.append({"etapa": nome, "motivo": motivo})
+        self._registrar({
+            "evento": "etapa_ausente",
+            "etapa": nome,
+            "motivo": motivo,
+            "timestamp": datetime.now(UTC).isoformat(),
+        })
+
     def falhar_etapa(self, nome: str, erro: BaseException) -> RegistroEtapa:
         """Fecha como ``falha`` a etapa ativa (ou a ``nome``, se ela caiu antes de iniciar)."""
         if self._etapa_ativa is None:
@@ -110,6 +123,7 @@ class LoggerPipeline:
             "total_eventos_emitidos": total_eventos,
             "etapas_com_falha": [r.etapa for r in self.registros if r.status == "falha"],
             "etapas": [asdict(r) for r in self.registros],
+            "etapas_ausentes": list(self.ausentes),
         }
 
         caminho.write_text(
@@ -136,6 +150,9 @@ class LoggerPipeline:
                 str(r.eventos_emitidos),
                 destaque or "—",
             )
+
+        for ausente in self.ausentes:
+            tabela.add_row(ausente["etapa"], "[dim]ausente[/dim]", "—", "0", ausente["motivo"])
 
         total_ms = sum(r.duracao_ms for r in self.registros)
         total_evs = sum(r.eventos_emitidos for r in self.registros)

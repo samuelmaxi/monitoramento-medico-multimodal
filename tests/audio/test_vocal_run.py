@@ -133,6 +133,8 @@ def test_sem_alertas_nao_liga_o_motor_mas_publica_no_barramento(tmp_path):
 
 def test_sem_pseudonym_key_sai_com_1_e_nao_converte_nada(tmp_path, monkeypatch, caplog):
     monkeypatch.delenv("PSEUDONYM_KEY", raising=False)
+    # main() roda load_dotenv(): sem isto, a chave do .env local volta e o teste depende da máquina
+    monkeypatch.setattr("audio.vocal.run.load_dotenv", lambda *a, **k: False)
     audio = gravar(tmp_path, "consulta.wav")
 
     assert main(argumentos(audio)) == 1

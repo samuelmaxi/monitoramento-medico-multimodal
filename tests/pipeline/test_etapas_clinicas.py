@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from contratos import agora_utc
 from pipeline import ConfigPipeline, OrquestradorPipeline
 
 
@@ -84,19 +85,20 @@ def test_video_real_sem_transicoes_nao_inventa_achado(tmp_path, monkeypatch):
     assert etapa["eventos_emitidos"] == 0
 
 
-def test_video_real_que_falha_cai_no_achado_de_demonstracao(tmp_path):
+def test_video_real_que_falha_e_falha_sem_achado_de_demonstracao(tmp_path):
     video = tmp_path / "leito.mp4"
     video.write_bytes(b"nao e um video")
     cfg = ConfigPipeline.from_env(
-        modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida",
-        sinais_fonte="sintetico", video_path=video,
+        modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida", video_path=video,
     )
     resumo = OrquestradorPipeline(cfg).executar()
     relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
     etapa = next(e for e in relatorio["etapas"] if e["etapa"] == "video")
-    assert etapa["detalhes"]["modo"] == "clinico_leito"
-    assert "motivo_fallback" in etapa["detalhes"]
-    assert etapa["eventos_emitidos"] == 1
+    assert etapa["status"] == "falha"
+    assert "erro" in etapa["detalhes"]
+    assert etapa["eventos_emitidos"] == 0
+    assert "video" in resumo.etapas_com_falha
+    assert "relatorio_video" in resumo.etapas_ausentes  # sem vídeo analisado, nada a relatar
 
 
 def test_demo_roda_sem_pseudonym_key_no_ambiente(tmp_path, monkeypatch):
@@ -133,3 +135,42 @@ def test_sem_notificar_o_email_fica_desligado_mesmo_com_smtp_no_ambiente(tmp_pat
     cfg = ConfigPipeline.from_env(saida_dir=tmp_path)
 
     assert not config_alertas(cfg, tmp_path).email_configurado
+
+
+def test_yolo_do_pipeline_data_os_achados_na_execucao_e_nao_no_video_de_exemplo(
+    tmp_path, monkeypatch
+):
+    """config/leito_uti_07.json traz o inicio_utc do vídeo de exemplo (2026-10-05). Se ele
+    valesse no pipeline, os achados de vídeo cairiam fora da janela da fusão."""
+    from types import SimpleNamespace
+
+    import video
+    from pipeline.etapas.video import SOURCE_ID_VIDEO
+
+    recebidas = []
+
+    class PipelineFalso:
+        def __init__(self, config, emissor):
+            recebidas.append(config)
+
+        def executar(self, detectado_em):
+            recebidas.append(detectado_em)
+            return SimpleNamespace(
+                eventos=[], resumo=SimpleNamespace(quadros_lidos=10, deteccoes_total=0, fps=10.0)
+            )
+
+    monkeypatch.setattr(video, "PipelineAreaCritica", PipelineFalso)
+    video_path = tmp_path / "paciente_joao.mp4"
+    video_path.write_bytes(b"x")
+    cfg = ConfigPipeline.from_env(
+        modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida", video_path=video_path,
+        max_frames_video=None,
+    )
+    resumo = OrquestradorPipeline(cfg).executar()
+
+    config_yolo, detectado_em = recebidas
+    assert config_yolo.fonte.inicio_utc is None
+    assert config_yolo.fonte.max_quadros is None  # vídeo inteiro
+    assert config_yolo.fonte.id == SOURCE_ID_VIDEO  # nunca o nome do arquivo
+    assert config_yolo.fonte.patient_id == resumo.paciente_id
+    assert abs((agora_utc() - detectado_em).total_seconds() - 300) < 60

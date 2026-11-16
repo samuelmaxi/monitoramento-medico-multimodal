@@ -40,6 +40,19 @@ def test_dois_falantes_sem_medico_falante_e_recusado():
         segmentos_da_transcricao(transcricao)
 
 
+def test_sem_medico_informado_todas_as_falas_sao_do_paciente_mesmo_com_dois_falantes():
+    # A diarização pode dividir a voz de uma pessoa em dois falantes: com SEM_MEDICO nada é
+    # descartado, e não é "assumido" (quem enviou o áudio disse que não há médico).
+    transcricao = {"falas": [_fala(0, 1000, 1), _fala(1200, 1000, 2)]}
+
+    resultado = segmentos_da_transcricao(transcricao, medico_falante=0)
+
+    assert [s.inicio_ms for s in resultado.segmentos] == [0, 1200]
+    assert resultado.intervalos_medico_ms == ()
+    assert resultado.papel_assumido is False
+    assert any("sem médico" in n for n in resultado.notas)
+
+
 def test_voz_do_medico_nao_vira_segmento_do_paciente():
     transcricao = {"falas": [_fala(0, 2000, 1), _fala(2200, 1000, 2), _fala(3500, 2000, 1)]}
 

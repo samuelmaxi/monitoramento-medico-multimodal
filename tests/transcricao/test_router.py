@@ -23,6 +23,7 @@ RESPOSTA_API = {
 
 @pytest.fixture
 def cliente(tmp_path, monkeypatch):
+    monkeypatch.setenv("PSEUDONYM_KEY", "chave-de-teste-com-mais-de-32-bytes-000000")
     monkeypatch.setattr(router_transcription, "TRANSCRIPTION_OUTPUT_DIR", str(tmp_path))
     monkeypatch.setattr(router_transcription, "require_azure_speech_key", lambda: "chave")
     monkeypatch.setattr(
@@ -105,9 +106,51 @@ def test_metadados_e_papeis_vao_para_a_transcricao(cliente, tmp_path, monkeypatc
     corpo = resposta.json()
     pasta = next(tmp_path.glob("transcription-*"))
     assert corpo["audio_id"] == pasta.name
-    assert corpo["patient_id"] == "10000032"
+    assert corpo["patient_id"].startswith("pt_")
     assert corpo["recorded_at"] == "2026-10-01T13:00:00Z"
     assert corpo["falas"][0]["papel"] == "medico"
+    # O ID de origem não vai para o disco (nem, por consequência, para o Blob Storage).
+    gravado = (pasta / "audio.json").read_text(encoding="utf-8")
+    assert "10000032" not in gravado
+    assert corpo["patient_id"] in gravado
+
+
+def test_sem_chave_de_pseudonimizacao_da_503_sem_gravar_o_audio(cliente, tmp_path, monkeypatch):
+    monkeypatch.delenv("PSEUDONYM_KEY")
+
+    resposta = _enviar(cliente, patient_id="10000032")
+
+    assert resposta.status_code == 503
+    assert "PSEUDONYM_KEY" in resposta.json()["detail"]
+    assert not list(tmp_path.glob("transcription-*"))
+
+
+def test_transcricao_e_copiada_para_o_blob_storage(cliente, tmp_path, monkeypatch, blob_falso):
+    monkeypatch.setattr(
+        transcription_service, "transcrever_arquivo", lambda audio_path, **kw: RESPOSTA_API
+    )
+
+    resposta = _enviar(cliente)
+
+    assert resposta.status_code == 200
+    pasta = next(tmp_path.glob("transcription-*"))
+    (envio,) = blob_falso.envios
+    assert envio["nome"] == f"api/{pasta.name}/audio.json"
+    assert envio["dados"] == (pasta / "audio.json").read_bytes()
+
+
+def test_falha_no_blob_storage_nao_derruba_a_transcricao(
+    cliente, tmp_path, monkeypatch, blob_falso
+):
+    monkeypatch.setattr(
+        transcription_service, "transcrever_arquivo", lambda audio_path, **kw: RESPOSTA_API
+    )
+    blob_falso.erro = ConnectionError("storage fora do ar")
+
+    resposta = _enviar(cliente)
+
+    assert resposta.status_code == 200
+    assert next(tmp_path.glob("transcription-*/audio.json")).is_file()
 
 
 def test_recorded_at_fora_de_utc_da_422_sem_gravar_o_audio(cliente, tmp_path):

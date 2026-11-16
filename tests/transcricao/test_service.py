@@ -97,6 +97,20 @@ def test_papel_so_e_definido_quando_se_informa_o_medico():
     assert [f["papel"] for f in com_medico["falas"]] == ["medico", "paciente"]
 
 
+def test_gravacao_sem_medico_poe_todas_as_falas_como_do_paciente():
+    from app.transcription_format import SEM_MEDICO
+    from audio.vocal.segmentos import SEM_MEDICO as SEM_MEDICO_VOCAL
+
+    documento = formatar_transcricao(
+        RESPOSTA_API, nome_arquivo="a.wav", sha256="x", tamanho_bytes=1,
+        max_speakers=2, frases_medicas=False, medico_falante=SEM_MEDICO,
+    )
+
+    assert [f["papel"] for f in documento["falas"]] == ["paciente", "paciente"]
+    assert documento["medico_falante"] == 0
+    assert SEM_MEDICO == SEM_MEDICO_VOCAL  # US11 e US12 combinam o mesmo valor
+
+
 def test_grava_json_e_reaproveita_sem_chamar_a_api_de_novo(audio, tmp_path, api_falsa):
     saida = tmp_path / "saida"
 

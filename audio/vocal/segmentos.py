@@ -4,7 +4,8 @@ A transcrição traz as falas diarizadas com ``offset_ms``/``duracao_ms`` e as p
 Como no ``audio.text`` (US13), o JSON com várias vozes e sem ``medico_falante`` é recusado: errar
 quem é o médico mediria a voz dele no lugar da do paciente. A exceção é o áudio de **um só
 falante** (a gravação do próprio paciente, como um áudio de voz do WhatsApp), tratado como
-paciente e marcado como tal.
+paciente e marcado como tal. ``medico_falante=SEM_MEDICO`` (0) diz explicitamente que não há
+médico: toda fala é do paciente, mesmo que a diarização tenha visto mais de uma voz.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from .erros import TranscricaoInvalida
 
 FONTE_TRANSCRICAO = "transcricao"
 FONTE_VAD = "vad"
+SEM_MEDICO = 0  # o mesmo valor de app.transcription_format.SEM_MEDICO (US11)
 
 
 @dataclass(frozen=True)
@@ -86,7 +88,12 @@ def segmentos_da_transcricao(
     falantes = {int(f["falante"]) for _, _, f in ordenadas}
     medico = medico_falante if medico_falante is not None else transcricao.get("medico_falante")
     assumido = False
-    if medico is None:
+    if medico is not None and int(medico) == SEM_MEDICO:
+        # Informado por quem enviou o áudio: não há médico, então nenhuma fala é descartada,
+        # mesmo que a diarização tenha dividido a voz do paciente em mais de um falante.
+        medico = None
+        notas.append("gravação sem médico: todas as falas tratadas como do paciente")
+    elif medico is None:
         if len(falantes) > 1:
             raise TranscricaoInvalida(
                 f"a transcrição tem {len(falantes)} falantes e não informa quem é o médico; "

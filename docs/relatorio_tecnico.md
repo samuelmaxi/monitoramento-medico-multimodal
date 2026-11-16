@@ -30,6 +30,7 @@ achados num contrato único, que alimenta um motor de alertas para a equipe:
 | Tipo de dado | O que se detecta | US |
 | --- | --- | --- |
 | Vídeo (fisioterapia, leito, cirurgia) | postura fora da faixa, assimetria, queda, pessoa ou objeto em área crítica | US05 a US08 |
+| Relatório de vídeo | relatório automático ao final de cada vídeo: desvios com início, fim, tipo, severidade, confiança e quadro de evidência, % do tempo em desvio e versões dos modelos | US09 |
 | Áudio de consulta (texto) | transcrição, termos clínicos críticos, sentimento negativo | US11, US13 |
 | Áudio de voz (acústica) | fadiga vocal, dificuldade respiratória, possível disartria, desvio da baseline vocal, tosse e respiração audível | US10, US12, US14 |
 | Sinais vitais | NEWS2, desvio da baseline do paciente, tendência de piora | US15 |
@@ -59,7 +60,8 @@ O fluxo tem cinco passos:
 3. **Detecção.** Cada detector publica um `EventoAchado` v1
    ([contrato](arquitetura/contrato_eventos.md), JSON Schema em
    `contratos/schema/evento_achado.v1.schema.json`) no `BarramentoLocal`. O barramento valida cada
-   evento e grava em `saida/eventos.jsonl`.
+   evento e grava em `saida/eventos.jsonl`. No vídeo, a US09 fecha a análise de cada vídeo: publica os
+   eventos e gera o relatório (JSON e HTML).
 4. **Fusão** (US18). A `FusaoMultimodal` assina o barramento, alinha os achados de cada paciente
    numa janela de 60 min e publica `risco_multimodal` (seção 3.4).
 5. **Alerta.** O motor da US19 assina o barramento com `severity ≥ baixa`, aplica prioridade,
@@ -69,7 +71,8 @@ O fluxo tem cinco passos:
 Os módulos não se chamam entre si; cada um só publica no contrato. Assim cada US é
 desenvolvida e testada sozinha, e o motor de alertas funciona com qualquer combinação de
 modalidades presentes. Os serviços Azure ficam só onde o desafio pede IA gerenciada (fala e NLP
-clínico) e no armazenamento opcional dos alertas (Cosmos DB). O Terraform do repositório
+clínico), na cópia opcional do JSON das transcrições (Blob Storage) e no armazenamento opcional dos
+alertas (Cosmos DB). O Terraform do repositório
 (`terraform/`) provisiona esses recursos em `eastus`, no nível gratuito, e o código autentica com
 as chaves do `.env`. A arquitetura alvo, em [`arquitetura/README.md`](arquitetura/README.md), muda
 a região para `brazilsouth` e a autenticação para `DefaultAzureCredential` (seção 6). O restante roda
@@ -97,8 +100,11 @@ respiratório, e cada modalidade enxerga uma parte disso. O vídeo, o áudio e a
 achados de demonstração no modo simulado; os sinais vitais são o replay das últimas 6 h de um
 paciente do MIMIC-IV Demo pelo detector real da US15; movimentação, fusão e alertas rodam os
 módulos reais. Cada etapa grava início, fim e duração em `log_execucao.jsonl`, e uma etapa que falha
-fica com `status: falha` sem parar as demais. O mesmo fluxo está em `POST /pipeline/executar`, e
-`modo=real` troca os clientes simulados pelo Azure Speech, pelo Azure AI Language e pelo YOLOv8.
+fica com `status: falha` sem parar as demais. O mesmo fluxo está em `POST /pipeline/executar`. Com
+`modo=real`, o pipeline usa só as entradas enviadas: o áudio passa pelo Azure Speech, pelo Azure AI
+Language e pelos biomarcadores vocais; o vídeo, pelo YOLOv8, pela movimentação da US17 e pelo relatório
+da US09. Uma etapa sem entrada do paciente fica ausente, em vez de usar um achado de demonstração, e
+por isso sinais vitais e prescrições são sempre ausentes nesse modo.
 O resultado medido está na seção 4 e o risco calculado, na seção 5.7.
 
 ## 3. Modelos por tipo de dado
@@ -142,6 +148,24 @@ de 1 s por padrão:
 Os perfis de exercício comparam com a referência da própria sessão porque ângulos 2D mudam com a
 pessoa e com a câmera. Um alvo absoluto de 130° na abdução separava as repetições corretas num
 paciente e as invertia no seguinte.
+
+**Relatório automático de desvios (US09).** Ao final da análise de cada vídeo,
+`python -m video.relatorio.run` reaproveita a US08 (sem refazer a análise), publica os eventos no
+barramento (os desvios de severidade **alta** chegam ao motor de alertas da US19) e grava o relatório
+em **JSON e HTML**. O HTML é um arquivo único, sem script nem recurso externo, com os quadros de
+evidência embutidos; o PDF sai pela impressão do navegador. Detalhes no
+[relatório US09](relatorio_us09_dod.md); critérios de apresentação em `config/us09_relatorio.yaml`
+(versão **1.0.0**).
+
+| Item | Valor | Justificativa |
+| --- | --- | --- |
+| Identificação | só o `source_id` e o SHA-256 do arquivo: sem nome de arquivo, caminho, paciente nem leito. Uma varredura troca CPF, e-mail e caminhos por marcador | O DoD pede identificação sem dados pessoais (LGPD) |
+| Confiança de cada desvio | regras de pose: média da confiança dos keypoints da medida nos quadros do trecho, com a % de quadros em que a medida estava completa. Área crítica: confiança da detecção do YOLOv8 (média da entrada e da saída). Abaixo de **0,5**, ou medida em menos de **50%** dos quadros, vira "baixa confiança" `[EXP]` | O `score` do evento mede a intensidade do desvio, não a certeza de que ele existe |
+| % do tempo em desvio | une os trechos que se sobrepõem e corta na duração do vídeo | Somar contaria o mesmo instante duas vezes: no caso sintético da validação, a soma dava 111,7% do vídeo e a união, 83,3% |
+| Modelos e limiares | OpenPose (modelo, pesos, versão do módulo), YOLOv8 (descrição e versão, lidas dos eventos da US07), versão da configuração e perfil inteiro de limiares da US08 | Um relatório antigo diz com que versões foi gerado |
+| Vídeo sem desvios | "Sem desvios detectados". Com análise pouco confiável (pessoa pouco vista, sem pose), a mensagem avisa que a ausência de desvios **não é conclusiva** | Nunca um relatório vazio, e nunca "normal" sobre o que não foi visto |
+| Alertas | todos os eventos do vídeo vão ao barramento e o motor decide pela severidade. Falha na publicação não impede o relatório: fica registrada nele e a CLI sai com 2 | O relatório sai mesmo com o barramento ou o motor fora do ar |
+| Na API | pelo pipeline da US20 (`modo=real` com vídeo): a etapa `relatorio_video` aplica o perfil `internacao_leito` aos eventos de área do YOLOv8 e o relatório sai em `GET /pipeline/execucoes/{id}/relatorio-video` (JSON e HTML) | O job de áreas apaga o vídeo enviado ao terminar, e sem vídeo não há quadro de evidência. O pipeline não roda o OpenPose, então ali só valem as regras de área crítica |
 
 ### 3.2 Áudio
 
@@ -289,6 +313,9 @@ a própria linha da tabela registra.
 | US07 | mAP@0.5 por classe médica após fine-tuning | ≥ 0,50 | não medido | ✘ | Sem rótulos clínicos no repositório. O gate (`scripts/dataset_us07.py treinar`) está pronto |
 | US08 | Precision por evento (teste) | ≥ 0,70 | **0,71** | ✔ | 35 eventos, `scripts/avaliar_us08.py` |
 | US08 | Recall por evento (teste) | ≥ 0,80 | **0,52** | ✘ | Queda só por pose tem recall 0,23 no FallVision. Abdução e agachamento ficam em 0,64 |
+| US09 | Relatório automático por vídeo (JSON e HTML) com os 6 itens do DoD | 6 de 6 | **6 de 6** (52 testes; notebook de validação com 8 verificações, 8 atendidas) | ✔ | Pose, eventos e vídeo **sintéticos**: os JSONs de pose da US06 não são versionados. `docs/relatorio_us09_dod.md`, `notebooks/validacao_us09.ipynb` |
+| US09 | Vídeo sem desvios gera "sem desvios detectados" | sim | 3 casos sintéticos (análise confiável, pouco confiável, pessoa nunca vista) e 3 arquivos reais de eventos da US07 | ✔ | Os 3 reais saem "pouco confiáveis": sem pose, a postura não foi avaliada |
+| US09 | Desvio de severidade alta chega ao motor de alertas (US19) | sim | queda sintética vira alerta de prioridade alta (motor real, canais falsos) | ✔ | Envio real por e-mail ou webhook não foi testado (sem canal configurado) |
 | US11 | WER (Azure Speech, 10 áudios, 162 palavras) | ≤ 20% | **10,5%** (médio por áudio 14,4%) | ✔ | `en-IN`, sem *phrase list*. Um áudio de 5 palavras teve 80%. `saida/transcricao/avaliacao/en-IN_sem_frases/relatorio_wer.md` |
 | US13 | Precision / Recall / F1 de termos críticos (15 consultas) | sem meta fixa | **0,842** / **0,941** / **0,889** | n/a | VP 16 · FP 3 · FN 1. 37 entidades descartadas pelo filtro de asserção. `outputs/text_analysis/eval.md` |
 | US10 | Conversão para WAV PCM 16 kHz mono; arquivo ruim não para o lote; original preservado | todos | atendido: cada conversão é relida e validada; erro por arquivo em log e em `metadados.csv`; sha256 do original inalterado | ✔ | `tests/audio/test_ingestao_*.py` |
@@ -305,7 +332,7 @@ a própria linha da tabela registra.
 | US17 | Recall nos casos injetados no MIMIC | n/a | queda 1,00 · saída noturna 1,00 · imobilidade 1,00 · agitação 0,988 · redução 0,822 | n/a | Verifica a lógica, não a percepção |
 | US18 | Caso de demonstração (SpO2 em queda + fala com dispneia) | combinado > maior isolado | **0,82** (alto) contra 0,42 / 0,41 / 0,35 isolados | ✔ | `scripts/demo_us18.py` |
 | US18 | Testes de alinhamento, score, configuração, API e integração com a US19 | n/a | 100 testes | ✔ | `tests/fusao/`; inclui os 15 pares de modalidades e a modalidade ausente |
-| US20 | Fluxo ponta a ponta em um comando | sem falha | 7 de 7 etapas, risco **0,92** (alto), 16 achados, 10 alertas, **738 ms** | ✔ | `scripts/rodar_demo.py --rapido`, MIMIC-IV Demo nos sinais vitais |
+| US20 | Fluxo ponta a ponta em um comando | sem falha | 8 de 8 etapas, risco **0,92** (alto), 16 achados, 10 alertas, **650 ms** | ✔ | `scripts/rodar_demo.py --rapido`, MIMIC-IV Demo nos sinais vitais |
 | US19 | Latência ingestão → envio, p95, canal local | ≤ 10 s | **0,004 s** (p50 0,002 · máx 0,026) | ✔ | 100 achados, webhook HTTP local: mede só o overhead do motor |
 | US19 | Latência ingestão → envio, p95, **e-mail SMTP real** | ≤ 10 s | **54,97 s** (p50 34,99 · máx 54,97) | ✘ | 10 achados simultâneos, 9 enviados. `saida/latencia_us19_smtp.json` |
 
@@ -318,6 +345,11 @@ a própria linha da tabela registra.
   FallVision a pessoa aparece em menos de 50% dos quadros, ou o clipe acaba logo após o impacto.
   Na abdução, uma referência contaminada (PM_039 começa com repetição incorreta) derruba o recall.
   A US17 mostrou a correção: com a descida da caixa do YOLOv8, o recall de queda vai a 0,875.
+- **US09, sem desvio de pose real.** A confiança, o % do tempo e o HTML foram verificados com pose e
+  eventos **sintéticos** e com eventos reais da US07 sem pose, porque os JSONs de pose da US06 não são
+  versionados e os vídeos do dataset não estão no repositório. Falta gerar o relatório sobre um desvio
+  de pose real (por exemplo, a queda de `B_N_03` da US08). Os limiares de confiança (0,5 e 50% de
+  cobertura) são experimentais.
 - **US11, WER medido em inglês indiano.** O DoD cita pt-BR, mas não há dataset de referência em
   português, então o WER usa o Eka Medical ASR (`en-IN`). Esse desvio fica registrado. A amostra é
   pequena (162 palavras): o áudio de 5 palavras com 80% de erro pesa no WER médio por áudio
@@ -479,6 +511,38 @@ nas seis modalidades. A maior força isolada foi a do texto (0,53, médio); a fu
 As contribuições somam o score, e `related_event_ids` aponta os achados usados. No caso menor do
 relatório US18 (sinais vitais, texto e áudio), os isolados de 0,42, 0,41 e 0,35 combinam em 0,82.
 
+### 5.8 Vídeo: relatório automático de uma queda e de uma presença na borda do leito (US09)
+
+> **Exemplo sintético.** A pose e os eventos de área foram gerados no notebook de validação
+> ([`notebooks/validacao_us09.ipynb`](../notebooks/validacao_us09.ipynb)): uma pessoa em pé até 4 s,
+> que cai e fica no chão até os 12 s, e uma detecção na borda do leito de 2,0 s a 6,5 s. Não é um
+> desvio de pose real.
+
+![Relatório HTML da US09](evidencias/us09/relatorio_com_desvios.png)
+
+Trecho do JSON (`<fonte>_relatorio_desvios.json`):
+
+```json
+{"video": {"id": "sintetico", "tipo_procedimento": "leito", "perfil": "internacao_leito", "duracao_s": 12.0},
+ "resumo": {"status": "desvios_detectados", "total_desvios": 2,
+            "por_severidade": {"alta": 1, "media": 1, "baixa": 0}, "pct_tempo_em_desvio": 83.33},
+ "desvios": [
+   {"tipo": "mudanca_brusca_ou_queda", "severidade": "alta", "inicio_s": 3.1, "fim_s": 12.0,
+    "confianca": 0.9, "evidencia": {"frame_index": 43}},
+   {"tipo": "presenca_indevida_area_critica", "severidade": "media", "inicio_s": 2.0, "fim_s": 6.5,
+    "confianca": 0.71, "evidencia": {"frame_index": 20}}],
+ "modelos": {"openpose": {"modelo": "BODY_25", "versao_modulo_pose": "0.1.0"},
+             "yolov8": {"descricao": "yolov8n@8.4.173"}},
+ "limiares": {"versao": "1.2.0"},
+ "alertas": {"desvios_severidade_alta": 1, "falhas": []}}
+```
+
+Os dois desvios acontecem ao mesmo tempo, então o % do tempo em desvio une os trechos (83,3%) em vez
+de somá-los (111,7%). O desvio de queda vai de 3,1 s até o fim do vídeo porque a US08 o mantém aberto
+enquanto a pessoa permanece no chão: por isso a queda sozinha responde por 74,2% do vídeo. A confiança
+de 0,90 vem dos keypoints do tronco; a de 0,71 é a média das detecções do YOLOv8 na entrada (0,80) e
+na saída (0,62) da área.
+
 ## 6. Datasets, licenças e LGPD
 
 ### Datasets
@@ -512,9 +576,10 @@ Dados de saúde são dados pessoais sensíveis (LGPD, art. 5º, II). As medidas:
 | --- | --- |
 | Pseudonimização na borda (art. 13 §4º) | `patient_id` e `encounter_id` viram `pt_<24 hex>` por HMAC-SHA256 com `PSEUDONYM_KEY` (≥ 32 bytes, só no `.env`), em `contratos/pseudonimizacao.py`. É determinístico para a fusão cruzar modalidades e irreversível sem a chave. Nenhum `subject_id` cru aparece no evento (testado) |
 | Anonimização de imagem | rostos tarjados antes de qualquer gravação (YuNet). Nos quadros de evidência, a cabeça é tarjada pelos keypoints do rosto |
-| Voz (US10, US12, US14) | `patient_id` pseudonimizado antes de qualquer cálculo; a baseline vocal é indexada só pelo pseudônimo e a transcrição é gravada com ele. Praat, YAMNet e regras rodam localmente; só a transcrição opcional envia áudio ao Azure. Metadados com `origem` e `licenca` e o nome do arquivo, nunca o caminho absoluto. `audio_id` validado, porque vira nome de pasta |
+| Relatório de vídeo (US09) | identifica o vídeo só pelo `source_id` e pelo SHA-256: nunca o nome do arquivo, o caminho, o paciente nem o leito (o pseudônimo fica nos eventos e nos alertas). Uma varredura troca CPF, e-mail e caminhos por marcador, e os quadros de evidência saem com a cabeça tarjada. Ressalva: um `source_id` tirado do nome do arquivo pode conter um nome de pessoa, que a varredura não reconhece; use `--source-id` neutro |
+| Voz (US10, US12, US14) | `patient_id` pseudonimizado antes de qualquer cálculo; a baseline vocal é indexada só pelo pseudônimo e a transcrição é gravada com ele. Praat, YAMNet e regras rodam localmente; só a transcrição opcional envia áudio ao Azure, e só o JSON dela (com o pseudônimo) pode ir ao Blob Storage. Metadados com `origem` e `licenca` e o nome do arquivo, nunca o caminho absoluto. `audio_id` validado, porque vira nome de pasta |
 | Minimização | só as falas do paciente vão ao NLP. Evidência por referência: o evento guarda o caminho, não o conteúdo. Alertas não trazem nome |
-| Localização dos dados (art. 33) | Hoje os recursos de Speech, Language e Cosmos DB estão em `eastus` (Terraform do repositório), então o áudio e o texto do paciente saem do país: com dados reais isso exigiria a análise de transferência internacional. A arquitetura alvo usa `brazilsouth`, onde todos esses serviços existem. A transcrição rápida não guarda o áudio em armazenamento na nuvem |
+| Localização dos dados (art. 33) | Hoje os recursos de Speech, Language e Cosmos DB estão em `eastus` (Terraform do repositório), então o áudio e o texto do paciente saem do país: com dados reais isso exigiria a análise de transferência internacional. A arquitetura alvo usa `brazilsouth`, onde todos esses serviços existem. A transcrição rápida não guarda o áudio na nuvem. Quando `AZURE_STORAGE_CONNECTION_STRING` está configurada, a API e o pipeline copiam só o JSON da transcrição, já com o paciente pseudonimizado, para o Blob Storage, com nome de blob gerado (nunca o nome do arquivo enviado) e exclusão automática após 30 dias (`blob_retention_days`) |
 | Segredos | sem chave no Git: o código lê as chaves do `.env`, que fica fora do controle de versão. A arquitetura alvo troca as chaves por `DefaultAzureCredential` com função RBAC mínima ([`azure-funcao-minima.json`](arquitetura/azure-funcao-minima.json)); em produção, a chave HMAC iria para o Key Vault |
 | Base dos dados | só dados públicos e desidentificados na origem (MIMIC) ou simulados. MIMIC desloca as datas para o futuro |
 | Auditoria | barramento e alertas em JSONL append-only, com reconhecimento por token HMAC |
@@ -549,6 +614,11 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
   corrige. O módulo não faz supressão de ruído, e ruído de fundo reduz o HNR. O YAMNet não foi medido
   em tosse ou respiração reais. Sem transcrição não há taxa de fala. Ver as
   [limitações no Apêndice A.15](#a15-limitações-e-trabalhos-futuros-do-áudio).
+- **Relatório de vídeo (US09).** A confiança por desvio e seus limiares (0,5 e 50% de cobertura) são
+  experimentais, sem calibração com vídeos rotulados. O desvio de queda dura até a pessoa deixar de estar
+  no chão, então o "% do tempo em desvio" de uma queda mede a permanência, não a duração do evento. Na
+  API o relatório só sai pelo pipeline da US20, e ali só com as regras de área crítica (sem OpenPose). Não
+  há PDF gerado direto (imprime-se o HTML). Herda as limitações de detecção da US08.
 - **Prescrições.** O MIMIC registra ordens, não administrações. Sem peso nem indicação, toda mudança
   grande de dose é anomalia, mesmo quando é a conduta certa. O princípio ativo vem de vocabulário
   próprio, não do RxNorm.
@@ -592,6 +662,9 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
    envio concorrente por canal no `Despachante`, para p95 ≤ 10 s também em rajadas.
 8. **Validação clínica** dos limiares e prioridades com a equipe, e estudo retrospectivo com
    eventos reais rotulados.
+9. **Relatório de vídeo (US09):** gerar o relatório sobre desvios de pose reais (rodando a US06 de
+   novo nos vídeos do dataset), calibrar os limiares de confiança com vídeos rotulados, levar o
+   OpenPose ao pipeline e gerar PDF direto.
 
 ## 8. Referências
 

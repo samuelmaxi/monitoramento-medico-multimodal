@@ -15,6 +15,10 @@ from datetime import datetime, timedelta, timezone
 from contratos.evento import PADRAO_ID_CURTO
 
 SCHEMA_VERSION = "1.1"
+# Valor de `medico_falante` para gravação sem médico (só o paciente fala, ex.: áudio de voz
+# enviado pelo paciente). A diarização numera os falantes a partir de 1, mas o papel não
+# depende disso: com SEM_MEDICO toda fala vira "paciente".
+SEM_MEDICO = 0
 
 
 def validar_metadados(audio_id: str | None, recorded_at: str | None) -> str | None:
@@ -55,7 +59,8 @@ def formatar_transcricao(
 
     `medico_falante` é o número do falante (diarização) que é o médico. Quando
     informado, os demais falantes viram "paciente". Sem ele, `papel` fica nulo,
-    porque a diarização separa falantes mas não diz quem é quem.
+    porque a diarização separa falantes mas não diz quem é quem. `SEM_MEDICO` (0)
+    diz que não há médico na gravação: toda fala é do paciente.
 
     `recorded_at` é o início da gravação; somado ao `offset_ms` de cada fala dá
     o instante UTC dela.
@@ -102,4 +107,6 @@ def _formatar_fala(frase: dict, medico_falante: int | None) -> dict:
 def _papel(falante: int | None, medico_falante: int | None) -> str | None:
     if falante is None or medico_falante is None:
         return None
+    if medico_falante == SEM_MEDICO:
+        return "paciente"
     return "medico" if falante == medico_falante else "paciente"

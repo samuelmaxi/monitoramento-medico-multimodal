@@ -53,22 +53,173 @@ def test_audio_invalido_cai_no_achado_de_demonstracao_e_registra_o_motivo(tmp_pa
     assert "falhou" in etapa["detalhes"]["biomarcadores_vocais"]
 
 
-def test_achados_de_demonstracao_sao_sinteticos_mesmo_no_modo_real(tmp_path, monkeypatch):
-    """Sem áudio/vídeo reais, os achados de fallback não podem passar por medições reais."""
-    # Sem YOLO: o vídeo de exemplo (conteudos/) só existe em quem baixou os conteúdos.
-    monkeypatch.setattr("pipeline.etapas.video.VIDEO_PADRAO", tmp_path / "nao_existe.mp4")
+def _eventos(resumo) -> list[dict]:
+    if not resumo.caminho_eventos.is_file():  # nada publicado: o barramento não cria o arquivo
+        return []
+    return [json.loads(x) for x in resumo.caminho_eventos.read_text(encoding="utf-8").splitlines()]
+
+
+def _speech_falso(monkeypatch, falas):
+    """Azure Speech falso: a diarização devolve ``falas`` = [(falante, texto, offset_ms, duracao_ms)]."""
+    from app import transcription_service
+
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "chave-falsa")
+    monkeypatch.setenv("AZURE_SPEECH_ENDPOINT", "https://falso.cognitiveservices.azure.com")
+    resposta = {
+        "durationMilliseconds": 4000,
+        "phrases": [
+            {"speaker": falante, "text": texto, "offsetMilliseconds": inicio,
+             "durationMilliseconds": duracao, "confidence": 0.9, "locale": "pt-BR",
+             "words": [{"text": p, "offsetMilliseconds": inicio, "durationMilliseconds": 200}
+                       for p in texto.split()]}
+            for falante, texto, inicio, duracao in falas
+        ],
+    }
+    monkeypatch.setattr(transcription_service, "transcrever_arquivo", lambda *a, **k: resposta)
+
+
+def _language_falso(monkeypatch):
+    """Azure AI Language "real" com o SDK de demonstração por baixo (sem rede)."""
+    from audio.text.language_client import LanguageClient
+    from pipeline.simulacao_azure import LanguageSdkSimulado
+
+    monkeypatch.setenv("AZURE_LANGUAGE_KEY", "chave-falsa")
+    monkeypatch.setenv("AZURE_LANGUAGE_ENDPOINT", "https://falso.cognitiveservices.azure.com")
+    monkeypatch.setattr(
+        LanguageClient, "from_env", classmethod(lambda cls, cfg: cls(LanguageSdkSimulado(), cfg))
+    )
+
+
+def _audio_do_paciente(tmp_path):
+    t = np.arange(16000 * 4) / 16000
+    wav = tmp_path / "paciente.wav"
+    sf.write(str(wav), (0.4 * np.sin(2 * np.pi * 180 * t)).astype(np.float32), 16000)
+    return wav
+
+
+FALAS_SO_PACIENTE = [
+    (1, "Estou com muita falta de ar desde ontem", 0, 1800),
+    (1, "e um aperto no peito quando respiro", 2000, 1800),
+]
+
+
+def test_modo_real_sem_entradas_nao_publica_nenhum_achado(tmp_path):
+    """Nada enviado, nada inventado: as modalidades ficam ausentes, não viram demonstração."""
+    cfg = ConfigPipeline.from_env(modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida")
+    resumo = OrquestradorPipeline(cfg).executar()
+    relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
+
+    assert [e["etapa"] for e in relatorio["etapas"]] == ["fusao", "alertas"]
+    assert set(resumo.etapas_ausentes) == {
+        "video", "relatorio_video", "audio", "sinais_vitais", "prescricoes", "movimentacao"
+    }
+    assert all(a["motivo"] for a in relatorio["etapas_ausentes"])
+    assert _eventos(resumo) == []
+    assert resumo.risco is None and resumo.nivel_risco_final == "indisponivel"
+    assert resumo.etapas_com_falha == ()
+
+
+def test_modo_real_so_com_audio_nao_tem_achado_sintetico(tmp_path, monkeypatch):
+    _speech_falso(monkeypatch, FALAS_SO_PACIENTE)
+    _language_falso(monkeypatch)
     cfg = ConfigPipeline.from_env(
-        modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida", sinais_fonte="sintetico"
+        modo="real", fator_velocidade=0.0, saida_dir=tmp_path / "saida",
+        audio_path=_audio_do_paciente(tmp_path), medico_falante=0,
     )
     resumo = OrquestradorPipeline(cfg).executar()
-    eventos = [json.loads(x) for x in resumo.caminho_eventos.read_text(encoding="utf-8").splitlines()]
-    demo = [
-        e for e in eventos
-        if (e["modality"], e["event_type"])
-        in {("audio", "dificuldade_respiratoria"), ("video", "entrada_area_critica")}
-    ]
-    assert {(e["modality"], e["event_type"]) for e in demo} == {
-        ("audio", "dificuldade_respiratoria"),
-        ("video", "entrada_area_critica"),
+    relatorio = json.loads(resumo.caminho_relatorio.read_text(encoding="utf-8"))
+
+    assert [e["etapa"] for e in relatorio["etapas"]] == ["audio", "fusao", "alertas"]
+    eventos = _eventos(resumo)
+    assert eventos and not any(e["is_synthetic"] for e in eventos)
+    assert {e["modality"] for e in eventos} <= {"audio", "texto", "fusao"}
+    assert {m.value for m in resumo.risco.ausentes} >= {
+        "video", "sinais_vitais", "prescricoes", "movimentacao"
     }
-    assert all(e["is_synthetic"] for e in demo)
+
+
+def test_gravacao_so_do_paciente_com_medico_falante_0_analisa_as_falas(tmp_path, monkeypatch):
+    _speech_falso(monkeypatch, FALAS_SO_PACIENTE)
+    _language_falso(monkeypatch)
+
+    resumo, etapa = _executar(
+        tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path), medico_falante=0
+    )
+
+    detalhes = etapa["detalhes"]
+    assert detalhes["servico_speech"] == "Azure AI Speech (transcrição rápida, real)"
+    assert detalhes["servico_language"] == "Azure AI Language (real)"
+    assert detalhes["medico_falante"] == "nenhum (gravação só do paciente)"
+    assert detalhes["falantes_diarizacao"] == 1
+    assert detalhes["falas_do_paciente"] == 2
+    assert detalhes["biomarcadores_vocais"].startswith("audio.vocal")
+    assert any(e["event_type"] == "termo_critico" and not e["is_synthetic"] for e in _eventos(resumo))
+    assert detalhes["armazenamento_transcricao"].startswith("desligado")  # sem connection string
+
+
+def test_transcricao_do_pipeline_e_copiada_para_o_blob_storage(tmp_path, monkeypatch, blob_falso):
+    _speech_falso(monkeypatch, FALAS_SO_PACIENTE)
+    _language_falso(monkeypatch)
+
+    _, etapa = _executar(
+        tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path), medico_falante=0
+    )
+
+    # Nome fixo: o do arquivo enviado (paciente.wav) não vai para a nuvem.
+    assert etapa["detalhes"]["armazenamento_transcricao"] == (
+        "enviado: audio-transcripts/pipeline/saida/consulta.json"
+    )
+    (envio,) = blob_falso.envios
+    gravado = tmp_path / "saida" / "transcricao" / "paciente.json"
+    assert envio["dados"] == gravado.read_bytes()
+
+
+def test_falha_no_blob_storage_nao_derruba_a_etapa_de_audio(tmp_path, monkeypatch, blob_falso):
+    _speech_falso(monkeypatch, FALAS_SO_PACIENTE)
+    _language_falso(monkeypatch)
+    blob_falso.erro = ConnectionError("storage fora do ar")
+
+    _, etapa = _executar(
+        tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path), medico_falante=0
+    )
+
+    assert etapa["status"] == "sucesso"
+    assert etapa["detalhes"]["armazenamento_transcricao"].startswith("falhou: ConnectionError")
+    assert etapa["detalhes"]["falas_do_paciente"] == 2
+
+
+def test_gravacao_so_do_paciente_com_medico_falante_1_falha_sem_inventar_achado(
+    tmp_path, monkeypatch
+):
+    """O caso que motivou o 0: a única voz vira "médico" e não sobra fala do paciente."""
+    _speech_falso(monkeypatch, FALAS_SO_PACIENTE)
+    _language_falso(monkeypatch)
+
+    resumo, etapa = _executar(tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path))
+
+    assert etapa["detalhes"]["falas_do_paciente"] == 0
+    assert "falhou" in etapa["detalhes"]["biomarcadores_vocais"]
+    assert "sintético" not in etapa["detalhes"]["biomarcadores_vocais"]
+    assert not any(e["is_synthetic"] for e in _eventos(resumo))
+
+
+def test_modo_real_sem_chaves_do_speech_mede_a_voz_e_diz_o_que_nao_rodou(tmp_path):
+    resumo, etapa = _executar(
+        tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path), medico_falante=0
+    )
+
+    detalhes = etapa["detalhes"]
+    assert etapa["status"] == "sucesso"
+    assert detalhes["servico_speech"].startswith("não usado")
+    assert "servico_language" not in detalhes  # sem transcrição, o texto nem é tentado
+    assert detalhes["biomarcadores_vocais"].startswith("audio.vocal")  # VAD: só o paciente fala
+    assert not any(e["is_synthetic"] for e in _eventos(resumo))
+
+
+def test_modo_real_sem_transcricao_e_com_medico_nao_mede_a_voz(tmp_path):
+    """Sem diarização, a voz do médico seria medida como a do paciente: a etapa falha."""
+    _, etapa = _executar(tmp_path, modo="real", audio_path=_audio_do_paciente(tmp_path))
+
+    assert etapa["status"] == "falha"
+    assert etapa["detalhes"]["biomarcadores_vocais"].startswith("não analisado")
+    assert etapa["eventos_emitidos"] == 0

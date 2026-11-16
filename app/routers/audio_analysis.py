@@ -42,7 +42,8 @@ def analyze_audio(
     recorded_at = validar_metadados_form(audio_id, recorded_at)
     verificar_disponibilidade()
     try:
-        patient_pseudonym(patient_id)
+        # O JSON da transcrição (disco e Blob Storage) já sai com o pseudônimo.
+        patient_id = patient_pseudonym(patient_id)
     except ChavePseudonimizacaoAusente as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

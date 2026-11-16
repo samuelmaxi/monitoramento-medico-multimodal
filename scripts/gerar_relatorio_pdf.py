@@ -67,7 +67,7 @@ def corpo_html(md: str) -> tuple[str, str]:
     html = html.replace("<table>\n<thead>\n<tr>\n<th>US</th>", '<table class="resultados">\n<thead>\n<tr>\n<th>US</th>', 1)
     html = re.sub(
         r'<p><img src="(evidencias/[^"]+)" alt="([^"]*)" /></p>',
-        r'<figure><img src="\1" alt="\2"><figcaption>\2. Quadro de evidência anonimizado.</figcaption></figure>',
+        r'<figure><img src="\1" alt="\2"><figcaption>\2.</figcaption></figure>',
         html,
     )
     return titulo.lstrip("# ").strip(), html
