@@ -20,6 +20,7 @@ do repositório.
 6. [Datasets, licenças e LGPD](#6-datasets-licenças-e-lgpd)
 7. [Limitações e trabalhos futuros](#7-limitações-e-trabalhos-futuros)
 8. [Referências](#8-referências)
+9. [Apêndice A. Módulo de áudio vocal](#apêndice-a-módulo-de-áudio-vocal-us10-us12-us14)
 
 ## 1. Escopo
 
@@ -35,7 +36,9 @@ achados num contrato único, que alimenta um motor de alertas para a equipe:
 | Sinais vitais | NEWS2, desvio da baseline do paciente, tendência de piora | US15 |
 | Prescrições | mudança abrupta de dose, duplicidade, suspensão abrupta, alta vigilância | US16 |
 | Movimentação na internação | imobilidade > 2 h, saída do leito à noite, queda, agitação ou redução de mobilidade | US17 |
+| Fusão multimodal | risco por paciente (0 a 1, baixo/médio/alto) com a contribuição de cada modalidade | US18 |
 | Alertas | prioridade, deduplicação, escalonamento, entrega e auditoria | US19 |
+| Orquestração | um comando (ou `POST /pipeline/executar`) roda todas as modalidades, a fusão e os alertas | US20 |
 
 ## 2. Fluxo multimodal (US04)
 
@@ -59,7 +62,8 @@ O fluxo tem cinco passos:
    `contratos/schema/evento_achado.v1.schema.json`) no `BarramentoLocal`. O barramento valida cada
    evento e grava em `saida/eventos.jsonl`. No vídeo, a US09 fecha a análise de cada vídeo: publica os
    eventos e gera o relatório (JSON e HTML).
-4. **Fusão** (US18, *late fusion* por paciente). Foi planejada e não está implementada (seção 7).
+4. **Fusão** (US18). A `FusaoMultimodal` assina o barramento, alinha os achados de cada paciente
+   numa janela de 60 min e publica `risco_multimodal` (seção 3.4).
 5. **Alerta.** O motor da US19 assina o barramento com `severity ≥ baixa`, aplica prioridade,
    deduplicação e escalonamento e envia por e-mail (SMTP) ou webhook (Teams/Slack). Grava log
    auditável em JSONL ou Azure Cosmos DB.
@@ -67,7 +71,11 @@ O fluxo tem cinco passos:
 Os módulos não se chamam entre si; cada um só publica no contrato. Assim cada US é
 desenvolvida e testada sozinha, e o motor de alertas funciona com qualquer combinação de
 modalidades presentes. Os serviços Azure ficam só onde o desafio pede IA gerenciada (fala e NLP
-clínico). Rodam em `brazilsouth`, então áudio e texto clínico não saem do país. O restante roda
+clínico), na cópia opcional do JSON das transcrições (Blob Storage) e no armazenamento opcional dos
+alertas (Cosmos DB). O Terraform do repositório
+(`terraform/`) provisiona esses recursos em `eastus`, no nível gratuito, e o código autentica com
+as chaves do `.env`. A arquitetura alvo, em [`arquitetura/README.md`](arquitetura/README.md), muda
+a região para `brazilsouth` e a autenticação para `DefaultAzureCredential` (seção 6). O restante roda
 local, com custo próximo de zero (≈ US$ 0,30 a 2 por rodada completa, com cache obrigatório das
 respostas Azure em `saida/cache_azure/`).
 
@@ -76,6 +84,28 @@ Cada evento carrega `patient_id` pseudonimizado, `modality`, `event_type`, `time
 em português, `features` (valores observados), `thresholds` (limiares aplicados, com a versão) e
 `artifacts` (quadro, trecho de áudio ou transcrição, por referência). Com isso, quem recebe o
 alerta vê o valor que disparou a regra e a versão do limiar usado.
+
+A visão da implantação na Azure está em [`arquitetura/diagrama_azure.html`](arquitetura/diagrama_azure.html).
+
+### Execução ponta a ponta (US20)
+
+Um comando roda o fluxo inteiro, de cada modalidade até o alerta:
+
+```bash
+uv run python scripts/rodar_demo.py --rapido      # sem espera; sem --rapido o replay é animado (30x)
+```
+
+O cenário é o do vídeo de demonstração: o paciente do leito UTI-07 piora do ponto de vista
+respiratório, e cada modalidade enxerga uma parte disso. O vídeo, o áudio e as prescrições usam
+achados de demonstração no modo simulado; os sinais vitais são o replay das últimas 6 h de um
+paciente do MIMIC-IV Demo pelo detector real da US15; movimentação, fusão e alertas rodam os
+módulos reais. Cada etapa grava início, fim e duração em `log_execucao.jsonl`, e uma etapa que falha
+fica com `status: falha` sem parar as demais. O mesmo fluxo está em `POST /pipeline/executar`. Com
+`modo=real`, o pipeline usa só as entradas enviadas: o áudio passa pelo Azure Speech, pelo Azure AI
+Language e pelos biomarcadores vocais; o vídeo, pelo YOLOv8, pela movimentação da US17 e pelo relatório
+da US09. Uma etapa sem entrada do paciente fica ausente, em vez de usar um achado de demonstração, e
+por isso sinais vitais e prescrições são sempre ausentes nesse modo.
+O resultado medido está na seção 4 e o risco calculado, na seção 5.7.
 
 ## 3. Modelos por tipo de dado
 
@@ -135,6 +165,7 @@ evidência embutidos; o PDF sai pela impressão do navegador. Detalhes no
 | Modelos e limiares | OpenPose (modelo, pesos, versão do módulo), YOLOv8 (descrição e versão, lidas dos eventos da US07), versão da configuração e perfil inteiro de limiares da US08 | Um relatório antigo diz com que versões foi gerado |
 | Vídeo sem desvios | "Sem desvios detectados". Com análise pouco confiável (pessoa pouco vista, sem pose), a mensagem avisa que a ausência de desvios **não é conclusiva** | Nunca um relatório vazio, e nunca "normal" sobre o que não foi visto |
 | Alertas | todos os eventos do vídeo vão ao barramento e o motor decide pela severidade. Falha na publicação não impede o relatório: fica registrada nele e a CLI sai com 2 | O relatório sai mesmo com o barramento ou o motor fora do ar |
+| Na API | pelo pipeline da US20 (`modo=real` com vídeo): a etapa `relatorio_video` aplica o perfil `internacao_leito` aos eventos de área do YOLOv8 e o relatório sai em `GET /pipeline/execucoes/{id}/relatorio-video` (JSON e HTML) | O job de áreas apaga o vídeo enviado ao terminar, e sem vídeo não há quadro de evidência. O pipeline não roda o OpenPose, então ali só valem as regras de área crítica |
 
 ### 3.2 Áudio
 
@@ -159,7 +190,7 @@ enviadas (a pergunta do médico não gera achado). Detalhes no [README](../READM
 
 **Ingestão, biomarcadores vocais e classificação (US10, US12, US14).** Rodam todos localmente, sem
 Azure: a transcrição só entra como entrada *opcional*, para separar médico e paciente e contar
-palavras. Desenho completo no [relatório técnico de áudio](relatorio_tecnico_audio.md) e nos
+palavras. Desenho completo no [Apêndice A](#apêndice-a-módulo-de-áudio-vocal-us10-us12-us14) e nos
 relatórios [US10](relatorio_us10_dod.md), [US12](relatorio_us12_dod.md) e
 [US14](relatorio_us14_dod.md). Os limiares ficam em `audio/vocal/config.yaml`, cada um marcado
 `[MDVP]` (normalidade do MDVP, citada na US12), `[PRAAT]` (padrão do Praat) ou `[EXP]`
@@ -228,7 +259,32 @@ US07, caixa do YOLOv8) e registro de enfermagem do MIMIC-IV (`Position`, `Turn`,
 | `queda` | sempre alta. Pelo vídeo: centro da caixa `person` desce ≥ **0,065** da altura do quadro em ≤ 1,5 s e fica embaixo 0,5 s |
 | `agitacao_subita` / `reducao_mobilidade` | taxa de 6 h ≥ 2× ou ≤ 0,5× a baseline de 24 h do paciente (mínimo 12 h e 3 eventos de histórico) |
 
-### 3.4 Motor de alertas (US19)
+### 3.4 Fusão multimodal (US18)
+
+Detalhes no [relatório US18](relatorio_us18_dod.md); parâmetros em `config/us18_fusao.yaml`.
+A fusão é *late fusion* com regras ponderadas: combina as **decisões** de cada detector, não os
+dados brutos. Um modelo aprendido sobre features concatenadas (*early fusion*) precisaria de
+pacientes com vídeo, áudio, texto e sinais vitais sincronizados e com desfecho rotulado, e os
+datasets do projeto não são do mesmo paciente. Com regras, a modalidade ausente simplesmente não
+contribui e cada parcela do score aponta para um achado concreto.
+
+| Passo | Como | Parâmetros |
+| --- | --- | --- |
+| Alinhamento | achados do mesmo `patient_id` (pseudônimo) cujo intervalo cruza a janela | janela **60 min** (o NEWS2 pede ao menos uma medição por hora em resposta urgente) |
+| Força do achado | peso(modalidade) × valor da severidade × ajuste pelo score × decaimento | severidade info 0 · baixa 0,3 · média 0,6 · alta 0,9; o score ajusta ±15% (α = 0,3); meia-vida **60 min** |
+| Sinal da modalidade | a maior força entre os achados dela | máximo, não soma: achados do mesmo sensor são correlacionados |
+| Concordância | duas ou mais modalidades no mesmo eixo clínico (respiratório, neurológico, queda) | 0,5 × a 2ª maior força do eixo |
+| Combinação | noisy-OR: risco = 1 − Π(1 − termo) | modalidade ausente vira fator 1; o risco com dois sinais é sempre maior que o maior isolado |
+| Nível | baixo < **0,4** ≤ médio < **0,7** ≤ alto | NEWS2 urgente sozinho dá 0,46 (médio); NEWS2 de emergência, 0,74 (alto) |
+
+Os pesos seguem a força da evidência: sinais vitais **1,0** (NEWS2 é escore validado),
+movimentação **0,85** (queda tem dano direto; `mudanca_brusca_ou_queda` do vídeo também usa 0,85),
+texto **0,7** (relato do paciente, com negação tratada), áudio **0,65** (biomarcador sem
+validação clínica), prescrições e vídeo **0,6** (sinais indiretos). As contribuições por modalidade
+somam exatamente o score, e o evento traz os pesos e a versão em `evidence.thresholds`. Com achado
+em uma modalidade só, o risco sai com severidade `info`: aquele achado já gerou o próprio alerta.
+
+### 3.5 Motor de alertas (US19)
 
 [Relatório US19](relatorio_us19_dod.md), `config/alertas_regras.yaml`. O motor conhece só o
 contrato, então aceita qualquer `event_type` do catálogo sem mudar código.
@@ -260,8 +316,8 @@ a própria linha da tabela registra.
 | US09 | Relatório automático por vídeo (JSON e HTML) com os 6 itens do DoD | 6 de 6 | **6 de 6** (52 testes; notebook de validação com 8 verificações, 8 atendidas) | ✔ | Pose, eventos e vídeo **sintéticos**: os JSONs de pose da US06 não são versionados. `docs/relatorio_us09_dod.md`, `notebooks/validacao_us09.ipynb` |
 | US09 | Vídeo sem desvios gera "sem desvios detectados" | sim | 3 casos sintéticos (análise confiável, pouco confiável, pessoa nunca vista) e 3 arquivos reais de eventos da US07 | ✔ | Os 3 reais saem "pouco confiáveis": sem pose, a postura não foi avaliada |
 | US09 | Desvio de severidade alta chega ao motor de alertas (US19) | sim | queda sintética vira alerta de prioridade alta (motor real, canais falsos) | ✔ | Envio real por e-mail ou webhook não foi testado (sem canal configurado) |
-| US11 | WER (Azure Speech) | ≤ 20% | não medido | ✘ | Rodada de 06/11/2026: os 10 áudios do Eka voltaram HTTP 401. A assinatura Azure do grupo está desativada (seção abaixo). Reproduzir: `python scripts/avaliar_wer.py --baixar 10` |
-| US13 | Precision / Recall / F1 de termos críticos | sem meta fixa | não medido | n/a | Mesma assinatura desativada; `AZURE_LANGUAGE_KEY` também está vazia no `.env`. Reproduzir: `python scripts/eval_us13.py` |
+| US11 | WER (Azure Speech, 10 áudios, 162 palavras) | ≤ 20% | **10,5%** (médio por áudio 14,4%) | ✔ | `en-IN`, sem *phrase list*. Um áudio de 5 palavras teve 80%. `saida/transcricao/avaliacao/en-IN_sem_frases/relatorio_wer.md` |
+| US13 | Precision / Recall / F1 de termos críticos (15 consultas) | sem meta fixa | **0,842** / **0,941** / **0,889** | n/a | VP 16 · FP 3 · FN 1. 37 entidades descartadas pelo filtro de asserção. `outputs/text_analysis/eval.md` |
 | US10 | Conversão para WAV PCM 16 kHz mono; arquivo ruim não para o lote; original preservado | todos | atendido: cada conversão é relida e validada; erro por arquivo em log e em `metadados.csv`; sha256 do original inalterado | ✔ | `tests/audio/test_ingestao_*.py` |
 | US12 | Biomarcadores por segmento do paciente (F0, jitter, shimmer, HNR, intensidade, pausas, taxa de fala) e eventos respiratórios (YAMNet) | todos | implementados. Em voz sintética: F0 148,8 Hz contra 148,35 Hz esperados (0,3 %); jitter injetado de 2 % medido em 1,96 % | ✔ | YAMNet verificado só em silêncio e em tons, **não** em tosse ou respiração reais |
 | US14 | Recall por classe (casos injetados, 60 por classe) | ≥ 0,80 | fadiga **1,00** · dificuldade respiratória **1,00** · disartria **1,00** (IC95 0,94 a 1,00) | ✔ | **Circular**: limiares e casos injetados são dos mesmos autores; mede a lógica das regras, não a validade clínica. FP em voz normal sintética 0/60. `saida/audio/avaliacao_us14.json` |
@@ -274,6 +330,9 @@ a própria linha da tabela registra.
 | US16 | Recall (modo controlado) | ≥ 0,80 | **1,000** | ✔ | FP 0,4% |
 | US17 | Recall de queda em vídeo real (teste) | ≥ 0,80 | **0,875** (14/16, IC95 0,64 a 0,97) | ✔ (pontual) | O limite inferior do IC fica abaixo de 0,80. Alarme falso 1/5 |
 | US17 | Recall nos casos injetados no MIMIC | n/a | queda 1,00 · saída noturna 1,00 · imobilidade 1,00 · agitação 0,988 · redução 0,822 | n/a | Verifica a lógica, não a percepção |
+| US18 | Caso de demonstração (SpO2 em queda + fala com dispneia) | combinado > maior isolado | **0,82** (alto) contra 0,42 / 0,41 / 0,35 isolados | ✔ | `scripts/demo_us18.py` |
+| US18 | Testes de alinhamento, score, configuração, API e integração com a US19 | n/a | 100 testes | ✔ | `tests/fusao/`; inclui os 15 pares de modalidades e a modalidade ausente |
+| US20 | Fluxo ponta a ponta em um comando | sem falha | 8 de 8 etapas, risco **0,92** (alto), 16 achados, 10 alertas, **650 ms** | ✔ | `scripts/rodar_demo.py --rapido`, MIMIC-IV Demo nos sinais vitais |
 | US19 | Latência ingestão → envio, p95, canal local | ≤ 10 s | **0,004 s** (p50 0,002 · máx 0,026) | ✔ | 100 achados, webhook HTTP local: mede só o overhead do motor |
 | US19 | Latência ingestão → envio, p95, **e-mail SMTP real** | ≤ 10 s | **54,97 s** (p50 34,99 · máx 54,97) | ✘ | 10 achados simultâneos, 9 enviados. `saida/latencia_us19_smtp.json` |
 
@@ -291,14 +350,16 @@ a própria linha da tabela registra.
   versionados e os vídeos do dataset não estão no repositório. Falta gerar o relatório sobre um desvio
   de pose real (por exemplo, a queda de `B_N_03` da US08). Os limiares de confiança (0,5 e 50% de
   cobertura) são experimentais.
-- **US11 e US13, não medidos.** Na rodada de 06/11/2026 com o `.env` do grupo, o Speech
-  respondeu HTTP 401 aos 10 áudios, em `eastus` e em `brazilsouth`. O Cosmos DB, na mesma
-  assinatura, respondeu `Forbidden: Subscription owning the database account is disabled`. A
-  assinatura Azure está desativada (o crédito do Azure for Students para os recursos quando
-  acaba). A US13 também não tem `AZURE_LANGUAGE_KEY`. Os scripts estão prontos e testados com a
-  API simulada (`pytest audio/tests`). Reativada a assinatura, basta rodá-los e copiar os números.
-  Não há dataset de referência em pt-BR, por isso o WER usa o Eka Medical ASR em inglês indiano.
-  Esse desvio do DoD fica registrado.
+- **US11, WER medido em inglês indiano.** O DoD cita pt-BR, mas não há dataset de referência em
+  português, então o WER usa o Eka Medical ASR (`en-IN`). Esse desvio fica registrado. A amostra é
+  pequena (162 palavras): o áudio de 5 palavras com 80% de erro pesa no WER médio por áudio
+  (14,4%), mas pouco no global (10,5%).
+- **US13, erros vêm de asserções que o serviço não devolveu.** Os 3 falsos positivos são terceiros
+  ("minha irmã tem convulsões", "meu filho teve convulsão") e uma hipótese ("se a falta de ar
+  piorar") que o Text Analytics for health em português não marcou como `associacao=other` nem
+  `hypothetical`; frases parecidas em outras consultas foram marcadas e descartadas. O falso negativo
+  é "dor no peito" na consulta 1, que o serviço não extraiu como entidade. As 15 consultas são
+  simuladas pelo grupo.
 - **US19, latência com e-mail real (p95 55 s).** O motor leva 4 ms. O tempo vem da entrega: o
   `Despachante` (`alertas/despachante.py`) envia um alerta por vez, e o `NotificadorEmail` abre
   uma conexão SMTP nova a cada e-mail (STARTTLS + login, ~5,5 s no provedor). Com 10 alertas
@@ -310,8 +371,7 @@ a própria linha da tabela registra.
   Faltam gravações rotuladas por fonoaudiólogo, que o projeto não tem, para validar os limiares
   `[EXP]` e para medir o YAMNet em tosse e respiração reais. Nenhum dos 3 áudios reais disparou uma
   classe, então o exemplo documentado é sintético e **falta uma gravação real alterada** para o
-  vídeo. O caminho com transcrição real (`--transcrever`) também não foi exercitado, pela mesma
-  assinatura Azure desativada. Detalhes no [relatório de áudio](relatorio_tecnico_audio.md#4-resultados).
+  vídeo. O caminho com transcrição real (`--transcrever`) não foi exercitado nesta entrega. Detalhes no [Apêndice A.12](#a12-resultados-detalhados).
 
 ## 5. Exemplos de anomalias detectadas
 
@@ -338,23 +398,24 @@ Entrada e saída de área crítica (US07, `B_D_0016`, 10 eventos pareados):
 
 ### 5.2 Áudio: termo crítico afirmado e negação descartada (US13)
 
-Consulta simulada `data/text_samples/consulta-01.json`, anotada em
-`data/text_samples/annotations.csv`. O paciente diz "estou com uma dor no peito muito forte". O
-médico pergunta "você sente falta de ar?" e o paciente nega febre. Saída esperada: um
-`termo_critico` para dor torácica e nenhum achado para a pergunta do médico nem para a febre
-negada.
+Consulta simulada `data/text_samples/consulta-01.json`, analisada pelo Azure AI Language na rodada
+de `scripts/eval_us13.py` (`outputs/text_analysis/eval.md`). O médico pergunta "Você sente falta de
+ar?" e o paciente responde "Estou com falta de ar até para falar e piora quando subo escada." Só a
+fala do paciente foi ao serviço; a pergunta do médico entra apenas como contexto:
 
 ```json
-{"modality": "texto", "event_type": "termo_critico", "severity": "alta",
- "evidence": {"summary": "Paciente relata dor torácica: “dor no peito” (afirmado, sem negação)",
-   "features": {"termo": "dor torácica", "nome_normalizado": "Chest Pain", "certeza": "positive",
-                "associacao": "subject", "falante": "paciente", "offset_ms": 6512},
-   "artifacts": [{"kind": "transcricao", "uri": "data/text_samples/consulta-01.json", "start_ms": 3615, "end_ms": 11675}]}}
+{"modality": "texto", "event_type": "termo_critico", "severity": "alta", "score": 0.78,
+ "evidence": {"summary": "Paciente relata falta de ar: “falta de ar até para falar” (afirmado, sem negação)",
+   "features": {"termo": "falta de ar", "categoria": "SymptomOrSign", "confianca": 0.78,
+                "casou_por": "sinonimo:falta de ar", "falante": "paciente", "offset_ms": 15500,
+                "pergunta_medico": "Você sente falta de ar?", "lista_termos_versao": "1.0.0"},
+   "models": {"azure-text-analytics-for-health": "2023-12-01", "idioma-health": "pt", "idioma-sentimento": "pt-BR"},
+   "artifacts": [{"kind": "transcricao", "uri": "data/text_samples/consulta-01.json", "start_ms": 14070, "end_ms": 19010}]}}
 ```
 
-> Este evento mostra o formato com valores ilustrativos (o score do serviço não está nele). A
-> rodada real com o Azure AI Language grava o exemplo medido em `outputs/text_analysis/eval.md`,
-> que deve substituir este bloco.
+Na mesma consulta o paciente disse "Não tive febre." O serviço extraiu `febre` (confiança 0,98,
+nome normalizado *Fever*) com `certeza=negative`, e o filtro de asserção descartou a entidade sem
+gerar evento. A consulta também saiu com `sentimento_negativo` (4 de 6 sentenças negativas).
 
 ### 5.3 Sinais vitais: NEWS2 de emergência (MIMIC-IV Demo, replay)
 
@@ -423,9 +484,34 @@ O motor de alertas gerou um alerta de prioridade `alta` (origem `padrao:alta`) c
 canal (SMTP ou webhook) estava configurado no ambiente; o alerta está registrado no painel. Na mesma
 rodada dispararam também `fadiga_vocal` e `possivel_disartria` (média): as classes se sobrepõem. Os
 três áudios reais de voz (OGG/Opus) saíram `normal` com `audio_comprimido`; ver o
-[relatório de áudio](relatorio_tecnico_audio.md#5-exemplos-de-achados).
+[Apêndice A.13](#a13-áudio-real-e-um-defeito-encontrado).
 
-### 5.7 Vídeo: relatório automático de uma queda e de uma presença na borda do leito (US09)
+### 5.7 Fusão: risco multimodal alto sem nenhum sinal isolado alto (US18, US20)
+
+Na execução ponta a ponta da US20 (`scripts/rodar_demo.py --rapido`), o paciente UTI-07 teve achados
+nas seis modalidades. A maior força isolada foi a do texto (0,53, médio); a fusão chegou a **0,92
+(alto)** e gerou um alerta de prioridade alta com o resumo:
+
+> Risco alto (0,92); contribuições: texto 0,27 (termo critico), movimentação 0,23 (imobilidade
+> prolongada), áudio 0,14 (dificuldade respiratoria), sinais vitais 0,10 (tendencia deterioracao),
+> vídeo 0,07 (entrada area critica), prescrições 0,06 (medicamento alta vigilancia); concordância no
+> eixo respiratório (texto + áudio + sinais vitais)
+
+| Modalidade | Força isolada | Contribuição no risco |
+| --- | ---: | ---: |
+| texto | 0,53 | 0,27 |
+| movimentação | 0,48 | 0,23 |
+| áudio | 0,32 | 0,14 |
+| sinais vitais | 0,23 | 0,10 |
+| vídeo | 0,17 | 0,07 |
+| prescrições | 0,15 | 0,06 |
+| concordância (eixo respiratório) | | 0,06 |
+| **combinado** | | **0,92** |
+
+As contribuições somam o score, e `related_event_ids` aponta os achados usados. No caso menor do
+relatório US18 (sinais vitais, texto e áudio), os isolados de 0,42, 0,41 e 0,35 combinam em 0,82.
+
+### 5.8 Vídeo: relatório automático de uma queda e de uma presença na borda do leito (US09)
 
 > **Exemplo sintético.** A pose e os eventos de área foram gerados no notebook de validação
 > ([`notebooks/validacao_us09.ipynb`](../notebooks/validacao_us09.ipynb)): uma pessoa em pé até 4 s,
@@ -491,10 +577,10 @@ Dados de saúde são dados pessoais sensíveis (LGPD, art. 5º, II). As medidas:
 | Pseudonimização na borda (art. 13 §4º) | `patient_id` e `encounter_id` viram `pt_<24 hex>` por HMAC-SHA256 com `PSEUDONYM_KEY` (≥ 32 bytes, só no `.env`), em `contratos/pseudonimizacao.py`. É determinístico para a fusão cruzar modalidades e irreversível sem a chave. Nenhum `subject_id` cru aparece no evento (testado) |
 | Anonimização de imagem | rostos tarjados antes de qualquer gravação (YuNet). Nos quadros de evidência, a cabeça é tarjada pelos keypoints do rosto |
 | Relatório de vídeo (US09) | identifica o vídeo só pelo `source_id` e pelo SHA-256: nunca o nome do arquivo, o caminho, o paciente nem o leito (o pseudônimo fica nos eventos e nos alertas). Uma varredura troca CPF, e-mail e caminhos por marcador, e os quadros de evidência saem com a cabeça tarjada. Ressalva: um `source_id` tirado do nome do arquivo pode conter um nome de pessoa, que a varredura não reconhece; use `--source-id` neutro |
-| Voz (US10, US12, US14) | `patient_id` pseudonimizado antes de qualquer cálculo; a baseline vocal é indexada só pelo pseudônimo e a transcrição é gravada com ele. Praat, YAMNet e regras rodam localmente; só a transcrição opcional envia áudio ao Azure. Metadados com `origem` e `licenca` e o nome do arquivo, nunca o caminho absoluto. `audio_id` validado, porque vira nome de pasta |
+| Voz (US10, US12, US14) | `patient_id` pseudonimizado antes de qualquer cálculo; a baseline vocal é indexada só pelo pseudônimo e a transcrição é gravada com ele. Praat, YAMNet e regras rodam localmente; só a transcrição opcional envia áudio ao Azure, e só o JSON dela (com o pseudônimo) pode ir ao Blob Storage. Metadados com `origem` e `licenca` e o nome do arquivo, nunca o caminho absoluto. `audio_id` validado, porque vira nome de pasta |
 | Minimização | só as falas do paciente vão ao NLP. Evidência por referência: o evento guarda o caminho, não o conteúdo. Alertas não trazem nome |
-| Localização dos dados (art. 33) | Azure Speech e Language em `brazilsouth`, então áudio e texto não saem do país. A transcrição rápida não guarda o áudio em armazenamento na nuvem |
-| Segredos | sem chave no Git. A arquitetura alvo usa `DefaultAzureCredential` com função RBAC mínima ([`azure-funcao-minima.json`](arquitetura/azure-funcao-minima.json)); em produção, a chave HMAC iria para o Key Vault |
+| Localização dos dados (art. 33) | Hoje os recursos de Speech, Language e Cosmos DB estão em `eastus` (Terraform do repositório), então o áudio e o texto do paciente saem do país: com dados reais isso exigiria a análise de transferência internacional. A arquitetura alvo usa `brazilsouth`, onde todos esses serviços existem. A transcrição rápida não guarda o áudio na nuvem. Quando `AZURE_STORAGE_CONNECTION_STRING` está configurada, a API e o pipeline copiam só o JSON da transcrição, já com o paciente pseudonimizado, para o Blob Storage, com nome de blob gerado (nunca o nome do arquivo enviado) e exclusão automática após 30 dias (`blob_retention_days`) |
+| Segredos | sem chave no Git: o código lê as chaves do `.env`, que fica fora do controle de versão. A arquitetura alvo troca as chaves por `DefaultAzureCredential` com função RBAC mínima ([`azure-funcao-minima.json`](arquitetura/azure-funcao-minima.json)); em produção, a chave HMAC iria para o Key Vault |
 | Base dos dados | só dados públicos e desidentificados na origem (MIMIC) ou simulados. MIMIC desloca as datas para o futuro |
 | Auditoria | barramento e alertas em JSONL append-only, com reconhecimento por token HMAC |
 
@@ -518,42 +604,53 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
   repetições forem corretas. Câmera vista de cima não mostra queda como descida. A US07 não separa
   paciente de profissional. Sem fine-tuning, não há classes cirúrgicas. Rostos pequenos, inclinados
   ou cobertos podem escapar da anonimização.
-- **Áudio.** WER e US13 sem rodada real nesta entrega. Não há dataset de referência em pt-BR.
-  O Text Analytics for health é mais maduro em inglês. A API GA não devolve temporalidade, então o
+- **Áudio.** O WER foi medido em inglês indiano, com 10 áudios curtos; não há dataset de referência
+  em pt-BR. A US13 foi medida em 15 consultas simuladas, e o Text Analytics for health em português
+  deixou de marcar alguns terceiros e hipóteses. A API GA não devolve temporalidade, então o
   passado é inferido por marcadores locais.
 - **Áudio vocal (US10, US12, US14).** Os limiares `[EXP]` não têm validação clínica, e a avaliação
   em voz sintética é circular. Os limiares MDVP são de gravação de qualidade clínica: áudio com perdas
   (Opus do WhatsApp) ultrapassa os três de uma vez, e o sistema sinaliza `audio_comprimido`, mas não
   corrige. O módulo não faz supressão de ruído, e ruído de fundo reduz o HNR. O YAMNet não foi medido
   em tosse ou respiração reais. Sem transcrição não há taxa de fala. Ver as
-  [limitações do relatório de áudio](relatorio_tecnico_audio.md#7-limitações-e-trabalhos-futuros).
+  [limitações no Apêndice A.15](#a15-limitações-e-trabalhos-futuros-do-áudio).
 - **Relatório de vídeo (US09).** A confiança por desvio e seus limiares (0,5 e 50% de cobertura) são
   experimentais, sem calibração com vídeos rotulados. O desvio de queda dura até a pessoa deixar de estar
-  no chão, então o "% do tempo em desvio" de uma queda mede a permanência, não a duração do evento. Não há
-  rota na API (o vídeo enviado é apagado ao fim do job, e sem ele não há quadro de evidência) nem PDF
-  gerado direto (imprime-se o HTML). Herda as limitações de detecção da US08.
+  no chão, então o "% do tempo em desvio" de uma queda mede a permanência, não a duração do evento. Na
+  API o relatório só sai pelo pipeline da US20, e ali só com as regras de área crítica (sem OpenPose). Não
+  há PDF gerado direto (imprime-se o HTML). Herda as limitações de detecção da US08.
 - **Prescrições.** O MIMIC registra ordens, não administrações. Sem peso nem indicação, toda mudança
   grande de dose é anomalia, mesmo quando é a conduta certa. O princípio ativo vem de vocabulário
   próprio, não do RxNorm.
 - **Tempo real.** Só os sinais vitais são streaming (replay). Vídeo e áudio são processados por
   arquivo.
 - **Alertas.** Com SMTP real, a entrega em série estoura a meta de 10 s em rajadas. Teams e
-  Slack reais não foram testados (sem `ALERTA_WEBHOOK_URL`). O armazenamento no Cosmos DB não foi
-  validado contra a conta real, por causa da assinatura desativada. Azure Communication Services
-  Email não foi implementado.
+  Slack reais não foram testados (sem `ALERTA_WEBHOOK_URL`). O armazenamento no Cosmos DB passou nos
+  11 testes contra a conta real. Azure Communication Services Email não foi implementado.
+- **Fusão.** Os pesos são decisão de projeto, não ajuste estatístico, e precisam de validação
+  clínica. O buffer da fusão fica em memória: some quando a API reinicia e não é compartilhado entre
+  *workers*. Para o NEWS2, o eixo respiratório não distingue se a pontuação veio da SpO2 ou da
+  frequência cardíaca.
+- **Integração pela API.** Só as rotas de texto (US13), áudio vocal, fusão e pipeline publicam no
+  barramento que o motor de alertas e a fusão assinam. A rota de prescrições usa um barramento
+  próprio, e as de sinais vitais e de áreas críticas devolvem os eventos na resposta sem publicá-los.
+  O fluxo completo é garantido pela US20, que liga todos os módulos ao mesmo barramento.
 - **Dependência da assinatura Azure.** Transcrição, NLP clínico e Cosmos param juntos quando a
-  assinatura é desativada. Vídeo, sinais vitais, prescrições, movimentação e alertas por SMTP
+  assinatura é desativada, como aconteceu na rodada de 06/11/2026 (em 14/11 a assinatura já estava ativa de novo). Vídeo, sinais vitais, prescrições, movimentação e alertas por SMTP
   continuam funcionando, porque rodam local.
 
 **Trabalhos futuros**
 
-1. **Fusão multimodal (US18):** *late fusion* ponderada por paciente e janela, publicando
-   `risco_multimodal` com `related_event_ids`.
+1. **Ajustar os pesos da fusão (US18)** por regressão logística sobre as forças por modalidade,
+   quando houver desfechos rotulados, e mover o estado da fusão para Redis ou Azure Stream
+   Analytics, com janela deslizante.
 2. **Calibrar e validar os biomarcadores vocais (US12, US14):** limiares `[EXP]` com gravações
    rotuladas por fonoaudiólogo, YAMNet medido em tosse e respiração reais, estimativa de SNR e
    supressão de ruído, e openSMILE (eGeMAPS) para comparar com o Praat.
-3. **Rodar WER e US13 com os recursos Azure** e, se o WER passar de 20%, Custom Speech em pt-BR
-   (treino em `eastus`, cópia para `brazilsouth`).
+3. **Medir o WER em pt-BR** com gravações próprias transcritas à mão e, se passar de 20%, treinar
+   um Custom Speech. Na US13, ampliar as consultas anotadas e tratar terceiros e hipóteses que o
+   serviço não marca (pronome possessivo de parente, "se" condicional) com uma regra local.
+   Mover os recursos para `brazilsouth`.
 4. **Fine-tuning do YOLOv8** em classes médicas (instrumentos, monitores) com o gate por classe
    ≥ 0,50 já implementado.
 5. **Calibrar postura pela pose** em vídeo real de leito e confirmar pelo fisioterapeuta a série
@@ -566,8 +663,8 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
 8. **Validação clínica** dos limiares e prioridades com a equipe, e estudo retrospectivo com
    eventos reais rotulados.
 9. **Relatório de vídeo (US09):** gerar o relatório sobre desvios de pose reais (rodando a US06 de
-   novo nos vídeos do dataset), calibrar os limiares de confiança com vídeos rotulados, oferecer rota
-   na API (guardando o vídeo ou o quadro de evidência) e PDF direto.
+   novo nos vídeos do dataset), calibrar os limiares de confiança com vídeos rotulados, levar o
+   OpenPose ao pipeline e gerar PDF direto.
 
 ## 8. Referências
 
@@ -612,3 +709,526 @@ clínica e enquadramento regulatório (ANVISA, RDC 657/2022, software como dispo
     https://github.com/tensorflow/models/tree/master/research/audioset/yamnet
 22. Teixeira, J. P.; Oliveira, C.; Lopes, C. Vocal acoustic analysis: jitter, shimmer and HNR
     parameters. *Procedia Technology*, 9, 1112-1122, 2013.
+23. Microsoft. *Fast transcription* (Azure AI Speech). Microsoft Learn.
+24. Pearl, J. *Probabilistic Reasoning in Intelligent Systems: Networks of Plausible Inference.*
+    Morgan Kaufmann, 1988 (modelo noisy-OR).
+
+## Apêndice A. Módulo de áudio vocal (US10, US12, US14)
+
+Detalha o módulo de áudio vocal resumido nas seções 3.2, 4 e 5.6: ingestão e pré-processamento
+(US10), biomarcadores vocais (US12) e classificação e geração de achados (US14). Toda saída do
+módulo é um *indicativo para avaliação clínica, não um diagnóstico*, e os limiares marcados
+`[EXP]` precisam de revisão por fonoaudiólogos e médicos antes de qualquer uso real.
+
+### A.1 Escopo e etapas
+
+O módulo recebe a gravação da voz de um paciente (um áudio de voz do WhatsApp, ou uma consulta com
+médico e paciente), prepara o sinal, mede características da voz e publica achados no mesmo contrato
+`EventoAchado` dos demais detectores, de onde o motor de alertas (US19) os consome.
+
+| Etapa | O que faz | US |
+| --- | --- | --- |
+| Ingestão e conversão | Lê WAV, FLAC, OGG/Opus, MP3, M4A, AAC, WMA, AMR e WebM. Grava WAV PCM 16 bits, 16 kHz, mono, relê e confere o arquivo | US10 |
+| Pré-processamento | Cópia com volume normalizado e silêncios longos removidos, usada só nas features. O original nunca é alterado | US10 |
+| Metadados e lote | Duração, taxa, canais, origem, licença, sha256 e status por áudio. Um arquivo ruim é registrado e o lote continua | US10 |
+| Biomarcadores vocais | F0 (média e variação), jitter local, shimmer local, HNR, intensidade, pausas, taxa de fala e de articulação, com Praat | US12 |
+| Eventos respiratórios | Tosse, respiração, sibilo, arfar e respiração ofegante, com YAMNet (AudioSet) e score por trecho | US12 |
+| Baseline do paciente | Compara o áudio com os anteriores do mesmo paciente e emite `desvio_baseline_vocal` | US12 |
+| Classificação e achados | `fadiga_vocal`, `dificuldade_respiratoria`, `possivel_disartria` ou normal (`sem_achados`), cada um com os critérios que o explicam | US14 |
+| Interfaces | CLI (`audio.ingestao.run`, `audio.vocal.run`), rota `POST /audio/vocal` e script de avaliação | US10, US12, US14 |
+
+A transcrição (US11) e a análise de texto (US13) estão na seção 3.2 do corpo. Aqui a transcrição é
+*entrada opcional*: ela diz quais trechos são do paciente e quantas palavras ele falou.
+
+### A.2 Fluxo do áudio
+
+```
+áudio (qualquer formato aceito)
+  │  audio.ingestao
+  ├─ lê: soundfile/libsndfile (WAV, FLAC, OGG/Opus) ou, se falhar, ffmpeg (MP3, M4A, AAC, WMA, AMR, WebM)
+  ├─ convertido.wav ........ WAV PCM 16 bits, 16 kHz, mono (é o que vai ao Azure Speech)
+  ├─ features.wav .......... cópia normalizada, sem silêncios longos (só para as features)
+  └─ metadados.json ........ duração, taxa, canais, origem, licença, sha256, status
+  │  audio.vocal
+  ├─ segmentos do paciente: JSON do Azure Speech (US11) ou, sem ele, VAD por energia
+  ├─ Praat/parselmouth: F0, jitter, shimmer, HNR, intensidade, pausas, taxa de fala
+  ├─ YAMNet (ONNX): tosse, respiração, sibilo, arfar, com score por trecho
+  ├─ baseline do próprio paciente (mediana/MAD dos áudios anteriores)
+  ├─ regras: fadiga_vocal | dificuldade_respiratoria | possivel_disartria | normal
+  └─ EventoAchado (modalidade audio) → barramento → motor de alertas (US19)
+```
+
+O fluxo tem sete passos:
+
+1. **Entrada.** Um arquivo ou uma pasta de áudios, pela CLI ou por `POST /audio/vocal`. O
+   `patient_id` é pseudonimizado antes de qualquer cálculo; sem a `PSEUDONYM_KEY` a execução falha
+   cedo, antes de converter o áudio.
+2. **Ingestão (US10).** Decodifica, valida, converte para WAV PCM 16 kHz mono e grava os metadados.
+3. **Pré-processamento (US10).** Gera `features.wav` (normalizado, sem silêncios longos) e o mapa que
+   leva cada instante do original ao instante equivalente da cópia.
+4. **Segmentação.** Define os trechos de fala do paciente (transcrição ou VAD).
+5. **Medição (US12).** Biomarcadores por segmento e eventos respiratórios no áudio todo.
+6. **Classificação (US14).** Compara com a baseline do paciente, aplica as regras e escolhe a classe.
+7. **Publicação.** Monta os `EventoAchado`, grava `eventos.jsonl` e `relatorio.json` e publica no
+   barramento compartilhado. Severidade `alta` vira alerta sem mudar o motor.
+
+Saídas por áudio, em `saida/audio/<audio_id>/`: `convertido.wav`, `features.wav`, `metadados.json`,
+`eventos.jsonl`, `relatorio.json` e, com `--transcrever`, `convertido.json` (a transcrição, com o
+paciente já pseudonimizado). O lote resume em `saida/audio/metadados.csv`, e a baseline de cada
+paciente fica em `saida/audio/baseline/<pt_...>.json`.
+
+#### Qual sinal alimenta cada medida
+
+A US10 manda normalizar o volume e remover silêncios longos **só na cópia usada para as features**.
+Como a remoção de silêncio apagaria as pausas e a normalização apagaria a diferença entre gravações
+altas e baixas, cada medida usa o sinal que não a distorce.
+
+| Medida | Sinal | Por quê |
+| --- | --- | --- |
+| F0, jitter, shimmer, HNR | `features.wav` (recalculada em memória) | Não dependem do volume nem das pausas; a normalização ajuda o detector de F0 |
+| Proporção e duração das pausas, taxa de fala e de articulação | `convertido.wav` | A cópia perderia as pausas longas |
+| Intensidade | `convertido.wav` | A normalização apagaria o nível real da gravação |
+| Eventos respiratórios (YAMNet) | `convertido.wav` | Decisão de projeto: o ganho de até 5× da normalização amplificaria o ruído de fundo, e respiração é um som fraco que se confunde com ele |
+
+Os segmentos da transcrição estão no tempo do `convertido.wav`. `CopiaFeatures.indice`
+(`audio/ingestao/preparo.py`) mapeia cada amostra do original para a cópia, e `recortar(inicio_s, fim_s)`
+devolve o trecho equivalente.
+
+### A.3 Ingestão e conversão de formato (US10)
+
+Pacote `audio/ingestao/`, parâmetros em [`audio/ingestao/config.yaml`](../audio/ingestao/config.yaml)
+(versão **1.0.0**). Detalhes no [relatório US10](relatorio_us10_dod.md).
+
+| Item | Valor | Justificativa |
+| --- | --- | --- |
+| Formato de saída | WAV, PCM 16 bits, mono, **16 kHz** | Formato recomendado pelo Azure Speech. Profundidade e canais são fixos no código; a taxa vem do YAML |
+| Decodificação | `soundfile` (libsndfile) tentado primeiro; `ffmpeg` como plano B | Só WAV, FLAC e OGG/Opus (o formato dos áudios do WhatsApp) estão garantidos sem ffmpeg, o que permite testar sem ele. MP3, M4A, AAC, WMA, AMR e WebM dependem do ffmpeg |
+| Reamostragem | `scipy.signal.resample_poly` (polifásica, razão reduzida pelo MDC das taxas) | Filtro anti-aliasing embutido; razão racional exata, como 160/441 para 44,1 → 16 kHz |
+| Mono | média dos canais | O que o Azure Speech recomenda, ao custo de descartar o estéreo |
+| Proteção contra estouro | se o pico passa de 1,0 após o downmix, o sinal é reduzido, não cortado | Evita distorção por *clipping* |
+| Conferência | o WAV gravado é **relido** (`sf.info`) e validado: formato, codificação, taxa, canais e duração | Um arquivo fora do formato é apagado e vira erro, nunca segue adiante |
+| Timeout do ffmpeg | 300 s (`app/audio_convert.py`, parâmetro `timeout_s`) | Um arquivo malformado não trava o lote |
+
+**Validação de entrada.** Cada falha tem um erro tipado com código estável, usado em log, metadados e
+API:
+
+| Código | Quando |
+| --- | --- |
+| `arquivo_nao_encontrado` | caminho inexistente ou que não é arquivo |
+| `formato_nao_suportado` | extensão fora de `wav, flac, ogg, oga, opus, mp3, m4a, aac, wma, amr, webm`, ou formato que exige ffmpeg ausente do PATH |
+| `audio_vazio` | 0 bytes, sem amostras ou silêncio digital (pico < 0,0001, ≈ −80 dBFS) |
+| `audio_corrompido` | não decodifica, taxa inválida ou amostras NaN/Inf |
+| `audio_curto` | duração < 0,5 s (não há fala para transcrever nem para medir jitter e shimmer) |
+| `audio_longo` | duração > 3600 s (a decodificação carrega o áudio inteiro como `float32`); conferido antes de decodificar |
+| `audio_id_invalido` | `audio_id` que não serve de nome de pasta (ver A.14) |
+
+**Lote.** `ingerir_lote` registra cada falha em log e em `metadados.csv` (`status=erro`, com o código) e
+segue para o próximo arquivo. Um erro inesperado em um arquivo também não derruba o lote. A CLI sai
+com `0` (todos ingeridos), `1` (nada a processar ou configuração inválida) ou `2` (algum falhou).
+
+**Metadados por áudio** (`metadados.json` e `metadados.csv`): `audio_id`, nome do arquivo (relativo à
+pasta de entrada, nunca o caminho absoluto), status e erro, sha256 e tamanho, formato, codec e
+decodificador de origem, duração, taxa e canais **do original**, `origem` e `licenca`, os mesmos dados
+do WAV convertido, da cópia de features (duração, silêncio removido, ganho aplicado),
+`original_preservado` (sha256 antes e depois), versão da configuração e instante do processamento.
+Pelo ffmpeg a taxa e os canais originais se perdem (o ffmpeg converte direto), e esses campos ficam
+vazios.
+
+### A.4 Pré-processamento e tratamento de ruído
+
+A cópia de features (`audio/ingestao/preparo.py`) faz duas coisas, nesta ordem, e o `convertido.wav` e o
+original **não sofrem nenhuma delas**:
+
+| Etapa | Método | Parâmetros |
+| --- | --- | --- |
+| Normalização de volume | o pico vai ao alvo, com ganho limitado | pico alvo **0,95**; ganho máximo **5×** (≈ 14 dB) |
+| Remoção de silêncios longos | quadro é silêncio se o RMS fica abaixo do nível de fala da gravação; cada silêncio longo é encurtado | janela 25 ms; limiar **−30 dB** relativo ao percentil 95 dos RMS; só silêncios ≥ **1,0 s**; permanece **0,3 s** (metade de cada lado) |
+
+O limiar é **relativo ao nível de fala da própria gravação**, para valer em gravações altas e baixas.
+Nas pontas do arquivo fica só a metade vizinha à fala; no meio, metade de cada lado, o que preserva
+ataque e decaimento. Não se corta só o começo e o fim: cada silêncio de pelo menos 1 s é encurtado.
+
+**Como o módulo lida com ruído.** O módulo **não aplica supressão de ruído** (filtro ou *denoising*).
+O que existe é um conjunto de salvaguardas para que o ruído não seja confundido com fala:
+
+- O **ganho máximo de 5×** impede que a normalização amplifique uma gravação que é quase só ruído.
+- O limiar de silêncio é relativo, mas há um **piso absoluto** do nível de fala em **−50 dBFS**
+  (`pausas.nivel_minimo_fala_db`). Sem ele, um segmento só de silêncio ou de ruído de ambiente
+  viraria "a fala de si mesmo". Esse caso foi achado por um teste: um segmento de silêncio digital era
+  contado como fala.
+- O **HNR** (razão harmônicos-ruído) mede o ruído *na voz* e entra como critério clínico (A.6).
+- O **YAMNet** roda no `convertido.wav`, sem a normalização, pelo motivo da tabela da A.2.
+
+Gravações com muito ruído de fundo reduzem o HNR e podem ser lidas como voz alterada (ver A.15).
+
+### A.5 Segmentação da fala do paciente
+
+`audio/vocal/segmentos.py` decide *o que* medir. Há duas fontes:
+
+- **Com a transcrição do Azure Speech (US11):** cada `fala` do paciente vira um segmento, com a
+  contagem de palavras de que a taxa de fala precisa. `medico_falante` diz quem é o médico; **dois
+  falantes sem essa informação são recusados**, porque errar mediria a voz do médico como a do
+  paciente (mesma regra do `audio/text`, US13). A diarização é de até 2 falantes.
+- **Exceção explícita:** áudio de **um só falante** (a gravação do próprio paciente, como um áudio de
+  voz do WhatsApp) é tratado como paciente e marcado `papel_assumido`.
+- A lacuna entre duas falas do paciente só conta como pausa dele se **não houver fala do médico no
+  meio** (`contiguo_ao_anterior`); uma troca de turno não é pausa.
+- **Sem transcrição:** VAD por energia (janela 20 ms; silêncios menores que 1 s ficam dentro do
+  segmento) e **sem taxa de fala**. Os critérios que dependem dela ficam "não avaliáveis" e não contam.
+
+Segmentos com menos de 0,3 s são ignorados (poucos ciclos de F0 para medir).
+
+### A.6 Biomarcadores vocais (US12)
+
+Praat via `praat-parselmouth` **0.4.7** (Praat **6.1.38**), em `audio/vocal/biomarcadores.py`. Os
+parâmetros estão em [`audio/vocal/config.yaml`](../audio/vocal/config.yaml) (versão **1.0.0**), cada um
+marcado com a origem: `[MDVP]` (normalidade do MDVP, citada na US12), `[PRAAT]` (parâmetro padrão do
+Praat) ou `[EXP]` (**experimental**, sem validação clínica). Detalhes no
+[relatório US12](relatorio_us12_dod.md) e no
+[desenho](arquitetura/us12_biomarcadores_vocais.md).
+
+| Medida | Método | Parâmetros |
+| --- | --- | --- |
+| F0 (média e variação) | `To Pitch`; variação como desvio padrão em **semitons** em torno da média | faixa **75 a 500 Hz**, passo 10 ms `[PRAAT]` |
+| Jitter local (%) | `To PointProcess (periodic, cc)` + `Get jitter (local)` | período 0,1 ms a 20 ms; razão máxima entre períodos 1,3 `[PRAAT]` |
+| Shimmer local (%) | `Get shimmer (local)` sobre o mesmo `PointProcess` | razão máxima entre amplitudes 1,6 `[PRAAT]` |
+| HNR (dB) | `To Harmonicity (cc)`, média | limiar de silêncio 0,1; 1,0 período por janela `[PRAAT]` |
+| Intensidade (dB) | `To Intensity`, média dos quadros de fala (≥ máximo − 25 dB) | janela mínima do Praat (6,4 / piso de F0) |
+| Pausas | silêncio de pelo menos **0,25 s**, a **25 dB** abaixo do nível de fala do paciente (percentil 95 dos RMS) | piso absoluto de −50 dBFS `[EXP]` |
+| Taxa de fala | palavras da transcrição ÷ duração da fala, **incluindo** pausas | só com transcrição |
+| Taxa de articulação | palavras ÷ (duração da fala − pausas) | só com transcrição |
+
+**Voz sustentada mínima.** Com menos de **0,25 s** de voz sustentada em um segmento não há períodos
+suficientes, e jitter, shimmer e HNR ficam **nulos**. Medidas que o Praat não consegue calcular viram
+`None`, **nunca NaN** (o contrato rejeita NaN).
+
+**Agregação por áudio.** Os tempos são somados. Jitter, shimmer e HNR são médias ponderadas pela voz
+sustentada de cada segmento, a intensidade é ponderada pela duração, e o F0 junta os quadros
+vozeados de todos os segmentos.
+
+**Verificação do método.** Os testes usam voz sintética de parâmetros conhecidos
+(`audio/vocal/injecao.py`: pulsos glóticos com 20 harmônicos, jitter, shimmer e SNR controlados): a F0
+foi medida em **148,8 Hz** contra **148,35 Hz** esperados (0,3 %), e um jitter injetado de **2 %** foi
+medido em **1,96 %**.
+
+### A.7 Eventos respiratórios com YAMNet (US12)
+
+`audio/vocal/respiratorio.py`. O YAMNet é uma rede MobileNet treinada no AudioSet que devolve **521
+scores** (uma classe cada) a cada **0,48 s**, para uma janela de **0,975 s**. Roda em **ONNX**
+(`onnxruntime`, CPU), sem TensorFlow, o que o mantém leve e compatível com o Python do projeto. O
+modelo e o mapa de classes são baixados por `scripts/baixar_modelos_audio.py` para `models/audio/`
+(fora do Git), com o **SHA-256 fixado**: a URL aponta para uma ramificação mutável, então é o hash que
+garante que o arquivo é o validado.
+
+| Classe do AudioSet | Tipo do evento | Severidade |
+| --- | --- | --- |
+| Cough | `tosse` | baixa |
+| Breathing | `respiracao` | baixa |
+| Wheeze | `sibilo` | média |
+| Gasp | `arfar` | média |
+| Pant | `respiracao_ofegante` | média |
+
+Um **evento** é um trecho contínuo de quadros com o score da classe acima do mínimo, e leva o score
+máximo e o médio.
+
+| Parâmetro | Valor | Origem |
+| --- | --- | --- |
+| Score mínimo | **0,30** | `[EXP]` |
+| Lacuna tolerada dentro de um trecho | 1 quadro | |
+| Máximo de eventos por áudio | 20 (ficam os de maior score) | evita inundar o painel com uma respiração contínua |
+| Fala do médico | quadros cujo centro cai em fala do médico são descartados | só com transcrição |
+
+A tabela de classes do YAML é **conferida contra o mapa de 521 nomes** no carregamento. Sem o modelo
+baixado, a análise segue sem o critério respiratório e o relatório registra
+`respiratorio.disponivel = false`, em vez de falhar ou de fingir que não houve evento.
+
+### A.8 Baseline do paciente (US12)
+
+`audio/vocal/baseline.py`. Com pelo menos **3 áudios anteriores** do mesmo paciente (pelo pseudônimo), cada
+métrica é comparada com a mediana do histórico por um **z robusto**, o mesmo critério usado nos sinais
+vitais (US15):
+
+`z = (x − mediana) / max(1,4826 · MAD, piso da métrica)`
+
+Um desvio com `|z| ≥ 3,5` `[EXP]` gera `desvio_baseline_vocal`, de severidade baixa (média com 3 ou
+mais métricas fora). O **piso** da dispersão evita um z enorme quando o histórico é quase constante:
+
+| Métrica | Piso | Métrica | Piso |
+| --- | --- | --- | --- |
+| `jitter_local_pct` | 0,10 | `intensidade_db` | 2,0 |
+| `shimmer_local_pct` | 0,50 | `proporcao_pausas` | 0,05 |
+| `hnr_db` | 1,0 | `taxa_fala_pps` | 0,2 |
+| `f0_media_hz` | 5,0 | `taxa_articulacao_pps` | 0,2 |
+| `f0_desvio_st` | 0,5 | | |
+
+O histórico guarda no máximo 30 áudios, em um JSON por paciente indexado **só pelo pseudônimo**,
+gravado de forma atômica. Um áudio que disparou uma classe **não entra** na baseline, para que uma
+alteração não vire o novo normal. A baseline também alimenta o critério `intensidade_caiu` (queda de
+6 dB em relação à mediana do paciente).
+
+### A.9 Classificação (US14)
+
+`audio/vocal/classificacao.py`. Cada critério é um predicado sobre os biomarcadores, com limiar vindo
+do YAML:
+
+| Critério | Satisfeito quando | Origem |
+| --- | --- | --- |
+| `jitter_alto` | jitter local > **1,04 %** | `[MDVP]` |
+| `shimmer_alto` | shimmer local > **3,81 %** | `[MDVP]` |
+| `hnr_baixo` | HNR < **20 dB** | `[MDVP]` |
+| `pausas_altas` | pausas ocupam > **40 %** da fala | `[EXP]` |
+| `fala_lenta` | taxa de fala < **1,8** palavras/s (≈ 108 por minuto) | `[EXP]` |
+| `articulacao_lenta` | taxa de articulação < **2,2** palavras/s | `[EXP]` |
+| `f0_monotona` | desvio de F0 < **2,0** semitons | `[EXP]` |
+| `intensidade_caiu` | intensidade ≥ **6 dB** abaixo da baseline do paciente | `[EXP]` |
+| `eventos_respiratorios` | ≥ **2** eventos, ou um com score ≥ **0,60** | `[EXP]` |
+
+Valores exatamente no limiar não contam como alteração. Um critério **sem dado** (por exemplo, taxa de
+fala sem transcrição, ou intensidade sem baseline) fica "não avaliável" e **não conta a favor**.
+
+Uma classe dispara com `minimo` critérios satisfeitos e, quando há, pelo menos um de `exigir_um_de`:
+
+| Classe (`event_type`) | Critérios | Mínimo | Exige um de | Severidade |
+| --- | --- | --- | --- | --- |
+| `dificuldade_respiratoria` | eventos respiratórios, pausas altas, fala lenta, HNR baixo | 2 | eventos respiratórios ou pausas altas | média; **alta com 3** |
+| `fadiga_vocal` | intensidade caiu, F0 monótona, pausas altas, fala lenta | 2 | n/a | média |
+| `possivel_disartria` | jitter, shimmer, HNR, articulação lenta, pausas altas | 3 | articulação lenta ou pausas altas | média |
+| normal | nenhuma classe disparou (e nenhum outro achado) | n/a | n/a | `sem_achados` (info) |
+
+Uma classe pode disparar junto com outra: **cada uma vira um evento**, com os critérios que a explicam.
+O `score` do evento é a fração de critérios satisfeitos (3 de 4 = 0,75). A única saída de severidade
+**alta**, a de maior prioridade no motor de alertas, é `dificuldade_respiratoria` com 3 critérios; as
+outras classes param em severidade média, por desenho.
+
+**Explicabilidade.** Cada achado de classe traz o `summary` com cada critério satisfeito (valor e
+limiar), as `features` com as medições e as `regras_acionadas`, os `thresholds` que a classe usa mais a
+versão da configuração, os `models` (Praat, parselmouth, YAMNet, Azure Speech) e o artefato
+`audio_segment`. O `summary` sempre começa com "Indicativo para avaliação clínica, não é diagnóstico",
+e `features.aviso` repete a frase, porque o e-mail de alerta lista as features.
+
+### A.10 Contrato e alertas
+
+Os seis `event_type` de áudio já existiam no catálogo do contrato; **nada mudou no catálogo nem no
+schema**.
+
+| Achado | `EventoAchado` |
+| --- | --- |
+| classe disparada (US14) | `fadiga_vocal`, `dificuldade_respiratoria` ou `possivel_disartria` |
+| trecho do YAMNet (US12) | `evento_respiratorio`, com o `score` do trecho |
+| métricas fora da baseline (US12) | `desvio_baseline_vocal` |
+| nenhuma classe e nada mais | `sem_achados` (info): é a classe "normal" |
+
+Campos comuns: `patient_id` pseudonimizado; `timestamp` = `recorded_at` + posição do trecho no áudio;
+`window` com início e fim; `model_version = audio-achados@0.1.0`; `context.source_id = audio_id`;
+URIs de artefato **relativas**. Os valores numpy viram `float`/`int` nativos e NaN vira `None`.
+
+A publicação vai ao **barramento compartilhado** (`app.barramento.get_barramento()`, importado no nível
+do módulo para ser substituível nos testes). Um evento de severidade alta vira alerta sem mudar o
+motor, com prioridade `alta` e origem `padrao:alta`.
+
+Não há regra de áudio em `config/alertas_regras.yaml`, de propósito: uma regra por tipo
+*substituiria* a prioridade e anularia a lógica de "2 critérios = média, 3 = alta".
+
+### A.11 Interfaces
+
+| Interface | Uso |
+| --- | --- |
+| `python -m audio.ingestao.run --input <pasta> --origem ... --licenca ...` | só a US10: converte uma pasta, um arquivo ruim não interrompe o lote |
+| `python -m audio.vocal.run --audio <wav> --patient-id <id> --recorded-at <ISO UTC> [--transcrever --medico-falante N]` | US10 + US12 + US14 de ponta a ponta; liga o motor de alertas. Saída `0`, `1` (configuração) ou `2` (algum áudio falhou) |
+| `POST /audio/vocal` (multipart) | o mesmo pela API; `?detalhes`, `?publicar` e `?atualizar_baseline` |
+| `python scripts/baixar_modelos_audio.py` | baixa o YAMNet em ONNX, com SHA-256 conferido |
+| `python scripts/avaliar_us14.py` | avaliação em casos injetados (A.12) |
+
+A rota valida tudo o que não depende do áudio (formato, metadados, configuração, chave de
+pseudonimização, credenciais do Speech) **antes** de gravar o upload e antes de gastar uma chamada ao
+Speech. Respostas de erro: `400` formato não suportado, `409` `audio_id` já usado, `413` acima do
+limite de tamanho, `422` áudio ou análise inválidos, `503` configuração ou chave ausente. O áudio
+enviado é preservado em `saida/audio/<audio_id>/original.<ext>`.
+
+### A.12 Resultados detalhados
+
+Os números abaixo vêm de testes automatizados, da avaliação em casos injetados
+(`saida/audio/avaliacao_us14.json`) e de uma rodada com áudios reais. Cada linha diz de qual das três
+fontes veio.
+
+| US | Métrica | Meta | Obtido | Atingida? | Observação |
+| --- | --- | --- | --- | :---: | --- |
+| US10 | Entradas convertidas para WAV PCM 16 kHz, 16 bits, mono | todas as válidas | cada conversão é relida e validada. Testado de 8 a 48 kHz, mono e estéreo, OGG/Vorbis e OGG/Opus, sem ffmpeg | ✔ | `tests/audio/test_ingestao_conversao.py` |
+| US10 | Áudio ruim não interrompe o lote | sim | erro tipado em log e em `metadados.csv`; a CLI sai com 2 | ✔ | `test_ingestao_lote.py`, `test_ingestao_validacao.py` |
+| US10 | Normalização e corte de silêncio só na cópia; original preservado | sha256 igual | `original_preservado` por áudio; `convertido.wav` mantém pausas e volume | ✔ | `test_ingestao_preparo.py` |
+| US10 | Nenhum áudio versionado | 0 | 0 (teste roda `git ls-files`) | ✔ | |
+| US12 | Features por segmento do paciente | F0, jitter, shimmer, HNR, intensidade, taxa de fala, pausas | todas implementadas | ✔ | taxa de fala exige transcrição |
+| US12 | F0 em voz sintética | n/a | 148,8 Hz medido contra 148,35 Hz esperado (0,3 %) | n/a | `test_vocal_biomarcadores.py` |
+| US12 | Jitter injetado de 2 % | n/a | 1,96 % medido | n/a | |
+| US12 | Limiares MDVP documentados | jitter 1,04 %, shimmer 3,81 %, HNR 20 dB | no YAML, marcados `[MDVP]` | ✔ | com ressalva: áudio comprimido (A.13) |
+| US12 | Eventos respiratórios com modelo do AudioSet e score por segmento | sim | YAMNet real roda: silêncio gera `Silence` = 1,0; tom de 440 Hz gera `Telephone`/`Dial tone`; a conta de quadros fecha | ✔ | `test_vocal_respiratorio.py` |
+| US12 | YAMNet em tosse ou respiração **reais** | sem meta | não medido | ✘ | não há gravações rotuladas no projeto |
+| US12 | Baseline do próprio paciente | ≥ 3 áudios | implementada, com z robusto e piso por métrica | ✔ | `test_vocal_baseline.py` |
+| US14 | Recall por classe (casos injetados) | ≥ 0,80 | fadiga **1,00** · dificuldade respiratória **1,00** · disartria **1,00** (IC95 0,94 a 1,00; 60 casos cada) | ✔ | **avaliação circular** (ver abaixo) |
+| US14 | Voz normal sintética sem nenhuma classe disparada | n/a | **60/60**; falso positivo 0/60 (0 %) | n/a | |
+| US14 | Achado de severidade alta chega ao motor de alertas | sim | `dificuldade_respiratoria` com 3 critérios gera alerta `padrao:alta` | ✔ | `test_vocal_analise.py` |
+| US14 | Ao menos 1 exemplo de alteração vocal detectada | 1 | 1 caso **sintético** (seção 5.6) | ✔ (sintético) | os 3 áudios reais não dispararam classe |
+| Todos | Testes automatizados do módulo | n/a | 227 funções de teste em 16 arquivos | n/a | `tests/audio/`; sem rede e sem pesos (o YAMNet real é opcional) |
+
+#### Avaliação em casos injetados (US14)
+
+`scripts/avaliar_us14.py`: 3 sementes × 20 casos por classe (**60 por classe**), voz sintética passando
+pelo pipeline inteiro (ingestão, Praat, regras). Um caso é acerto quando a classe do rótulo dispara
+(outras podem disparar junto); em "normal", quando nenhuma dispara. Meta de recall: 0,80.
+
+| Rótulo | Recall (IC 95 %) | Classes que dispararam |
+| --- | --- | --- |
+| normal | 1,00 [0,94; 1,00] | nenhuma em 60/60 |
+| `fadiga_vocal` | 1,00 [0,94; 1,00] | fadiga 60, dificuldade respiratória 26 |
+| `dificuldade_respiratoria` | 1,00 [0,94; 1,00] | dificuldade 60, fadiga 58, disartria 52 |
+| `possivel_disartria` | 1,00 [0,94; 1,00] | disartria 60, fadiga 25 |
+
+As faixas de parâmetros de cada rótulo (jitter, shimmer, SNR, variação de F0, ritmo de fala, pausas)
+descrevem a alteração pretendida e **não foram ajustadas até as regras acertarem**. Mesmo assim:
+
+- **A avaliação é circular.** Os limiares experimentais e os parâmetros injetados são dos mesmos
+  autores, e os casos foram injetados bem acima dos limiares. O recall de 100 % mostra que as regras e a
+  implementação respondem às alterações que procuram, **não** que o sistema acerta em pacientes. Falta
+  voz real rotulada por fonoaudiólogo.
+- **O YAMNet não é avaliado.** Os eventos respiratórios entram como scores injetados
+  (`sessao_sintetica`), então só a lógica das regras é testada.
+- **As classes se sobrepõem.** Fadiga e dificuldade respiratória compartilham fala lenta e pausada, e
+  voz soprosa parece disártrica na acústica.
+
+#### Rodada com áudio real
+
+Três áudios de voz (OGG/Opus, 5,6 a 8,4 s, 16 kHz mono) rodaram pela CLI, sem rede e sem transcrição
+(portanto sem taxa de fala):
+
+| Amostra | F0 | Jitter local | Shimmer local | HNR | Pausas |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 105 Hz | 2,31 % | 14,8 % | 12,7 dB | 16 % |
+| 2 | 94 Hz | 2,02 % | 12,1 % | 14,0 dB | 7 % |
+| 3 | 97 Hz | 1,97 % | 10,9 % | 13,7 dB | 30 % |
+
+Os três ultrapassam os três limiares MDVP ao mesmo tempo e saíram `normal` apenas porque a disartria
+exige fala lenta ou pausas, e sem transcrição isso não é avaliável. Três amostras com o mesmo padrão
+indicam **artefato**, não três alterações (A.13).
+
+#### Metas não atingidas e por quê
+
+- **Validação clínica dos limiares.** Os limiares `[EXP]` (pausas, taxa de fala e de articulação,
+  variação de F0, queda de intensidade, score respiratório) não têm validação. Dependem de gravações
+  rotuladas por fonoaudiólogo, que o projeto não tem.
+- **Exemplo de alteração em áudio real.** Nenhum dos 3 áudios reais disparou uma classe, então o exemplo
+  documentado é sintético. **Para o vídeo de demonstração falta uma gravação real alterada.**
+- **YAMNet em sons reais.** Foi verificado em silêncio e em tons, não em tosse ou respiração reais. O
+  score mínimo de 0,30 é experimental, e o TensorFlow avisa que os scores do YAMNet não são
+  probabilidades calibradas entre classes.
+- **Transcrição real com o Azure Speech.** O caminho com `--transcrever` não foi exercitado contra o
+  serviço real nesta entrega. O Speech foi medido à parte (WER 10,5%, seção 4). Os testes usam uma
+  transcrição sintética no formato da US11 e um transcritor substituível.
+- **Alertas.** Na rodada do exemplo da seção 5.6, o alerta foi registrado no painel mas ficou `failed`
+  ao enviar, porque nenhum canal (SMTP ou webhook) estava configurado no ambiente.
+
+### A.13 Áudio real e um defeito encontrado
+
+#### Áudio real do WhatsApp: três amostras fora dos limiares, classificadas como normais
+
+Os três áudios reais (OGG/Opus) ultrapassaram **jitter, shimmer e HNR ao mesmo tempo** (jitter ≈ 2 %,
+shimmer de 11 a 15 %, HNR de 13 a 14 dB). O padrão idêntico nas três amostras aponta para artefato:
+codec com perdas, gravação de celular e fala encadeada, quando os limiares MDVP são de gravação de
+qualidade clínica, em geral de vogal sustentada. O sistema reagiu de três formas:
+
+- só saíram `normal` porque a disartria exige também fala lenta ou pausas;
+- o achado leva `audio_comprimido = true` (formatos com perdas: `ogg, oga, opus, mp3, m4a, aac, wma,
+  amr, webm`) e o relatório, uma nota de que jitter, shimmer e HNR podem estar superestimados;
+- a conclusão registrada é que **estes limiares não devem ser aplicados a áudio de WhatsApp sem
+  calibração**.
+
+#### Um defeito que a avaliação encontrou
+
+Na primeira avaliação com casos injetados, **60 de 60 casos de disartria também disparavam
+"dificuldade respiratória"**: voz alterada (HNR baixo) mais fala lenta bastava, sem nenhum sinal
+respiratório. A regra passou a exigir um evento respiratório (YAMNet) ou pausas frequentes (fala
+entrecortada para respirar), o parâmetro `exigir_um_de`, e a sobreposição caiu a 0/60 sem perder recall.
+Como a medição seguinte usa os mesmos dados, essa melhora também é circular. A regra se apoia num
+critério clínico: dificuldade respiratória precisa de sinal respiratório ou de fala entrecortada.
+
+### A.14 Dados, licenças e LGPD do áudio
+
+#### Dados e componentes
+
+Nenhum áudio é versionado. Os testes geram voz sintética em `tmp_path`, e o `.gitignore` cobre
+`tratamento_audio/` e as extensões `*.wav *.ogg *.oga *.opus *.m4a *.mp3 *.flac *.aac *.wma *.amr`.
+Não há conjunto público de voz patológica rotulada que o projeto possa versionar.
+
+| Fonte | Uso | Licença |
+| --- | --- | --- |
+| Voz sintética (`audio/vocal/injecao.py`) | testes e avaliação da US14 | gerada pelo grupo; nada a redistribuir |
+| 3 áudios de voz (OGG/Opus) | rodada com áudio real | uso local, não versionados. O consentimento do titular precisa ser confirmado (o texto padrão de proveniência do módulo diz isso) |
+| YAMNet em ONNX, espelho de terceiros [`andrelgomes/yamnet-onnx`](https://huggingface.co/andrelgomes/yamnet-onnx) (conversão do modelo do Google) | eventos respiratórios | Apache-2.0, conforme o cabeçalho do script de download. SHA-256 fixado; é uma conversão de terceiros, e a alternativa é converter do TF Hub com `tf2onnx` |
+| `yamnet_class_map.csv` (`tensorflow/models`) | nomes das 521 classes | Apache-2.0 |
+| Praat, via `praat-parselmouth` 0.4.7 | biomarcadores | **GPL-3.0 ou posterior** (parselmouth; o Praat é GPL-2.0 ou posterior). A GPL vale para quem redistribuir o software: avaliar antes de qualquer distribuição |
+| `soundfile` (libsndfile), `scipy`, `onnxruntime` | leitura, reamostragem e inferência | licenças permissivas (BSD, MIT) e LGPL no libsndfile; conferir antes de redistribuir |
+
+#### Tratamento LGPD
+
+A voz de um paciente é dado pessoal sensível (LGPD, art. 5º, II). As medidas do módulo:
+
+| Medida | Como |
+| --- | --- |
+| Pseudonimização na borda (art. 13 §4º) | `patient_id` vira `pt_<24 hex>` por HMAC-SHA256 com `PSEUDONYM_KEY` (`contratos/pseudonimizacao.py`) antes de qualquer cálculo. O ID de origem nunca vai para o disco nem para a resposta: o JSON da transcrição é gravado com o pseudônimo, e a baseline é indexada só por ele (um nome de arquivo fora do padrão é recusado) |
+| Nada de áudio no Git | `.gitignore` e um teste que roda `git ls-files` e falha se achar uma extensão de áudio |
+| Minimização e evidência por referência | o evento guarda a URI relativa do trecho (`audio_segment`), não o conteúdo; os metadados guardam o nome do arquivo (relativo à pasta de entrada) e nunca o caminho absoluto |
+| Proveniência | cada áudio registra `origem` e `licenca` (`--origem`, `--licenca`); o padrão avisa que o consentimento (LGPD) do titular deve ser confirmado antes do uso |
+| Processamento local | Praat, YAMNet e as regras rodam na máquina. Só a transcrição **opcional** (`--transcrever`) envia o áudio ao Azure Speech; região e termos na seção 6 |
+| Segurança do `audio_id` | ele vira nome de pasta. O padrão do contrato aceitaria `..`, que sairia da pasta de saída (e o tratamento de erro apagaria um diretório pai). Exige-se que comece por letra ou número, e um `audio_id` repetido responde `409` em vez de sobrescrever o original preservado |
+| Limite de upload | a API recusa upload acima do limite configurado (`AUDIO_MAX_UPLOAD_MB`, `413`) e apaga o que gravou |
+| Auditoria | `eventos.jsonl` e o barramento são JSONL de acréscimo; `original_preservado` e o sha256 provam que o original não mudou |
+
+### A.15 Limitações e trabalhos futuros do áudio
+
+**Limitações**
+
+- **Áudio comprimido e fala encadeada.** Os limiares MDVP são de gravação de qualidade clínica. Em
+  formatos com perdas (Opus do WhatsApp, MP3), os três limiares estouram juntos (A.13). O achado
+  leva `audio_comprimido`, mas o sistema **não corrige** o efeito.
+- **Sem supressão de ruído.** O módulo só se protege do ruído (ganho máximo, piso de nível, HNR; A.4). Ruído de fundo reduz o HNR e pode ser lido como voz alterada; o efeito não foi quantificado.
+- **Limiares sem validação.** Os limiares `[EXP]` não têm validação clínica, e os valores `[MDVP]`
+  (1,04 %, 3,81 %, 20 dB) vêm do texto da US12, sem conferência numa fonte primária.
+- **Avaliação circular e sintética.** A US14 mede a lógica das regras em voz sintética com alterações
+  injetadas por quem escolheu os limiares. Não mede validade clínica nem o YAMNet.
+- **Sobreposição de classes.** Fala lenta e pausada é comum a fadiga e dificuldade respiratória, e voz
+  soprosa parece disártrica na acústica.
+- **Intensidade** é relativa ao ganho do microfone e só serve entre gravações em condições parecidas.
+- **YAMNet.** Verificado em silêncio e em tons, não em sons respiratórios reais. As classes do AudioSet
+  são genéricas: o modelo não sabe de quem é a tosse, e só descarta a fala do médico quando há
+  transcrição com diarização. Os scores não são probabilidades, e o modelo ONNX é uma conversão de
+  terceiros.
+- **Sem transcrição, sem taxa de fala.** Os critérios `fala_lenta` e `articulacao_lenta` ficam não
+  avaliáveis, e a disartria, que exige 3 critérios incluindo um de articulação ou pausas, quase não
+  dispara. Já a taxa de fala em palavras por segundo depende do idioma e do tipo de fala.
+- **Papel assumido.** Áudio de um só falante é tratado como paciente sem verificação. A diarização é de
+  até 2 falantes.
+- **Baseline com poucos áudios.** O mínimo é 3, e a baseline de um paciente ainda pode ser formada por
+  gravações em condições diferentes. A trava do arquivo é por processo, então a API deve rodar com um
+  único worker.
+- **Processamento síncrono.** A rota processa o áudio dentro da requisição. Não há tempo real nem
+  *streaming* de áudio.
+- **Vários `--audio` na CLI** compartilham o mesmo `--recorded-at`; gravações em horários diferentes
+  pedem uma execução por gravação.
+
+**Trabalhos futuros**
+
+1. **Calibração e validação clínica** dos limiares com gravações rotuladas por fonoaudiólogo, separando
+   por tipo de tarefa (vogal sustentada ou fala encadeada) e por codec.
+2. **Avaliar o YAMNet em tosse e respiração reais** e, se preciso, treinar um classificador dedicado a
+   sons respiratórios.
+3. **Estimativa de SNR e supressão de ruído** como etapa opcional, com um portão de qualidade que avise
+   quando a gravação não serve para medir jitter, shimmer e HNR.
+4. **Rodar a transcrição real** (Azure Speech) quando a assinatura for reativada, e medir o efeito da
+   taxa de fala nas classes.
+5. **Biomarcadores adicionais** (openSMILE, conjunto eGeMAPS) para comparar com o Praat.
+6. **Eixos clínicos da fusão (US18):** hoje `fadiga_vocal`, `dificuldade_respiratoria` e
+   `evento_respiratorio` contam no eixo respiratório e `possivel_disartria` no neurológico; validar
+   esses vínculos com a equipe clínica.
+7. **Baseline em banco de dados** e processamento assíncrono para suportar vários *workers* e
+   gravações longas.
+8. **Estudo retrospectivo** com eventos reais rotulados e revisão dos limiares e prioridades pela
+   equipe clínica.

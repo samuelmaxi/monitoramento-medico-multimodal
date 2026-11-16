@@ -1,9 +1,15 @@
 # monitoramento-medico-multimodal
 
-Projeto de monitoramento médico multimodal. Nesta fase inicial, o foco está na
-obtenção e organização dos conteúdos multimodais (vídeos, áudio, documentos,
-anomalias e fusão de alertas) que serão utilizados como fonte de dados do
-sistema.
+Projeto de monitoramento médico multimodal (Tech Challenge, Fase 4). Vídeo, áudio, texto da
+consulta, sinais vitais, prescrições e movimentação do paciente geram achados num contrato único;
+a fusão calcula o risco por paciente e o motor de alertas avisa a equipe. Não é dispositivo médico
+validado clinicamente.
+
+**Relatório técnico (US21):** [`docs/relatorio_tecnico.pdf`](docs/relatorio_tecnico.pdf)
+(fonte em [`docs/relatorio_tecnico.md`](docs/relatorio_tecnico.md)): fluxo multimodal, modelos
+por tipo de dado, resultados medidos (mAP, WER, Recall/Precision/F1, latência), exemplos de
+anomalias, datasets/LGPD, limitações e o detalhe do áudio vocal no Apêndice A. Para regenerar o
+PDF depois de editar o `.md`: `uv run --with weasyprint python scripts/gerar_relatorio_pdf.py`.
 
 ## Estrutura do projeto
 
@@ -150,7 +156,7 @@ VIDEO_MAX_UPLOAD_MB=500
 
 Os comandos devem ser executados a partir da raiz do projeto.
 
-### `main.py` — verificação básica
+### `main.py`: verificação básica
 
 ```bash
 python main.py
@@ -158,7 +164,7 @@ python main.py
 
 Exibe `Hello World`, servindo apenas como sane-check da instalação.
 
-### `scripts/get_content_script.py` — download dos conteúdos
+### `scripts/get_content_script.py`: download dos conteúdos
 
 ```bash
 python scripts/get_content_script.py
@@ -169,7 +175,7 @@ python scripts/get_content_script.py
 - O `gdown` cria uma subpasta com o nome da pasta remota, por exemplo
   `conteudos/conteudos/videos/`.
 
-### US07 — detecção de objetos e áreas críticas em vídeo
+### US07: detecção de objetos e áreas críticas em vídeo
 
 O pipeline aplica `YOLOv8` (Ultralytics) a vídeos, avalia áreas críticas (ROIs) em
 formato de polígonos configuráveis por câmera e emite eventos `entrada_area_critica`
@@ -217,8 +223,8 @@ uv run python scripts/rodar_us07_video.py config/exemplo_us07.json
 
 Esse modo gera:
 
-- `saida/video/eventos_<stem>.jsonl` — eventos US04 do vídeo (recriado a cada execução).
-- `saida/video/relatorio_<stem>.json` — resumo único: quadros, detecções, classes, eventos e seção `avaliacao` (as quatro métricas do `yolov8n.pt` medidas no COCO val2017 e a lista de vídeos anotados).
+- `saida/video/eventos_<stem>.jsonl`: eventos US04 do vídeo (recriado a cada execução).
+- `saida/video/relatorio_<stem>.json`: resumo único: quadros, detecções, classes, eventos e seção `avaliacao` (as quatro métricas do `yolov8n.pt` medidas no COCO val2017 e a lista de vídeos anotados).
 
 Exemplo de validação:
 
@@ -265,7 +271,7 @@ Cria:
 
 - `saida/video/eventos_<stem>.jsonl` para cada vídeo processado com sucesso
 - `saida/video/relatorio_<stem>.json` para cada vídeo (para inspeção por arquivo)
-- `saida/video/relatorio_todos.json` — relatório consolidado (`videos_processados`, `videos_com_falha`, `eventos_totais`, `resumos`, `falhas`, `avaliacao`)
+- `saida/video/relatorio_todos.json`: relatório consolidado (`videos_processados`, `videos_com_falha`, `eventos_totais`, `resumos`, `falhas`, `avaliacao`)
 
 Ao usar `--max-frames` é ideal para validação rápida. Vídeos com falha não geram
 seu JSONL e ficam registrados em `falhas` (exit code `1`). O detector YOLO é
@@ -273,7 +279,7 @@ carregado uma única vez e o `tracker` é reiniciado entre vídeos.
 
 #### 5. Parâmetros e configuração por câmera
 
-- **Classes:** `detector.classes` — justifica-se cobrir `person`, `bed`, `chair`, `couch`, `bottle`. Classes clínicas (instrumentos cirúrgicos, etc.) exigem dataset próprio + fine-tuning.
+- **Classes:** `detector.classes`: justifica-se cobrir `person`, `bed`, `chair`, `couch`, `bottle`. Classes clínicas (instrumentos cirúrgicos, etc.) exigem dataset próprio + fine-tuning.
 - **Limiar:** `detector.confianca = 0.25` (padrão Ultralytics), `detector.iou = 0.5` (NMS, coerente com `mAP@0.5`).
 - **ROIs:** definidas em `areas[]` com `points` (polígono), `largura_ref`/`altura_ref` (resolução de referência), `area_minima`, `classe_filtro`. São **configuráveis por vídeo/câmera**: use `config/leito_uti_07.json` como modelo para outra câmera (muda `fonte.id`, `fonte.video`, `eventos.caminho_jsonl` e calibração dos pontos).
 - **Rastreamento:** `detector.rastrear = true`, `tracker = bytetrack.yaml` (ByteTrack) com `monitor.persistencia_quadros = 8`.
@@ -347,12 +353,12 @@ O mesmo pipeline está exposto em `POST /video/areas-criticas`; veja
 
 #### 9. Evidências e conformidade
 
-A rastreabilidade completa (itens 1–8 do DoD) está em
+A rastreabilidade completa (itens 1 a 8 do DoD) está em
 [`docs/relatorio_us07_dod.md`](docs/relatorio_us07_dod.md). A arquitetura, ROIs,
 decisões e parâmetros estão em
 [`docs/arquitetura/us07_deteccao_areas_criticas.md`](docs/arquitetura/us07_deteccao_areas_criticas.md).
 
-### US08 — movimentos e eventos fora do padrão no vídeo
+### US08: movimentos e eventos fora do padrão no vídeo
 
 Combina a postura da US06 (OpenPose) com as áreas críticas da US07 (YOLOv8) e
 compara com o **padrão esperado do tipo de vídeo**, definido em
@@ -399,7 +405,7 @@ Rastreabilidade ao DoD, protocolo e resultados da avaliação:
 [`docs/relatorio_us08_dod.md`](docs/relatorio_us08_dod.md). Testes:
 `uv run pytest tests/video/test_desvios.py`.
 
-### US09 — relatório automático de desvios no procedimento
+### US09: relatório automático de desvios no procedimento
 
 Pacote [`video/relatorio/`](video/relatorio/). Ao final da análise de cada vídeo, em um
 comando e sem edição manual, aplica a US08, publica os eventos no barramento (os
@@ -432,7 +438,7 @@ Para **ver cada etapa funcionando** (entradas, desvios, confiança, alerta, JSON
 automaticamente, abra [`notebooks/validacao_us09.ipynb`](notebooks/validacao_us09.ipynb) (precisa de
 `ipykernel` e `matplotlib`): ele usa dados sintéticos e termina com o esboço do relatório renderizado.
 
-### US17 — anomalias nos padrões de movimentação durante a internação
+### US17: anomalias nos padrões de movimentação durante a internação
 
 Pacote [`movimentacao/`](movimentacao/). Monta uma **série de movimentação por
 paciente** (posição no leito, saídas do leito, quedas, período dia/noite) a
@@ -553,20 +559,20 @@ Speech não está implementado.
 O projeto usa serviços de IA do **Azure** para os módulos de transcrição de fala e
 análise de sentimento, aproveitando a tier gratuita (F0) disponível no Azure:
 
-- **Azure Speech Service** — transcrição de áudio em pt-BR (Speech-to-Text).
-- **Azure AI Language** — análise de sentimento de texto em `pt`.
-- **Azure Blob Storage** — cópia do JSON das transcrições (US11), com expiração automática.
+- **Azure Speech Service**: transcrição de áudio em pt-BR (Speech-to-Text).
+- **Azure AI Language**: análise de sentimento de texto em `pt`.
+- **Azure Blob Storage**: cópia do JSON das transcrições (US11), com expiração automática.
 
 A infraestrutura é provisionada via Terraform, na região **`eastus`** (região com melhor
 suporte a tier gratuita), e fica em [`terraform/`](terraform/).
 
 ### Estrutura de Arquivos Terraform
 
-- `providers.tf` — Configuração do provider Azure
-- `variables.tf` — Variáveis do projeto (região, nome, ambiente, etc)
-- `resources.tf` — Criação de grupos de recursos, Storage Account e Cognitive Services
-- `rbac.tf` — **Atribuições de roles RBAC** (permissões para acessar recursos)
-- `outputs.tf` — Saídas (credenciais, endpoints)
+- `providers.tf`: Configuração do provider Azure
+- `variables.tf`: Variáveis do projeto (região, nome, ambiente, etc)
+- `resources.tf`: Criação de grupos de recursos, Storage Account e Cognitive Services
+- `rbac.tf`: **Atribuições de roles RBAC** (permissões para acessar recursos)
+- `outputs.tf`: Saídas (credenciais, endpoints)
 
 ### Pré-requisitos adicionais
 
@@ -601,11 +607,11 @@ terraform output
 
 O `apply` cria:
 
-- **Grupo de Recursos** — contêiner para organizar todos os recursos
-- **Storage Account** — conta de armazenamento com container privado para áudio
-- **Speech Service** (F0) — serviço de transcrição de áudio
-- **Language Service** (F0) — serviço de análise de sentimento
-- **RBAC Role Assignments** — permissões para o usuário atual acessar os recursos
+- **Grupo de Recursos**: contêiner para organizar todos os recursos
+- **Storage Account**: conta de armazenamento com container privado para áudio
+- **Speech Service** (F0): serviço de transcrição de áudio
+- **Language Service** (F0): serviço de análise de sentimento
+- **RBAC Role Assignments**: permissões para o usuário atual acessar os recursos
 
 ### Obtendo as credenciais
 
@@ -641,13 +647,11 @@ terraform destroy
 Se quiser usar um **Service Principal** em pipelines CI/CD (GitHub Actions, Azure DevOps),
 descomente a seção em `terraform/rbac.tf` e adicione as variáveis correspondentes.
 
-### Benefícios da migração para Azure
+### O que a infraestrutura Azure entrega
 
-- **Tier gratuita**: Azure Speech e Language têm quotas mensais gratuitas (F0) sem custo
-- **RBAC integrado**: Permissões gerenciadas automaticamente via Terraform
-- **Sem credenciais manuais**: Usa autenticação nativa do `az login`
-- **Infraestrutura segura**: Storage account privado, HTTPS obrigatório
-- **Rede**: Melhor latência em regiões específicas (eastus)
+Speech e Language ficam no nível gratuito (F0), com cota mensal sem custo, na região `eastus`. O
+Terraform cria as permissões RBAC, autenticando pelo `az login`; o código da aplicação lê as chaves
+do `.env`. A storage account é privada e exige HTTPS.
 
 ## API (FastAPI)
 
@@ -782,10 +786,10 @@ o valor medido, o limiar e a duração. O que é avaliado:
 | Critério | Negativo | Alerta |
 | --- | --- | --- |
 | Inclinação do tronco | acima de 30° por ≥ 1 s | acima de 60° por ≥ 1 s |
-| Assimetria esquerdo × direito (joelho, quadril, ombro, cotovelo) | acima de 20° por ≥ 1 s | — |
-| Flexão do joelho | acima de 135° por ≥ 1 s | — |
+| Assimetria esquerdo × direito (joelho, quadril, ombro, cotovelo) | acima de 20° por ≥ 1 s | n/a |
+| Flexão do joelho | acima de 135° por ≥ 1 s | n/a |
 | Quadros com a pessoa detectada | entre 50% e 80% | abaixo de 50% |
-| Articulação pouco visível | — | ângulo medido em menos de 50% dos quadros |
+| Articulação pouco visível | n/a | ângulo medido em menos de 50% dos quadros |
 
 Critério sem desvio vira ponto positivo. Os limiares ficam em `feedback` no
 `video/pose/config.yaml`; são gerais, iguais para qualquer exercício, e **não
@@ -806,7 +810,7 @@ se faltar, a Ultralytics baixa no primeiro job).
   e o rastreamento é reiniciado entre vídeos.
 - **ROIs por câmera.** `camera_id` escolhe `config/<camera_id>.json` (ex.:
   `leito_uti_07`); sem ele vale `US07_CONFIG_PATH`. Para outra câmera, crie o
-  arquivo com `scripts/gerar_config_us07.py` — não precisa reiniciar a API para
+  arquivo com `scripts/gerar_config_us07.py`; não precisa reiniciar a API para
   câmeras novas (o arquivo de uma câmera já usada fica em cache até reiniciar).
 - **ROIs na requisição.** O campo `areas` aceita uma lista JSON no mesmo formato
   de `areas[]` dos configs e substitui as ROIs da câmera só neste job:
@@ -854,8 +858,8 @@ Testes (detector falso, sem pesos): `uv run pytest tests/video/test_api_areas.py
 Os clientes Azure SDK incluem mecanismos de retry nativos que lidam com throttling
 (429) automaticamente. Erros que sobram são traduzidos em respostas claras
 (`app/errors.py`): **429** (throttling persistente), **401** (credenciais Azure
-inválidas — revise `AZURE_SPEECH_KEY`, `AZURE_LANGUAGE_KEY`,
-`AZURE_STORAGE_CONNECTION_STRING` no `.env`) e **403** (sem permissão — verifique
+inválidas: revise `AZURE_SPEECH_KEY`, `AZURE_LANGUAGE_KEY`,
+`AZURE_STORAGE_CONNECTION_STRING` no `.env`) e **403** (sem permissão: verifique
 as permissões RBAC no Azure IAM).
 
 ### Smoke tests automatizados
@@ -867,7 +871,7 @@ uv run pytest tests/test_smoke.py -v
 Os testes chamam a API de verdade contra o Azure real (sem mocks), usando as
 credenciais do `.env`. Para o teste de transcrição, coloque um áudio curto pt-BR em
 `tests/fixtures/sample_pt_br.wav` (veja
-[`tests/fixtures/README.md`](tests/fixtures/README.md)) — se ausente, esse teste é
+[`tests/fixtures/README.md`](tests/fixtures/README.md)); se ausente, esse teste é
 pulado automaticamente. Se as variáveis Azure não estiverem configuradas, todos os
 testes são pulados com uma mensagem explicando o motivo.
 
@@ -934,8 +938,8 @@ gravação, então nenhum frame com rosto chega ao disco. O detector é o YuNet
 uma memória de 3 frames amostrados para cobrir falhas intermitentes. O método
 padrão é o preenchimento sólido (`fill`), que não deixa informação visual da
 região. A pixelização, o mosaico preto e branco e o blur gaussiano ficam como opções. Rostos muito pequenos,
-muito inclinados ou cobertos (máscara, campo cirúrgico) ainda podem escapar; isso
-deve ser citado no relatório técnico.
+muito inclinados ou cobertos (máscara, campo cirúrgico) ainda podem escapar (limitação
+registrada na seção 7 do [relatório técnico](docs/relatorio_tecnico.md#7-limitações-e-trabalhos-futuros)).
 
 **Detecção**: `app/video/detector.py` define a interface `Detector`. Hoje o
 `NullDetector` não detecta nada; YOLOv8 e OpenPose entram plugados nessa interface.
@@ -1094,7 +1098,7 @@ Cada medição passa por três etapas, uma de cada vez, como num stream:
    temperatura; 8 h para O2 e consciência). Depois disso o parâmetro fica de
    fora e o evento sai marcado como `news2_parcial`.
 2. **Regras clínicas (NEWS2, RCP 2017).** Pontos por parâmetro e total.
-   Total 5–6 ou 3 pontos em um parâmetro gera `news2_resposta_urgente`;
+   Total 5 a 6 ou 3 pontos em um parâmetro gera `news2_resposta_urgente`;
    total ≥ 7 gera `news2_emergencia`.
 3. **ML não supervisionado.** Compara cada sinal com a baseline do próprio
    paciente. A mudança súbita (`desvio_baseline`) usa um z-score robusto
@@ -1183,7 +1187,7 @@ pacientes de `subject_id` par. As métricas abaixo são as dos ímpares:
 | Métrica  | Teste | Meta   |
 | -------- | ----: | ------ |
 | Recall   | 0,838 | ≥ 0,80 |
-| Precisão | 0,688 | —      |
+| Precisão | 0,688 | n/a      |
 | F1       | 0,756 | ≥ 0,70 |
 
 Os falsos positivos incluem variações reais dos pacientes de UTI, que não têm
@@ -1319,7 +1323,7 @@ respiratório, e cada modalidade enxerga uma parte disso:
 | Etapa | O que roda | Achados |
 |---|---|---|
 | `video` | Achado de leito de demonstração | `entrada_area_critica` |
-| `relatorio_video` | Nada no modo simulado (não há vídeo real): a etapa diz o motivo | — |
+| `relatorio_video` | Nada no modo simulado (não há vídeo real): a etapa diz o motivo | n/a |
 | `audio` | Azure Speech (transcrição) → Azure AI Language (termos críticos e sentimento, US13) → biomarcadores vocais (US12/US14) | 2 × `termo_critico` (falta de ar, aperto no peito), `sentimento_negativo`, `dificuldade_respiratoria` |
 | `sinais_vitais` | Replay das últimas 6 h de um paciente do MIMIC-IV Demo pelo detector da US15 | `news2_resposta_urgente`, `tendencia_deterioracao` |
 | `prescricoes` | Regras da US16 sobre morfina IV de 2 para 8 mg e heparina SC iniciada | `mudanca_abrupta_dose`, 2 × `medicamento_alta_vigilancia` |
@@ -1343,7 +1347,7 @@ demonstração.
 |---|---|---|
 | áudio | `audio`: Azure Speech (transcrição com diarização) → Azure AI Language (termos críticos e sentimento) + biomarcadores vocais | `AZURE_SPEECH_*` e `AZURE_LANGUAGE_*` no `.env`. Sem o Speech não há texto; a voz só é medida com `medico_falante=0` (gravação só do paciente) |
 | vídeo | `video` (YOLOv8, áreas críticas) → `relatorio_video` (US08/US09) → `movimentacao` (US17: queda pela caixa da pessoa e saída do leito) | `yolov8n.pt` (já no repositório). As áreas críticas são as de `config/leito_uti_07.json`: ajuste os polígonos para a sua câmera |
-| — | `sinais_vitais`, `prescricoes` | Sempre ausentes: o pipeline não recebe sinais vitais nem prescrições do paciente (o replay do MIMIC é de outra pessoa) |
+| n/a | `sinais_vitais`, `prescricoes` | Sempre ausentes: o pipeline não recebe sinais vitais nem prescrições do paciente (o replay do MIMIC é de outra pessoa) |
 
 O vídeo é lido inteiro; `max_quadros_video` (API) ou `--max-quadros-video` (CLI) limita.
 
